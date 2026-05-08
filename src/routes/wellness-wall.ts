@@ -117,14 +117,17 @@ Water:
 - Focus on hydration progress relative to the goal.
 - Interpret how this level of hydration may affect energy or physical comfort.
 
-- If currentOz is greater than or equal to goalOz, acknowledge that the hydration goal has been met or exceeded.
+- If water.goalMet is true, the water insight must explicitly say the hydration goal has been met or exceeded.
+- If water.goalMet is true, the water insight must include both currentOz and goalOz in the wording.
 - Never incorrectly state that currentOz is below goalOz when currentOz is equal to or greater than goalOz.
 
 Steps:
 - Focus on movement level relative to the goal.
 - Describe whether movement is light, steady, or strong today.
 
-- If currentSteps is greater than or equal to goalSteps, the insight must acknowledge that the step goal has been met or exceeded.
+- If steps.goalMet is true, the steps insight must explicitly say the step goal has been met or exceeded.
+- If steps.goalMet is true, the steps insight must include both currentSteps and goalSteps in the wording.
+- If steps.goalMet is true, do not describe the movement as below goal, low, light, lacking, needing more activity, or less than expected.
 - If currentSteps is below goalSteps, describe movement neutrally without framing it negatively.
 - Never incorrectly state that currentSteps is below goalSteps when currentSteps is equal to or greater than goalSteps.
 
@@ -132,7 +135,8 @@ Habits:
 - Focus on routine follow-through.
 - Describe whether routines are holding, partially complete, or still open.
 
-- If completedActions is equal to or greater than targetActions, acknowledge that routines are fully completed today.
+- If habits.fullyCompleted is true, the habits insight must explicitly say the target actions are fully completed today.
+- If habits.fullyCompleted is true, the habits insight must include both completedActions and targetActions in the wording.
 - Never incorrectly state that completedActions is below targetActions when completedActions is equal to or greater than targetActions.
 
 Output example shape only:
