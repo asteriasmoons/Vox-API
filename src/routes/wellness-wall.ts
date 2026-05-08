@@ -49,6 +49,22 @@ router.post("/wellness-wall", async (req, res) => {
       return res.status(500).json({ error: "Missing GROQ_WALL_KEY" });
     }
 
+    const derivedData = {
+      ...body,
+      water: {
+        ...body.water,
+        goalMet: body.water.currentOz >= body.water.goalOz,
+      },
+      steps: {
+        ...body.steps,
+        goalMet: body.steps.currentSteps >= body.steps.goalSteps,
+      },
+      habits: {
+        ...body.habits,
+        fullyCompleted: body.habits.completedActions >= body.habits.targetActions,
+      },
+    };
+
     const prompt = `
 Write four Wellness Wall insights for a self-care dashboard.
 
@@ -68,7 +84,22 @@ General rules:
 - Do not diagnose, moralize, exaggerate, or overstate.
 - Keep the tone warm, grounded, neutral, and observant.
 - Do not shame low numbers.
-- If a value is low or missing, describe it neutrally (e.g., "still in progress" or "not yet logged").
+- Never sound judgmental, disappointed, critical, scolding, harsh, or corrective.
+- Never imply failure, laziness, weakness, irresponsibility, lack of discipline, or personal inadequacy.
+- Do not frame low numbers as “bad,” “concerning,” “not enough,” or “behind.”
+- Do not compare the user against an ideal standard or expectation.
+- Do not use guilt-based language or pressure-based wording.
+- Avoid phrasing that sounds like performance evaluation, productivity scoring, or behavioral criticism.
+- Do not use passive-aggressive wording or subtle disappointment.
+- Treat all data neutrally and compassionately, especially when progress is low or partially complete.
+- Prefer observational language over evaluative language.
+- Use wording that feels emotionally safe, supportive, calm, and non-punitive.
+- The tone should feel reflective and understanding, not corrective or managerial.
+- Avoid language that sounds like a lecture, warning, or self-help coach.
+- Do not overpraise or infantilize the user either; keep the tone grounded and emotionally intelligent.
+- Frame observations as neutral patterns or states, not personal shortcomings.
+- Speak about the data, not the user's character.
+- If a value is low or missing, describe it neutrally (e.g., "still in progress" or "not yet logged") without implying failure or deficiency.
 
 Each category must feel distinct and purposeful. Do not simply summarize the data.
 Each insight should:
@@ -86,13 +117,23 @@ Water:
 - Focus on hydration progress relative to the goal.
 - Interpret how this level of hydration may affect energy or physical comfort.
 
+- If currentOz is greater than or equal to goalOz, acknowledge that the hydration goal has been met or exceeded.
+- Never incorrectly state that currentOz is below goalOz when currentOz is equal to or greater than goalOz.
+
 Steps:
 - Focus on movement level relative to the goal.
 - Describe whether movement is light, steady, or strong today.
 
+- If currentSteps is greater than or equal to goalSteps, the insight must acknowledge that the step goal has been met or exceeded.
+- If currentSteps is below goalSteps, describe movement neutrally without framing it negatively.
+- Never incorrectly state that currentSteps is below goalSteps when currentSteps is equal to or greater than goalSteps.
+
 Habits:
 - Focus on routine follow-through.
 - Describe whether routines are holding, partially complete, or still open.
+
+- If completedActions is equal to or greater than targetActions, acknowledge that routines are fully completed today.
+- Never incorrectly state that completedActions is below targetActions when completedActions is equal to or greater than targetActions.
 
 Output example shape only:
 {
@@ -103,7 +144,7 @@ Output example shape only:
 }
 
 Data:
-${JSON.stringify(body, null, 2)}
+${JSON.stringify(derivedData, null, 2)}
 `;
 
     const aiResponse = await fetch(
