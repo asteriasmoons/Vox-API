@@ -16,6 +16,7 @@ import userRouter from "./routes/user-routes";
 import { restoreActiveSprintTimers } from "./services/sprint-service";
 import wellnessWallRoutes from "./routes/wellness-wall";
 import spiritualRoutes from "./routes/spiritual";
+import moodRoutes from "./routes/mood";
 
 dotenv.config();
 
@@ -47,6 +48,7 @@ app.use("/api/sprint", createSprintRouter(io));
 app.use("/api/user", userRouter);
 app.use("/api", wellnessWallRoutes);
 app.use("/api/spiritual", spiritualRoutes);
+app.use("/api/mood", moodRoutes);
 
 io.on("connection", (socket) => {
   socket.on("buddy:join_room", (groupId: string) => {
