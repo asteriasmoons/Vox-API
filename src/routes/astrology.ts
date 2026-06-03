@@ -2,7 +2,7 @@ import { Router } from "express";
 
 const router = Router();
 
-const API_NINJAS_URL = "https://api.api-ninjas.com/v1/horoscope";
+const OHMANDA_URL = "https://ohmanda.com/api/horoscope";
 
 const VALID_SIGNS = new Set([
   "aries",
@@ -39,33 +39,34 @@ router.post("/horoscope", async (req, res) => {
       return res.status(400).json({ error: "Invalid zodiac sign" });
     }
 
-    const apiKey = process.env.API_NINJAS_KEY || "";
-    if (!apiKey) {
-      return res.status(500).json({ error: "Missing API_NINJAS_KEY" });
-    }
-
-    const url = `${API_NINJAS_URL}?zodiac=${encodeURIComponent(sign)}`;
+    const url = `${OHMANDA_URL}/${encodeURIComponent(sign)}`;
 
     const response = await fetch(url, {
       method: "GET",
-      headers: {
-        "X-Api-Key": apiKey,
-      },
     });
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      return res.status(500).json({
-        error: "Failed to fetch horoscope",
+      return res.status(502).json({
+        error: "Failed to fetch horoscope from provider",
         details: text || response.statusText,
       });
     }
 
     const data: any = await response.json();
 
+    const horoscope = String(data?.horoscope || "").trim();
+
+    if (!horoscope) {
+      return res.status(502).json({
+        error: "Horoscope provider returned an empty horoscope",
+        details: data,
+      });
+    }
+
     return res.json({
-      sign: data?.zodiac || sign,
-      message: String(data?.horoscope || "").trim(),
+      sign: data?.sign || sign,
+      message: horoscope,
       date: data?.date || null,
     });
   } catch (error) {
