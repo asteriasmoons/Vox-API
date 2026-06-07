@@ -108,8 +108,9 @@ router.post("/analyze", async (req, res) => {
     const userId = String(req.body?.userId || "").trim();
     const bookId = String(req.body?.bookId || "").trim();
     const entries: { title: string; body: string }[] = req.body?.entries ?? [];
+    const dateKeyOverride = String(req.body?.dateKey || "").trim();
 
-    console.log("[analyze] userId:", userId, "bookId:", bookId, "entries count:", entries.length);
+    console.log("[analyze] userId:", userId, "bookId:", bookId, "entries count:", entries.length, "dateKey:", dateKeyOverride || "(today)");
     if (entries.length > 0 && entries[0]) {
       const first = entries[0] as { title: string; body: string };
       console.log("[analyze] first entry body length:", first.body?.length);
@@ -123,30 +124,16 @@ router.post("/analyze", async (req, res) => {
       return res.status(400).json({ error: "No entries provided" });
     }
 
-    const dateKey = chicagoDateKey(new Date());
-
-    // Return cached result if already analyzed today for this book
-    const existing = await DailyJournalAnalysis.findOne({ userId, bookId, dateKey }).lean();
-    if (existing) {
-      return res.json({
-        themes: existing.themes,
-        mood: existing.mood,
-        reflection: existing.reflection,
-        dateKey,
-        cached: true,
-      });
-    }
+    const dateKey = dateKeyOverride || chicagoDateKey(new Date());
 
     const result = await generateJournalAnalysis(entries);
 
-    await DailyJournalAnalysis.create({
-      userId,
-      bookId,
-      dateKey,
-      themes: result.themes,
-      mood: result.mood,
-      reflection: result.reflection,
-    });
+    // Upsert: overwrite any existing analysis for this date
+    await DailyJournalAnalysis.findOneAndUpdate(
+      { userId, bookId, dateKey },
+      { themes: result.themes, mood: result.mood, reflection: result.reflection },
+      { upsert: true }
+    );
 
     return res.json({
       themes: result.themes,
