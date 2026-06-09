@@ -2,63 +2,72 @@ import { Router } from "express";
 
 const router = Router();
 
-const BIG_BOOK_API_BASE_URL = "https://api.bigbookapi.com";
-const API_LEAGUE_API_BASE_URL = "https://api.apileague.com";
+const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
+const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
+const GOOGLE_BOOKS_SEARCH_URL = "https://www.googleapis.com/books/v1/volumes";
+
 const MIN_RECOMMENDATION_YEAR = 2020;
-const SEARCH_CANDIDATE_COUNT = 30;
 const FINAL_RECOMMENDATION_COUNT = 10;
+const AI_CANDIDATE_COUNT = 18;
 
-type BigBookAuthor = {
-  id?: number;
-  name?: string | null;
-};
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 
-type BigBookRating = {
-  average?: number | string | null;
-};
-
-type BigBookSearchBook = {
-  id?: number;
-  title?: string | null;
-  subtitle?: string | null;
-  image?: string | null;
-  authors?: BigBookAuthor[] | null;
-  rating?: BigBookRating | null;
-};
-
-type BigBookDetailBook = BigBookSearchBook & {
-  description?: string | null;
-  publish_date?: number | string | null;
-  number_of_pages?: number | string | null;
-};
-
-type BigBookSearchResponse = {
-  available?: number;
-  number?: number;
-  offset?: number;
-  books?: unknown[];
-};
-
-type BigBookSimilarResponse = {
-  similar_books?: unknown[];
-  books?: unknown[];
-};
-
-type ApiLeagueSimilarResponse = {
-  similar_books?: unknown[];
-  books?: unknown[];
+type AiBookCandidate = {
+  title: string;
+  author?: string;
+  reason?: string;
 };
 
 type LumeyBookRec = {
   title: string;
   author: string;
   summary: string;
-  bigBookId?: number | undefined;
   coverUrl?: string | undefined;
   pages?: number | undefined;
   releaseYear?: number | undefined;
   rating?: number | undefined;
   tags?: string[] | undefined;
+  source?: string | undefined;
+};
+
+type GroqChatResponse = {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+    } | null;
+  }>;
+};
+
+type OpenLibraryDoc = {
+  title?: string;
+  author_name?: string[];
+  first_publish_year?: number;
+  cover_i?: number;
+  subject?: string[];
+};
+
+type OpenLibrarySearchResponse = {
+  docs?: OpenLibraryDoc[];
+};
+
+type GoogleVolumeInfo = {
+  title?: string;
+  authors?: string[];
+  description?: string;
+  publishedDate?: string;
+  pageCount?: number;
+  categories?: string[];
+  averageRating?: number;
+  imageLinks?: {
+    thumbnail?: string;
+    smallThumbnail?: string;
+  };
+};
+
+type GoogleBooksResponse = {
+  items?: Array<{
+    volumeInfo?: GoogleVolumeInfo;
+  }>;
 };
 
 function cleanText(value: unknown): string {
@@ -70,246 +79,313 @@ function firstNumber(value: unknown): number | undefined {
   return typeof num === "number" && Number.isFinite(num) ? num : undefined;
 }
 
-function normalizeGenre(input: string): string | undefined {
-  const value = input.trim().toLowerCase();
+function extractYear(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
 
-  const genreMap: Record<string, string> = {
-    action: "action",
-    adventure: "adventure",
-    biography: "biography",
-    classics: "classics",
-    contemporary: "contemporary",
-    crime: "crime",
-    dystopia: "dystopia",
-    fantasy: "fantasy",
-    fiction: "fiction",
-    folklore: "folklore",
-    graphic: "graphic_novel",
-    "graphic novel": "graphic_novel",
-    historical: "historical_fiction",
-    "historical fiction": "historical_fiction",
-    horror: "horror",
-    humor: "humor",
-    lgbtq: "lgbtq",
-    memoir: "memoir",
-    mystery: "mystery",
-    mythology: "mythology",
-    nonfiction: "nonfiction",
-    "non fiction": "nonfiction",
-    "non-fiction": "nonfiction",
-    occult: "occult",
-    paranormal: "paranormal",
-    poetry: "poetry",
-    romance: "romance",
-    scifi: "science_fiction",
-    "sci fi": "science_fiction",
-    "sci-fi": "science_fiction",
-    "science fiction": "science_fiction",
-    thriller: "thriller",
-    witchcraft: "witchcraft",
-    ya: "young_adult",
-    "young adult": "young_adult",
-  };
-
-  return genreMap[value];
+  const match = value.match(/\b(19|20)\d{2}\b/);
+  return match ? Number(match[0]) : undefined;
 }
 
-function flattenSearchBooks(value: unknown): BigBookSearchBook[] {
-  if (!Array.isArray(value)) return [];
-
+function normalizeTitle(value: string): string {
   return value
-    .flatMap((item) => {
-      if (Array.isArray(item)) return item;
-      return [item];
-    })
-    .filter((item): item is BigBookSearchBook => {
-      return Boolean(item && typeof item === "object" && cleanText((item as BigBookSearchBook).title));
-    });
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function authorsText(authors: BigBookAuthor[] | null | undefined): string {
-  if (!Array.isArray(authors)) return "";
+function normalizeAuthor(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  return authors
-    .map((author) => cleanText(author?.name))
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return values
+    .map((value) => cleanText(value))
     .filter(Boolean)
-    .filter((name, index, arr) => arr.indexOf(name) === index)
-    .slice(0, 3)
-    .join(", ");
-}
-
-function toLumeyRec(book: BigBookDetailBook | BigBookSearchBook): LumeyBookRec | null {
-  const title = cleanText(book.title);
-  if (!title) return null;
-
-  const subtitle = cleanText(book.subtitle);
-  const description = cleanText((book as BigBookDetailBook).description);
-
-  const summary = description
-    ? description.length > 1500
-      ? description.slice(0, 1500).trim() + "…"
-      : description
-    : subtitle || "No description available.";
-
-  return {
-    title,
-    author: authorsText(book.authors),
-    summary,
-    bigBookId: firstNumber(book.id),
-    coverUrl: cleanText(book.image) || undefined,
-    pages: firstNumber((book as BigBookDetailBook).number_of_pages),
-    releaseYear: firstNumber((book as BigBookDetailBook).publish_date),
-    rating: firstNumber(book.rating?.average),
-    tags: [],
-  };
-}
-
-async function bigBookFetch<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
-  const apiKey = process.env.BIG_BOOK_API_KEY || process.env.API_LEAGUE_API_KEY || "";
-
-  if (!apiKey) {
-    throw new Error("Missing BIG_BOOK_API_KEY environment variable");
-  }
-
-  const url = new URL(`${BIG_BOOK_API_BASE_URL}${path}`);
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && String(value).trim()) {
-      url.searchParams.set(key, String(value));
-    }
-  }
-
-  console.log("Big Book request:", url.pathname, Object.fromEntries(url.searchParams.entries()));
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "x-api-key": apiKey,
-      Accept: "application/json",
-    },
-  });
-
-  const text = await response.text();
-  const json = text ? JSON.parse(text) : null;
-
-  if (!response.ok) {
-    console.error("Big Book API error:", {
-      status: response.status,
-      statusText: response.statusText,
-      body: json,
-    });
-
-    throw new Error(
-      JSON.stringify({
-        status: response.status,
-        statusText: response.statusText,
-        body: json,
-      })
-    );
-  }
-
-  return json as T;
-}
-
-async function apiLeagueFetch<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
-  const apiKey = process.env.API_LEAGUE_API_KEY || "";
-
-  if (!apiKey) {
-    throw new Error("Missing API_LEAGUE_API_KEY environment variable");
-  }
-
-  const url = new URL(`${API_LEAGUE_API_BASE_URL}${path}`);
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && String(value).trim()) {
-      url.searchParams.set(key, String(value));
-    }
-  }
-
-  console.log("API League request:", url.pathname, Object.fromEntries(url.searchParams.entries()));
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "x-api-key": apiKey,
-      Accept: "application/json",
-    },
-  });
-
-  const text = await response.text();
-  const json = text ? JSON.parse(text) : null;
-
-  if (!response.ok) {
-    console.error("API League API error:", {
-      status: response.status,
-      statusText: response.statusText,
-      body: json,
-    });
-
-    throw new Error(
-      JSON.stringify({
-        status: response.status,
-        statusText: response.statusText,
-        body: json,
-      })
-    );
-  }
-
-  return json as T;
-}
-
-async function fetchBookDetails(book: BigBookSearchBook): Promise<BigBookDetailBook | BigBookSearchBook> {
-  const id = firstNumber(book.id);
-  if (!id) return book;
-
-  try {
-    return await bigBookFetch<BigBookDetailBook>(`/${id}`);
-  } catch (error) {
-    console.error("Big Book detail fetch failed:", error);
-    return book;
-  }
-}
-
-async function fetchSimilarBooks(book: BigBookSearchBook): Promise<BigBookSearchBook[]> {
-  const id = firstNumber(book.id);
-  if (!id) return [];
-
-  try {
-    const similarData = await bigBookFetch<BigBookSimilarResponse>(`/${id}/similar`);
-    const rawSimilarBooks = similarData.similar_books ?? similarData.books ?? [];
-    return flattenSearchBooks(rawSimilarBooks);
-  } catch (error) {
-    console.error("Big Book similar fetch failed:", error);
-    return [];
-  }
-}
-
-async function fetchApiLeagueSimilarBooks(book: BigBookSearchBook): Promise<BigBookSearchBook[]> {
-  const id = firstNumber(book.id);
-  if (!id) return [];
-
-  try {
-    const similarData = await apiLeagueFetch<ApiLeagueSimilarResponse>("/list-similar-books", {
-      id,
-    });
-
-    const rawSimilarBooks = similarData.similar_books ?? similarData.books ?? [];
-    return flattenSearchBooks(rawSimilarBooks);
-  } catch (error) {
-    console.error("API League similar-books fetch failed:", error);
-    return [];
-  }
+    .filter((value, index, arr) => arr.indexOf(value) === index);
 }
 
 function dedupeRecommendations(recs: LumeyBookRec[]): LumeyBookRec[] {
   const seen = new Set<string>();
 
   return recs.filter((rec) => {
-    const key = `${rec.title.toLowerCase()}|${rec.author.toLowerCase()}`;
+    const key = `${normalizeTitle(rec.title)}|${normalizeAuthor(rec.author)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function parseAiCandidates(rawContent: string): AiBookCandidate[] {
+  const content = rawContent.trim();
+
+  try {
+    const parsed = JSON.parse(content);
+    const books = Array.isArray(parsed) ? parsed : parsed.books;
+
+    if (Array.isArray(books)) {
+      return books
+        .map((book) => ({
+          title: cleanText(book?.title),
+          author: cleanText(book?.author),
+          reason: cleanText(book?.reason),
+        }))
+        .filter((book) => book.title);
+    }
+  } catch {
+    const jsonMatch = content.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const books = Array.isArray(parsed) ? parsed : parsed.books;
+
+        if (Array.isArray(books)) {
+          return books
+            .map((book) => ({
+              title: cleanText(book?.title),
+              author: cleanText(book?.author),
+              reason: cleanText(book?.reason),
+            }))
+            .filter((book) => book.title);
+        }
+      } catch {
+        // Fall through to line parsing.
+      }
+    }
+  }
+
+  return content
+    .split("\n")
+    .map((line) => line.replace(/^[-*\d.\s]+/, "").trim())
+    .map((line) => {
+      const [titlePart, authorPart] = line.split(/\s+by\s+/i);
+      return {
+        title: cleanText(titlePart?.replace(/["“”]/g, "")),
+        author: cleanText(authorPart?.replace(/["“”]/g, "")),
+      };
+    })
+    .filter((book) => book.title);
+}
+
+async function groqRecommendCandidates(searchText: string): Promise<AiBookCandidate[]> {
+  const apiKey = process.env.GROQ_API_KEY || "";
+
+  if (!apiKey) {
+    throw new Error("Missing GROQ_API_KEY environment variable");
+  }
+
+  const prompt = `You are Lumey's book recommendation engine.
+
+The user searched for: "${searchText}"
+
+Generate ${AI_CANDIDATE_COUNT} genuinely useful book recommendations that match the user's request.
+
+Rules:
+- Prefer books first published in ${MIN_RECOMMENDATION_YEAR} or later.
+- Do not invent fake books.
+- Include a mix of popular and less obvious picks.
+- If the user typed a book title, recommend books with similar tone, genre, pacing, audience, and themes.
+- If the user typed a genre or vibe, recommend books that strongly fit that search.
+- Return JSON only.
+- Format: {"books":[{"title":"Book Title","author":"Author Name","reason":"Short reason"}]}`;
+
+  console.log("Groq recommendation request:", { searchText, model: GROQ_MODEL });
+
+  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      temperature: 0.7,
+      max_tokens: 1600,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You recommend real books and return strict JSON only. Do not include markdown, commentary, or extra prose.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    }),
+  });
+
+  const json = (await response.json().catch(() => null)) as GroqChatResponse | null;
+
+  if (!response.ok) {
+    console.error("Groq API error:", {
+      status: response.status,
+      statusText: response.statusText,
+      body: json,
+    });
+
+    throw new Error(
+      JSON.stringify({
+        status: response.status,
+        statusText: response.statusText,
+        body: json,
+      })
+    );
+  }
+
+  const content = cleanText(json?.choices?.[0]?.message?.content);
+  const candidates = parseAiCandidates(content).slice(0, AI_CANDIDATE_COUNT);
+
+  console.log("Groq candidates:", candidates.map((book) => `${book.title} by ${book.author || "Unknown"}`));
+
+  return candidates;
+}
+
+async function fetchJson<T>(url: URL): Promise<T> {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  const json = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      JSON.stringify({
+        status: response.status,
+        statusText: response.statusText,
+        body: json,
+      })
+    );
+  }
+
+  return json as T;
+}
+
+async function openLibraryLookup(candidate: AiBookCandidate): Promise<Partial<LumeyBookRec> | null> {
+  const url = new URL(OPEN_LIBRARY_SEARCH_URL);
+  const q = candidate.author ? `${candidate.title} ${candidate.author}` : candidate.title;
+
+  url.searchParams.set("q", q);
+  url.searchParams.set("language", "eng");
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("fields", "title,author_name,first_publish_year,cover_i,subject");
+
+  try {
+    const data = await fetchJson<OpenLibrarySearchResponse>(url);
+    const docs = Array.isArray(data.docs) ? data.docs : [];
+
+    const bestDoc = docs.find((doc) => {
+      const year = firstNumber(doc.first_publish_year);
+      return typeof year === "number" && year >= MIN_RECOMMENDATION_YEAR;
+    });
+
+    if (!bestDoc) return null;
+
+    const year = firstNumber(bestDoc.first_publish_year);
+    const coverId = firstNumber(bestDoc.cover_i);
+
+    return {
+      title: cleanText(bestDoc.title),
+      author: Array.isArray(bestDoc.author_name) ? bestDoc.author_name.slice(0, 3).join(", ") : cleanText(candidate.author),
+      releaseYear: year,
+      coverUrl: coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : undefined,
+      tags: Array.isArray(bestDoc.subject) ? bestDoc.subject.slice(0, 8) : [],
+      source: "Open Library",
+    };
+  } catch (error) {
+    console.error("Open Library lookup failed:", candidate, error);
+    return null;
+  }
+}
+
+async function googleBooksLookup(candidate: AiBookCandidate): Promise<Partial<LumeyBookRec> | null> {
+  const url = new URL(GOOGLE_BOOKS_SEARCH_URL);
+  const q = candidate.author ? `intitle:${candidate.title} inauthor:${candidate.author}` : candidate.title;
+  const apiKey = process.env.GOOGLE_BOOKS_API_KEY || "";
+
+  url.searchParams.set("q", q);
+  url.searchParams.set("printType", "books");
+  url.searchParams.set("langRestrict", "en");
+  url.searchParams.set("maxResults", "5");
+
+  if (apiKey) {
+    url.searchParams.set("key", apiKey);
+  }
+
+  try {
+    const data = await fetchJson<GoogleBooksResponse>(url);
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    const volumes = items
+      .map((item) => item.volumeInfo)
+      .filter((volume): volume is GoogleVolumeInfo => Boolean(volume?.title));
+
+    const bestVolume = volumes.find((volume) => {
+      const year = extractYear(volume.publishedDate);
+      return typeof year === "number" && year >= MIN_RECOMMENDATION_YEAR;
+    });
+
+    if (!bestVolume) return null;
+
+    const year = extractYear(bestVolume.publishedDate);
+    const imageUrl = cleanText(bestVolume.imageLinks?.thumbnail) || cleanText(bestVolume.imageLinks?.smallThumbnail);
+
+    return {
+      title: cleanText(bestVolume.title),
+      author: Array.isArray(bestVolume.authors) ? bestVolume.authors.slice(0, 3).join(", ") : cleanText(candidate.author),
+      summary: cleanText(bestVolume.description),
+      coverUrl: imageUrl ? imageUrl.replace("http://", "https://") : undefined,
+      pages: firstNumber(bestVolume.pageCount),
+      releaseYear: year,
+      rating: firstNumber(bestVolume.averageRating),
+      tags: Array.isArray(bestVolume.categories) ? bestVolume.categories : [],
+      source: "Google Books",
+    };
+  } catch (error) {
+    console.error("Google Books lookup failed:", candidate, error);
+    return null;
+  }
+}
+
+async function buildRecommendation(candidate: AiBookCandidate): Promise<LumeyBookRec | null> {
+  const [openLibrary, googleBooks] = await Promise.all([
+    openLibraryLookup(candidate),
+    googleBooksLookup(candidate),
+  ]);
+
+  const title = cleanText(googleBooks?.title) || cleanText(openLibrary?.title) || cleanText(candidate.title);
+  const author = cleanText(googleBooks?.author) || cleanText(openLibrary?.author) || cleanText(candidate.author);
+  const releaseYear = googleBooks?.releaseYear ?? openLibrary?.releaseYear;
+
+  if (!title || !releaseYear || releaseYear < MIN_RECOMMENDATION_YEAR) {
+    return null;
+  }
+
+  const tags = uniqueStrings([...(googleBooks?.tags ?? []), ...(openLibrary?.tags ?? [])]).slice(0, 10);
+
+  return {
+    title,
+    author,
+    summary:
+      cleanText(googleBooks?.summary) ||
+      cleanText(candidate.reason) ||
+      "No description available.",
+    coverUrl: googleBooks?.coverUrl ?? openLibrary?.coverUrl,
+    pages: googleBooks?.pages,
+    releaseYear,
+    rating: googleBooks?.rating,
+    tags,
+    source: googleBooks?.source ?? openLibrary?.source,
+  };
 }
 
 /**
@@ -325,86 +401,22 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Genre is required" });
     }
 
-    const genre = genreRaw.slice(0, 80);
-    const normalizedGenre = normalizeGenre(genre);
-    const query = normalizedGenre ? `popular ${genre} books` : genre;
+    const searchText = genreRaw.slice(0, 160);
+    const candidates = await groqRecommendCandidates(searchText);
 
-    const searchData = await bigBookFetch<BigBookSearchResponse>("/search-books", {
-      query,
-      genres: normalizedGenre,
-      number: SEARCH_CANDIDATE_COUNT,
-      offset: 0,
-    });
+    if (candidates.length === 0) {
+      return res.json({ recs: [] });
+    }
 
-    const searchBooks = flattenSearchBooks(searchData.books);
-
-    console.log("Big Book available:", searchData.available ?? 0);
-    console.log("Big Book usable search books:", searchBooks.length);
-
-    const detailedBooks = await Promise.all(
-      searchBooks.slice(0, SEARCH_CANDIDATE_COUNT).map(fetchBookDetails)
-    );
-
-    const mappedRecs = detailedBooks
-      .map(toLumeyRec)
-      .filter((rec): rec is LumeyBookRec => Boolean(rec));
+    const recs = dedupeRecommendations(
+      (await Promise.all(candidates.map(buildRecommendation)))
+        .filter((rec): rec is LumeyBookRec => Boolean(rec))
+    ).slice(0, FINAL_RECOMMENDATION_COUNT);
 
     console.log(
-      "Big Book recommendation years:",
-      mappedRecs.map((rec) => ({ title: rec.title, releaseYear: rec.releaseYear ?? null }))
+      "Final Lumey recommendations:",
+      recs.map((rec) => ({ title: rec.title, author: rec.author, releaseYear: rec.releaseYear }))
     );
-
-    let recs = mappedRecs
-      .filter((rec) => typeof rec.releaseYear === "number" && rec.releaseYear >= MIN_RECOMMENDATION_YEAR)
-      .slice(0, FINAL_RECOMMENDATION_COUNT);
-
-    console.log("Big Book recommendations after year filter:", recs.length);
-
-    if (recs.length < FINAL_RECOMMENDATION_COUNT && searchBooks.length > 0) {
-      console.log("Big Book recommendation count low. Trying similar-books fallback.");
-
-      const similarSeeds = searchBooks.slice(0, 3);
-      const similarBooksNested = await Promise.all(similarSeeds.map(fetchSimilarBooks));
-      const similarBooks = similarBooksNested.flat();
-
-      console.log("Big Book similar books returned:", similarBooks.length);
-
-      const similarDetails = await Promise.all(
-        similarBooks.slice(0, SEARCH_CANDIDATE_COUNT).map(fetchBookDetails)
-      );
-
-      const similarRecs = similarDetails
-        .map(toLumeyRec)
-        .filter((rec): rec is LumeyBookRec => Boolean(rec))
-        .filter((rec) => typeof rec.releaseYear === "number" && rec.releaseYear >= MIN_RECOMMENDATION_YEAR);
-
-      recs = dedupeRecommendations([...recs, ...similarRecs]).slice(0, FINAL_RECOMMENDATION_COUNT);
-
-      console.log("Big Book recommendations after similar fallback:", recs.length);
-    }
-
-    if (recs.length < FINAL_RECOMMENDATION_COUNT && searchBooks.length > 0) {
-      console.log("Recommendation count still low. Trying API League similar-books fallback.");
-
-      const apiLeagueSeeds = searchBooks.slice(0, 3);
-      const apiLeagueBooksNested = await Promise.all(apiLeagueSeeds.map(fetchApiLeagueSimilarBooks));
-      const apiLeagueBooks = apiLeagueBooksNested.flat();
-
-      console.log("API League similar books returned:", apiLeagueBooks.length);
-
-      const apiLeagueDetails = await Promise.all(
-        apiLeagueBooks.slice(0, SEARCH_CANDIDATE_COUNT).map(fetchBookDetails)
-      );
-
-      const apiLeagueRecs = apiLeagueDetails
-        .map(toLumeyRec)
-        .filter((rec): rec is LumeyBookRec => Boolean(rec))
-        .filter((rec) => typeof rec.releaseYear === "number" && rec.releaseYear >= MIN_RECOMMENDATION_YEAR);
-
-      recs = dedupeRecommendations([...recs, ...apiLeagueRecs]).slice(0, FINAL_RECOMMENDATION_COUNT);
-
-      console.log("Recommendations after API League fallback:", recs.length);
-    }
 
     return res.json({ recs });
   } catch (err) {
