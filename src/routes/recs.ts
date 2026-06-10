@@ -15,7 +15,7 @@ const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 type AiBookCandidate = {
   title: string;
   author?: string;
-  reason?: string;
+  summary?: string;
 };
 
 type LumeyBookRec = {
@@ -133,7 +133,7 @@ function parseAiCandidates(rawContent: string): AiBookCandidate[] {
         .map((book) => ({
           title: cleanText(book?.title),
           author: cleanText(book?.author),
-          reason: cleanText(book?.reason),
+          summary: cleanText(book?.summary),
         }))
         .filter((book) => book.title);
     }
@@ -150,7 +150,7 @@ function parseAiCandidates(rawContent: string): AiBookCandidate[] {
             .map((book) => ({
               title: cleanText(book?.title),
               author: cleanText(book?.author),
-              reason: cleanText(book?.reason),
+              summary: cleanText(book?.summary),
             }))
             .filter((book) => book.title);
         }
@@ -168,6 +168,7 @@ function parseAiCandidates(rawContent: string): AiBookCandidate[] {
       return {
         title: cleanText(titlePart?.replace(/["“”]/g, "")),
         author: cleanText(authorPart?.replace(/["“”]/g, "")),
+        summary: "",
       };
     })
     .filter((book) => book.title);
@@ -206,11 +207,13 @@ Avoid:
 Quality rules:
 - If the user typed a book title, every recommendation should feel like it belongs on a "read this next if you liked that" shelf.
 - If the user typed a genre, vibe, trope, or theme, recommend books that strongly match that exact request.
-- Include a short reason that explains the similarity in concrete terms, such as shared tropes, pacing, tone, relationship dynamic, magic system, themes, or emotional feel.
+- Include a proper book summary for each recommended book, not a similarity explanation.
+- The summary should describe the recommended book itself in 2-3 clear sentences.
+- Do not say phrases like "same kind of book," "similar to the searched book," "if you liked that," or "this is a good match because."
 - Use current, real books with verifiable title and author names.
 
 Return JSON only.
-Format: {"books":[{"title":"Book Title","author":"Author Name","reason":"Specific similarity reason"}]}`;
+Format: {"books":[{"title":"Book Title","author":"Author Name","summary":"Proper 2-3 sentence summary of this recommended book"}]}`;
 
   console.log("Groq recommendation request:", { searchText, model: GROQ_MODEL });
 
@@ -394,7 +397,7 @@ async function buildRecommendation(candidate: AiBookCandidate): Promise<LumeyBoo
     author,
     summary:
       cleanText(googleBooks?.summary) ||
-      cleanText(candidate.reason) ||
+      cleanText(candidate.summary) ||
       "No description available.",
     coverUrl: googleBooks?.coverUrl ?? openLibrary?.coverUrl,
     pages: googleBooks?.pages,
