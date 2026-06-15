@@ -59,17 +59,10 @@ router.post("/", async (req, res) => {
         ],
         temperature: 0.1,
         max_tokens: 300,
-        tools: [
-          {
-            type: "web_search",
-            web_search: {
-              search_settings: {
-                include_domains: [domain],
-                country: "united states",
-              },
-            },
-          },
-        ],
+        search_settings: {
+          include_domains: [domain],
+          country: "united states",
+        },
       }),
     });
 
