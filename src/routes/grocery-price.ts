@@ -51,16 +51,12 @@ router.post("/", async (req, res) => {
         model: MODEL,
         messages: [
           {
-            role: "system",
-            content: `You are a grocery price lookup assistant. When asked about a product at a specific store, search for it and respond with ONLY a JSON array of up to 5 matching products in this exact format: [{"price": 3.49, "name": "Great Value Hamburger Buns 8ct"}, {"price": 4.29, "name": "Sara Lee Brioche Buns 8ct"}]. Each price should be the shelf price in USD as a number. If no results are found, respond: []. Do NOT include any other text, explanation, or markdown.`,
-          },
-          {
             role: "user",
-            content: `Search for ${ingredient} at ${storeName}. Show me the available options with prices.`,
+            content: `Search ${storeName} for "${ingredient}". Return ONLY a JSON array of products with prices, no other text: [{"price": 3.49, "name": "Product Name"}]. Max 5 results. If none found return [].`,
           },
         ],
         temperature: 0.1,
-        max_tokens: 500,
+        max_tokens: 300,
         search_settings: {
           include_domains: [domain],
           country: "united states",
