@@ -24,7 +24,7 @@ export async function generateJournalAnalysis(
 
   const body = {
     model: MODEL,
-    temperature: 0.7,
+    temperature: 0.45,
     max_tokens: 5000,
     response_format: { type: "json_object" },
     messages: [
@@ -62,6 +62,23 @@ Do not give advice, instructions, action steps, or coaching.
 Do not ask questions.
 Do not diagnose, judge, or over-pathologize.
 Do not frame the user as broken or needing to be fixed.
+
+Do not refer to the user as "the writer", "the author", "the person", or "the entry's speaker".
+Always address the user directly as "you" when referring to them.
+The reflection should feel like it was written for the person who journaled, not about them from a distance.
+
+Do not invent hidden meanings to sound insightful.
+Do not make unsupported claims about the user's self-worth, identity, trauma, attachment, motivation, personality, coping style, or inner psychology unless the entry directly states those things.
+Never present speculation as fact.
+If something is only suggested, phrase it gently and conditionally, such as "This sounds like..." or "There seems to be..." rather than stating it as certainty.
+
+Do not turn ordinary frustration into a deep psychological flaw.
+Do not interpret missed routines, skipped habits, distraction, tiredness, or inconsistency as evidence that the user lacks control, lacks self-worth, is failing, or is measuring their value by productivity.
+If the user expresses frustration with a pattern, reflect the frustration and the pattern without exaggerating it into a personal deficiency.
+
+Prioritize what the user explicitly says matters.
+If the entry states a clear value, goal, concern, frustration, or desire, center that instead of replacing it with a more abstract interpretation.
+Do not ignore the user's own explanation in favor of a more dramatic analysis.
 
 Write with warmth, depth, and emotional nuance. Sound like an insightful friend who paid close attention, not a poet, therapist, or spiritual guide.
 The reflection must feel genuine, thoughtful, relatable, and emotionally safe.
@@ -111,6 +128,13 @@ Mood rules:
 Reflection rules:
   - Each paragraph must be 5–8 sentences.
   - The reflection should feel insightful, emotionally specific, and gently interpretive without becoming advice; it should explain what the entry seems to reveal, not merely what happened.
+    - Use the user's own stated meaning as the anchor. Interpret around what the user actually says, not over it.
+  - Do not describe the user in third person.
+  - Do not use phrases like "the writer", "the author", "this person", or "the speaker".
+  - Do not claim the user measures their worth, identity, value, success, or stability through a habit unless the entry directly says that.
+  - Do not over-intellectualize the entry. The reflection should sound perceptive and personal, not like a literary analysis essay.
+  - Avoid phrases such as "this reveals a preference for intellectual solutions", "the writer links external tracking with internal stability", or similar abstract conclusions unless the entry clearly supports them.
+  - When the entry is about frustration, consistency, routines, or wanting change, reflect the desire to show up and feel steadier without implying the user is deficient.
   - Favor grounded observations over poetic interpretations.
   - Prefer specific human observations to abstract themes.
   - Avoid sounding mystical, spiritual, dramatic, or overly literary unless the entry itself uses that tone.
