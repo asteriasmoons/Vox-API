@@ -1,6 +1,5 @@
 import { Router, Request, Response } from "express";
-import { authMiddleware } from "../middleware/authMiddleware";
-import { validateChallengeTheme } from "../services/challengeThemeValidationService";
+import { validateLumeyChallengeTheme } from "../services/lumeyChallengeThemeValidationService";
 
 const router = Router();
 
@@ -33,7 +32,6 @@ interface ValidateThemeResponseBody {
 
 router.post(
   "/validate-theme",
-  authMiddleware,
   async (
     req: Request<{}, ValidateThemeResponseBody, ValidateThemeRequestBody>,
     res: Response<ValidateThemeResponseBody>,
@@ -98,7 +96,7 @@ router.post(
         });
       }
 
-      const validationResult = await validateChallengeTheme({
+      const validationResult = await validateLumeyChallengeTheme({
         challengeTitle: challengeTitle.trim(),
         requirementText: requirementText.trim(),
         requiredThemes: cleanStringArray(requiredThemes),
