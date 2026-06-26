@@ -52,8 +52,16 @@ router.post(
   "/submissions/:submissionID/like",
   async (req: Request, res: Response) => {
     try {
+      const submissionID = String(req.params.submissionID || "").trim();
+
+      if (!submissionID) {
+        return res.status(400).json({
+          message: "submissionID is required.",
+        });
+      }
+
       const result = await toggleLike({
-        submissionID: req.params.submissionID,
+        submissionID,
         userID: req.body.userID,
       });
 
@@ -75,8 +83,16 @@ router.post(
   "/submissions/:submissionID/comments",
   async (req: Request, res: Response) => {
     try {
+      const submissionID = String(req.params.submissionID || "").trim();
+
+      if (!submissionID) {
+        return res.status(400).json({
+          message: "submissionID is required.",
+        });
+      }
+
       const comment = await addComment({
-        submissionID: req.params.submissionID,
+        submissionID,
         userID: req.body.userID,
         username: req.body.username,
         text: req.body.text,
@@ -98,7 +114,15 @@ router.post(
  */
 router.delete("/comments/:commentID", async (req: Request, res: Response) => {
   try {
-    await deleteComment(req.params.commentID);
+    const commentID = String(req.params.commentID || "").trim();
+
+    if (!commentID) {
+      return res.status(400).json({
+        message: "commentID is required.",
+      });
+    }
+
+    await deleteComment(commentID);
 
     return res.sendStatus(204);
   } catch (error: any) {
@@ -115,7 +139,15 @@ router.delete("/comments/:commentID", async (req: Request, res: Response) => {
  */
 router.get("/profiles/:userID", async (req: Request, res: Response) => {
   try {
-    const profile = await getUserProfile(req.params.userID);
+    const userID = String(req.params.userID || "").trim();
+
+    if (!userID) {
+      return res.status(400).json({
+        message: "userID is required.",
+      });
+    }
+
+    const profile = await getUserProfile(userID);
 
     return res.status(200).json(profile);
   } catch (error: any) {
@@ -132,7 +164,15 @@ router.get("/profiles/:userID", async (req: Request, res: Response) => {
  */
 router.put("/profiles/:userID", async (req: Request, res: Response) => {
   try {
-    const profile = await updateUserProfile(req.params.userID, req.body);
+    const userID = String(req.params.userID || "").trim();
+
+    if (!userID) {
+      return res.status(400).json({
+        message: "userID is required.",
+      });
+    }
+
+    const profile = await updateUserProfile(userID, req.body);
 
     return res.status(200).json(profile);
   } catch (error: any) {
