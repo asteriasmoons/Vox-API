@@ -11,6 +11,7 @@ import {
   toggleCommentLike,
   addFeedItemComment,
   deleteComment,
+  deleteFeedPost,
   getUserProfile,
   updateUserProfile,
   createAnnouncement,
@@ -102,6 +103,32 @@ router.post("/feed/posts", async (req: Request, res: Response) => {
 
     return res.status(400).json({
       message: error?.message ?? "Unable to create feed post.",
+    });
+  }
+});
+
+/**
+ * DELETE /api/lumey/challenges/feed/posts/:postID
+ * Deletes a normal user post and its feed item.
+ */
+router.delete("/feed/posts/:postID", async (req: Request, res: Response) => {
+  try {
+    const postID = String(req.params.postID || "").trim();
+
+    if (!postID) {
+      return res.status(400).json({
+        message: "postID is required.",
+      });
+    }
+
+    await deleteFeedPost(postID);
+
+    return res.sendStatus(204);
+  } catch (error: any) {
+    console.error("[lumey-challenges] delete feed post:", error);
+
+    return res.status(400).json({
+      message: error?.message ?? "Unable to delete feed post.",
     });
   }
 });

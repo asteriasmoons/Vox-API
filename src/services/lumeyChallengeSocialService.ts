@@ -267,6 +267,47 @@ export async function createFeedPost(input: any) {
   return feedItem;
 }
 
+export async function deleteFeedPost(postID: string) {
+  const cleanedPostID = cleanString(postID);
+
+  if (!cleanedPostID) {
+    throw new Error("postID is required.");
+  }
+
+  const post = await LumeyChallengePost.findById(cleanedPostID);
+
+  if (!post) {
+    throw new Error("Post not found.");
+  }
+
+  const feedItem = await LumeyChallengeFeedItem.findOne({
+    feedType: "post",
+    postID: post._id,
+  });
+
+  if (feedItem) {
+    await LumeyChallengeLike.deleteMany({
+      feedItemID: String(feedItem._id),
+    });
+
+    await LumeyChallengeComment.deleteMany({
+      feedItemID: String(feedItem._id),
+    });
+
+    await LumeyChallengeFeedItem.deleteOne({
+      _id: feedItem._id,
+    });
+  }
+
+  await LumeyChallengePost.deleteOne({
+    _id: post._id,
+  });
+
+  return {
+    deleted: true,
+  };
+}
+
 export async function toggleFeedItemLike(input: {
   feedItemID: string;
   userID: string;
