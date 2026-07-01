@@ -1,4 +1,4 @@
-import { Schema, model, Document } from "mongoose";
+import { Schema, model, Document, Model } from "mongoose";
 import { lunixiaDB } from "../config/databases";
 
 export interface DailyJournalAnalysisDoc extends Document {
@@ -29,8 +29,8 @@ DailyJournalAnalysisSchema.index(
   { unique: true },
 );
 
-export const DailyJournalAnalysis =
-  lunixiaDB.models.DailyJournalAnalysis ||
+export const DailyJournalAnalysis: Model<DailyJournalAnalysisDoc> =
+  (lunixiaDB.models.DailyJournalAnalysis as Model<DailyJournalAnalysisDoc>) ||
   lunixiaDB.model<DailyJournalAnalysisDoc>(
     "DailyJournalAnalysis",
     DailyJournalAnalysisSchema,

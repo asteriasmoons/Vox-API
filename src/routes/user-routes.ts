@@ -1,7 +1,7 @@
 // src/routes/user-routes.ts
 
 import { Router, Request, Response } from "express";
-import { UserProfile } from "../models/UserProfile";
+import { LumeyUserProfile, LunixiaUserProfile } from "../models/UserProfile";
 
 const router = Router();
 
@@ -22,13 +22,20 @@ router.post("/display-name", async (req: Request, res: Response) => {
     if (!displayName) return res.status(400).json({ success: false, error: "MISSING_DISPLAY_NAME" });
     if (displayName.length > 30) return res.status(400).json({ success: false, error: "DISPLAY_NAME_TOO_LONG" });
 
-    const profile = await UserProfile.findOneAndUpdate(
-      { userId },
-      { displayName },
-      { upsert: true, new: true },
-    );
+    const [lumeyProfile] = await Promise.all([
+      LumeyUserProfile.findOneAndUpdate(
+        { userId },
+        { displayName },
+        { upsert: true, new: true },
+      ),
+      LunixiaUserProfile.findOneAndUpdate(
+        { userId },
+        { displayName },
+        { upsert: true, new: true },
+      ),
+    ]);
 
-    return res.json({ success: true, profile });
+    return res.json({ success: true, profile: lumeyProfile });
   } catch (error) {
     return res.status(500).json({ success: false, error: "SERVER_ERROR" });
   }
@@ -40,8 +47,14 @@ router.get("/display-name/:userId", async (req: Request, res: Response) => {
     const userId = str(req.params.userId);
     if (!userId) return res.status(400).json({ success: false, error: "MISSING_USER_ID" });
 
-    const profile = await UserProfile.findOne({ userId });
-    return res.json({ success: true, displayName: profile?.displayName ?? null });
+    const profile =
+      (await LumeyUserProfile.findOne({ userId })) ??
+      (await LunixiaUserProfile.findOne({ userId }));
+
+    return res.json({
+      success: true,
+      displayName: profile?.displayName ?? null,
+    });
   } catch (error) {
     return res.status(500).json({ success: false, error: "SERVER_ERROR" });
   }

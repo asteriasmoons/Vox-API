@@ -1,4 +1,4 @@
-import { Schema, model, Document } from "mongoose";
+import { Schema, model, Document, Model } from "mongoose";
 import { lunixiaDB } from "../config/databases";
 
 export interface DailyPromptUsageDoc extends Document {
@@ -19,8 +19,8 @@ const DailyPromptUsageSchema = new Schema<DailyPromptUsageDoc>(
 
 DailyPromptUsageSchema.index({ userId: 1, dateKey: 1 }, { unique: true });
 
-export const DailyPromptUsage =
-  lunixiaDB.models.DailyPromptUsage ||
+export const DailyPromptUsage: Model<DailyPromptUsageDoc> =
+  (lunixiaDB.models.DailyPromptUsage as Model<DailyPromptUsageDoc>) ||
   lunixiaDB.model<DailyPromptUsageDoc>(
     "DailyPromptUsage",
     DailyPromptUsageSchema,
