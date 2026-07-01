@@ -24,7 +24,7 @@ export async function generateJournalAnalysis(
 
   const body = {
     model: MODEL,
-    temperature: 0.45,
+    temperature: 0.3,
     max_tokens: 5000,
     response_format: { type: "json_object" },
     messages: [
@@ -51,6 +51,11 @@ Focus on:
 - meaningful observations about the user's relationship to routines, people, body, money, creativity, rest, uncertainty, or comfort when those subjects appear
 
 Do not repeat details mechanically. Use meaningful specifics only when they support an interpretation, reveal a pattern, or make the reflection feel more accurate and personal.
+
+When using specific details, fact-check them against the entry before including them. Do not include a detail if the subject, owner, or meaning is uncertain.
+
+The reflection should never feel accurate in tone but wrong in facts. A plain accurate sentence is better than a beautiful incorrect one.
+
 Do not let one subject dominate the reflection unless the entry itself clearly revolves around that subject.
 Do not ignore quieter details, practical concerns, small moments, relationship context, body/health notes, creative details, spiritual details, or closing thoughts if they appear in the entry.
 Do not list what happened as a timeline.
@@ -68,6 +73,19 @@ Always address the user directly as "you" when referring to them.
 The reflection should feel like it was written for the person who journaled, not about them from a distance.
 
 Do not invent hidden meanings to sound insightful.
+Accuracy and entity tracking are more important than elegance.
+Before writing the reflection, mentally identify the named people, animals, apps, objects, and responsibilities mentioned in the entry. Track pronouns carefully.
+
+Never transfer an action, responsibility, medication, feeling, or possession from one named subject to another.
+If the entry says “Chip’s medicine,” “his medicine,” or “his dose” near references to Chip, preserve that as Chip’s medicine. Do not rewrite it as Jordan’s medicine or another person’s medicine.
+If a pronoun could refer to more than one subject, do not guess. Either avoid naming the subject or phrase it generally.
+
+Bad: “preparing Jordan’s medication doses”
+Good: “getting Chip’s medicine ready”
+Good if unclear: “preparing medicine for the evening routine”
+
+Preserve explicit names and relationships exactly as written unless the entry clearly states otherwise.
+
 Do not make unsupported claims about the user's self-worth, identity, trauma, attachment, motivation, personality, coping style, or inner psychology unless the entry directly states those things.
 Never present speculation as fact.
 If something is only suggested, phrase it gently and conditionally, such as "This sounds like..." or "There seems to be..." rather than stating it as certainty.
@@ -159,6 +177,9 @@ Reflection rules:
         content: `Here is my journal entry. Read it fully from beginning to end before responding. Reflect the full shape of the entry, including the major topics, emotional shifts, quieter details, and closing thoughts. Include enough specific context that the reflection feels genuinely connected to what I actually wrote, but do not turn it into a recap.
 
 Before writing the reflection, prioritize insight over summary. Notice what the entry reveals through the user's choices of detail, shifts in tone, ordinary routines, practical concerns, comforts, and repeated themes. The final reflection should help the user understand the meaning or pattern underneath the day, not simply retell the day.
+
+Important accuracy rule:
+Before analyzing, carefully track who or what each action belongs to. Do not reassign actions between people, pets, apps, or objects. If the entry mentions medicine for a pet, do not describe it as medicine for a person. If a pronoun is ambiguous, avoid naming the subject rather than guessing.
 
 ${entryText}`,
       },
