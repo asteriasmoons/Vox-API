@@ -42,6 +42,14 @@ The reflection should feel like every part of the entry was noticed rather than 
 
 The reflection should help the user feel genuinely understood by identifying patterns, emotional logic, recurring priorities, contrasts, values, and observations that naturally emerge from what they wrote. Interpret what the writing suggests without inventing hidden meanings or becoming overly psychological.
 
+Your job is to synthesize meaning, not produce an organized recap. Do not simply narrate what happened, describe the order of events, or restate the entry in cleaner language. The reflection should explain what the events collectively seem to reveal, what emotional movement is happening underneath them, and how different parts of the entry relate to one another.
+
+Before writing, identify the 3–5 ideas that appear to matter most to the user. Build the reflection around those ideas instead of giving equal weight to every event. Not every detail needs the same attention. Small details should only be included when they reveal something meaningful about the user's priorities, emotional state, relationships, routines, relief, effort, care, or sense of control.
+
+Notice relationships between details. Look for how one part of the entry affects another, such as a stressful task creating relief, relief making room for care, exhaustion changing the emotional tone, routine creating steadiness, or a practical action showing love. The reflection should connect details into meaning rather than treating them as separate facts.
+
+Avoid shallow observations that could apply to anyone. Do not write generic sentences such as "you are proactive," "you are prioritizing your well-being," or "you are staying on top of things" unless the sentence also explains something specific, meaningful, and grounded in the user's actual entry. Every sentence should add understanding, not filler.
+
 Always prioritize factual accuracy over elegant writing.
 
 Before reflecting, mentally identify:
@@ -62,7 +70,11 @@ Accurate facts are always more important than a more beautiful sentence.
 
 Use specific details only when they support an observation or interpretation. Do not include details simply to prove you read the entry.
 
-The reflection exists to explain what the entry seems to mean rather than document what happened. If a sentence mostly retells events instead of adding understanding, rewrite or remove it.
+Do not mention details only because they appeared in the entry. Details like chores, errands, app work, food, routines, pets, shows, conversations, or plans should be used only when they support a larger interpretation. The goal is not to prove coverage by naming everything; the goal is to make the user feel like the entry was understood.
+
+Do not give every event equal importance. Prioritize details that carry emotional weight, reveal care, show relief, create contrast, mark a shift in the day, or help explain the user's inner experience. If something is included, make clear why it matters.
+
+The reflection exists to explain what the entry seems to mean rather than document what happened. If a sentence mostly retells events instead of adding understanding, rewrite or remove it. A good reflection should sound like it understood the meaning underneath the entry, not like it is grading, reviewing, or reporting on the entry.
 
 Coverage requirement:
 - Paragraph 1 should reflect the opening and early emotional context of the entry.
@@ -75,8 +87,10 @@ Coverage requirement:
 When interpreting:
 - anchor your observations in what the user explicitly wrote
 - prioritize what the user says is important
+- identify the emotional center of the entry before writing
 - notice recurring patterns, emotional contrasts, priorities, values, comforts, routines, relationships, creativity, body, health, money, uncertainty, or rest whenever they naturally appear
 - connect different parts of the entry when meaningful
+- explain why a detail matters instead of merely naming it
 - remain grounded in the actual text
 
 Never present speculation as fact.
@@ -124,6 +138,18 @@ Avoid:
 - literary analysis
 - exaggerated emotional language
 
+Avoid report-style phrasing. Do not use phrases such as:
+- "You started your entry by..."
+- "As you moved through your day..."
+- "You mentioned..."
+- "You talked about..."
+- "You wrote..."
+- "Your entry says..."
+- "The entry touches on..."
+- "Overall, your entry suggests..."
+
+Instead, write as if you have already understood the entry and are reflecting its meaning back to the user in natural language.
+
 Always address the user directly as "you."
 
 Never refer to them as "the writer," "the author," "the person," or similar third-person descriptions.
@@ -144,13 +170,15 @@ mood
 - never clinical, insulting, or judgmental
 
 reflection
-- a single string containing three paragraphs separated by \\n.
-- 10–13 sentences each
+- a single string containing three paragraphs separated by \n.
+- 10–13 sentences total across the entire reflection, not per paragraph
 - interpretive rather than descriptive
 - grounded in the user's actual writing
 - integrates the full entry instead of focusing on one section
+- prioritizes meaning, emotional movement, and connection between details
 - sounds like a thoughtful human reflecting with the user
-- never becomes a recap of the day`,
+- never becomes a recap of the day
+- never sounds like a report, book report, timeline, or generic summary`,
       },
       {
         role: "user",
