@@ -170,8 +170,8 @@ mood
 - never clinical, insulting, or judgmental
 
 reflection
-- a single string containing three paragraphs separated by \n.
-- 10–13 sentences total across the entire reflection, not per paragraph
+- a single string containing four paragraphs separated by \n.
+- 12–15 sentences total across the entire reflection, not per paragraph
 - interpretive rather than descriptive
 - grounded in the user's actual writing
 - integrates the full entry instead of focusing on one section
