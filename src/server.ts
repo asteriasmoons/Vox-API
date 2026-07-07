@@ -9,12 +9,10 @@ import summaryRoute from "./routes/summary";
 import recsRoute from "./routes/recs";
 import journalRoutes from "./routes/journal";
 import astrologyRoutes from "./routes/astrology";
-import sharedEventsRouter from "./routes/shared-events-routes";
 import { createBuddyRouter } from "./routes/buddy-routes";
 import { createSprintRouter } from "./routes/sprint-routes";
 import userRouter from "./routes/user-routes";
 import { restoreActiveSprintTimers } from "./services/sprint-service";
-import wellnessWallRoutes from "./routes/wellness-wall";
 import spiritualRoutes from "./routes/spiritual";
 import moodRoutes from "./routes/mood";
 import checklistRoutes from "./routes/checklist";
@@ -44,18 +42,16 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/", (_req, res) => {
-  res.json({ status: "Lystaria Apps API running" });
+  res.json({ status: "Vox Apps API running" });
 });
 
 app.use("/api/books/summary", summaryRoute);
 app.use("/api/books/recs", recsRoute);
 app.use("/api/journal", journalRoutes);
 app.use("/api/astrology", astrologyRoutes);
-app.use("/api/shared-events", sharedEventsRouter);
 app.use("/api/buddy", createBuddyRouter(io));
 app.use("/api/sprint", createSprintRouter(io));
 app.use("/api/user", userRouter);
-app.use("/api", wellnessWallRoutes);
 app.use("/api/spiritual", spiritualRoutes);
 app.use("/api/mood", moodRoutes);
 app.use("/api/checklist", checklistRoutes);
@@ -88,7 +84,7 @@ io.on("connection", (socket) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`Lystaria Apps API running on port ${PORT}`);
+  console.log(`Vox Apps API running on port ${PORT}`);
 });
 
 mongoose
