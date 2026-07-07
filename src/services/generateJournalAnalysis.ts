@@ -15,8 +15,8 @@ interface EntryInput {
 export async function generateJournalAnalysis(
   entries: EntryInput[],
 ): Promise<JournalAnalysisResult> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("Missing GROQ_API_KEY");
+  const apiKey = process.env.GROQ_API_KEY_ALT;
+  if (!apiKey) throw new Error("Missing GROQ_API_KEY_ALT");
 
   const entryText = entries
     .map((e) => `Entry: "${e.title}"\n${e.body.trim()}`)
