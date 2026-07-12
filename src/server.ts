@@ -24,6 +24,7 @@ import challengeSocialRoutes from "./routes/challengeSocialRoutes";
 import messagingRoutes from "./routes/messagingRoutes";
 import tinyNudgeRoutes from "./routes/tinyNudgeRoutes";
 import moonRouter from "./routes/moon";
+import seeryRoutes from "./routes/seery.routes";
 
 import path from "path";
 dotenv.config();
@@ -64,6 +65,7 @@ app.use("/api/lumey/challenges", challengeSocialRoutes);
 app.use("/api/lumey/messages", messagingRoutes);
 app.use("/api/tiny-nudge", tinyNudgeRoutes);
 app.use("/api/moon", moonRouter);
+app.use("/api/seery", seeryRoutes);
 
 io.on("connection", (socket) => {
   socket.on("buddy:join_room", (groupId: string) => {
