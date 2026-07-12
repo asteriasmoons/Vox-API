@@ -267,11 +267,14 @@ function parseAiCandidates(rawContent: string): AiBookCandidate[] {
 
     if (Array.isArray(books)) {
       return books
-        .map((book) => ({
-          title: cleanText(book?.title),
-          author: cleanText(book?.author),
-          summary: cleanText(book?.summary) || undefined,
-        }))
+        .map((book) => {
+          const summary = cleanText(book?.summary);
+          return {
+            title: cleanText(book?.title),
+            author: cleanText(book?.author),
+            ...(summary ? { summary } : {}),
+          };
+        })
         .filter((book) => book.title);
     }
   } catch {
@@ -284,11 +287,14 @@ function parseAiCandidates(rawContent: string): AiBookCandidate[] {
 
         if (Array.isArray(books)) {
           return books
-            .map((book) => ({
-              title: cleanText(book?.title),
-              author: cleanText(book?.author),
-              summary: cleanText(book?.summary) || undefined,
-            }))
+            .map((book) => {
+              const summary = cleanText(book?.summary);
+              return {
+                title: cleanText(book?.title),
+                author: cleanText(book?.author),
+                ...(summary ? { summary } : {}),
+              };
+            })
             .filter((book) => book.title);
         }
       } catch {
@@ -573,14 +579,17 @@ async function searchOpenLibraryForSeed(query: string): Promise<SeedBook[]> {
 
   return docs
     .filter((doc) => cleanText(doc.title))
-    .map((doc) => ({
-      title: cleanText(doc.title),
-      author: Array.isArray(doc.author_name) ? doc.author_name.slice(0, 3).join(", ") : "",
-      subjects: Array.isArray(doc.subject) ? doc.subject.slice(0, 10) : [],
-      description: "",
-      releaseYear: firstNumber(doc.first_publish_year),
-      source: "Open Library",
-    }));
+    .map((doc) => {
+      const releaseYear = firstNumber(doc.first_publish_year);
+      return {
+        title: cleanText(doc.title),
+        author: Array.isArray(doc.author_name) ? doc.author_name.slice(0, 3).join(", ") : "",
+        subjects: Array.isArray(doc.subject) ? doc.subject.slice(0, 10) : [],
+        description: "",
+        source: "Open Library",
+        ...(releaseYear !== undefined ? { releaseYear } : {}),
+      };
+    });
 }
 
 async function searchGoogleBooksForSeed(query: string): Promise<SeedBook[]> {
@@ -601,14 +610,17 @@ async function searchGoogleBooksForSeed(query: string): Promise<SeedBook[]> {
     .map((item) => item.volumeInfo)
     .filter((volume): volume is GoogleVolumeInfo => Boolean(volume?.title));
 
-  return volumes.map((volume) => ({
-    title: cleanText(volume.title),
-    author: Array.isArray(volume.authors) ? volume.authors.slice(0, 3).join(", ") : "",
-    subjects: Array.isArray(volume.categories) ? volume.categories.slice(0, 10) : [],
-    description: cleanText(volume.description),
-    releaseYear: extractYear(volume.publishedDate),
-    source: "Google Books",
-  }));
+  return volumes.map((volume) => {
+    const releaseYear = extractYear(volume.publishedDate);
+    return {
+      title: cleanText(volume.title),
+      author: Array.isArray(volume.authors) ? volume.authors.slice(0, 3).join(", ") : "",
+      subjects: Array.isArray(volume.categories) ? volume.categories.slice(0, 10) : [],
+      description: cleanText(volume.description),
+      source: "Google Books",
+      ...(releaseYear !== undefined ? { releaseYear } : {}),
+    };
+  });
 }
 
 function mergeSeedResults(results: SeedBook[]): SeedBook[] {
@@ -623,16 +635,18 @@ function mergeSeedResults(results: SeedBook[]): SeedBook[] {
       continue;
     }
 
+    const releaseYear = existing.releaseYear ?? result.releaseYear;
+    const source =
+      existing.source && result.source && existing.source !== result.source
+        ? "Open Library + Google Books"
+        : existing.source ?? result.source;
     merged.set(key, {
       title: existing.title || result.title,
       author: existing.author || result.author,
       subjects: uniqueStrings([...existing.subjects, ...result.subjects]).slice(0, 12),
       description: existing.description || result.description,
-      releaseYear: existing.releaseYear ?? result.releaseYear,
-      source:
-        existing.source === result.source
-          ? existing.source
-          : "Open Library + Google Books",
+      ...(releaseYear !== undefined ? { releaseYear } : {}),
+      ...(source ? { source } : {}),
     });
   }
 
