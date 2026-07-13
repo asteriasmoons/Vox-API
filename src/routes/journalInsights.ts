@@ -311,6 +311,51 @@ router.get("/", async (req, res) => {
   }
 });
 
+// ─── POST /api/journal/insights/normalize ───────────────────────────────────
+// Re-normalize all stored themes and tags for a user. Deduplicates plurals,
+// fixes casing, etc. Idempotent. Must be above /:theme to avoid catch-all.
+
+router.post("/normalize", async (req, res) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
+
+    const docs = await DailyJournalAnalysis.find({ userId });
+
+    let updated = 0;
+
+    for (const doc of docs) {
+      const normalizedThemes = deduplicateTags(
+        doc.themes.map((t) => normalizeTag(t)),
+      );
+      const normalizedTags = deduplicateTags(
+        (doc.tags || []).map((t) => normalizeTag(t)),
+      );
+
+      const themesChanged =
+        JSON.stringify(normalizedThemes) !== JSON.stringify(doc.themes);
+      const tagsChanged =
+        JSON.stringify(normalizedTags) !== JSON.stringify(doc.tags || []);
+
+      if (themesChanged || tagsChanged) {
+        doc.themes = normalizedThemes;
+        doc.tags = normalizedTags;
+        await doc.save();
+        updated++;
+      }
+    }
+
+    console.log(
+      `[normalize] userId=${userId}: updated=${updated}/${docs.length} documents`,
+    );
+
+    return res.json({ updated, total: docs.length });
+  } catch (error) {
+    console.error("Normalize error:", error);
+    return res.status(500).json({ error: "Failed to normalize" });
+  }
+});
+
 // ─── GET /api/journal/insights/:theme ───────────────────────────────────────
 
 router.get("/:theme", async (req, res) => {
