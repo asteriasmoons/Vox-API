@@ -6,8 +6,11 @@ export interface DailyJournalAnalysisDoc extends Document {
   bookId: string;
   dateKey: string;
   themes: string[];
+  tags: string[];
   mood: string;
   reflection: string;
+  mindfulMinutes: number;
+  entryCount: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -18,8 +21,11 @@ const DailyJournalAnalysisSchema = new Schema<DailyJournalAnalysisDoc>(
     bookId: { type: String, required: true, index: true },
     dateKey: { type: String, required: true, index: true },
     themes: { type: [String], required: true, default: [] },
+    tags: { type: [String], default: [] },
     mood: { type: String, required: true, default: "" },
     reflection: { type: String, required: true, default: "" },
+    mindfulMinutes: { type: Number, default: 0 },
+    entryCount: { type: Number, default: 1 },
   },
   { timestamps: true },
 );

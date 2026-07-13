@@ -25,6 +25,7 @@ import messagingRoutes from "./routes/messagingRoutes";
 import tinyNudgeRoutes from "./routes/tinyNudgeRoutes";
 import moonRouter from "./routes/moon";
 import seeryRoutes from "./routes/seery.routes";
+import journalInsightsRoutes from "./routes/journalInsights";
 
 import path from "path";
 dotenv.config();
@@ -66,6 +67,7 @@ app.use("/api/lumey/messages", messagingRoutes);
 app.use("/api/tiny-nudge", tinyNudgeRoutes);
 app.use("/api/moon", moonRouter);
 app.use("/api/seery", seeryRoutes);
+app.use("/api/journal/insights", journalInsightsRoutes);
 
 io.on("connection", (socket) => {
   socket.on("buddy:join_room", (groupId: string) => {

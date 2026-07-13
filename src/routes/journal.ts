@@ -108,6 +108,9 @@ router.post("/analyze", async (req, res) => {
     const userId = String(req.body?.userId || "").trim();
     const bookId = String(req.body?.bookId || "").trim();
     const entries: { title: string; body: string }[] = req.body?.entries ?? [];
+    const tags: string[] = Array.isArray(req.body?.tags) ? req.body.tags : [];
+    const mindfulMinutes: number = Number(req.body?.mindfulMinutes) || 0;
+    const entryCount: number = Number(req.body?.entryCount) || entries.length;
     const dateKeyOverride = String(req.body?.dateKey || "").trim();
 
     console.log("[analyze] userId:", userId, "bookId:", bookId, "entries count:", entries.length, "dateKey:", dateKeyOverride || "(today)");
@@ -131,7 +134,14 @@ router.post("/analyze", async (req, res) => {
     // Upsert: overwrite any existing analysis for this date
     await DailyJournalAnalysis.findOneAndUpdate(
       { userId, bookId, dateKey },
-      { themes: result.themes, mood: result.mood, reflection: result.reflection },
+      {
+        themes: result.themes,
+        mood: result.mood,
+        reflection: result.reflection,
+        tags,
+        mindfulMinutes,
+        entryCount,
+      },
       { upsert: true }
     );
 
