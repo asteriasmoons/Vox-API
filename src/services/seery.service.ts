@@ -215,14 +215,9 @@ export class SeeryServiceError extends Error {
 
 export class SeeryService {
   private readonly baseURL = "https://api.tvmaze.com";
-  private readonly apiKey: string | undefined;
-
-  constructor() {
-    this.apiKey = process.env.TVMAZE_API_KEY;
-  }
 
   get isConfigured(): boolean {
-    return true;
+    return true; // TVmaze public API requires no key
   }
 
   // ── Search ───────────────────────────────────────────────────
@@ -442,11 +437,6 @@ export class SeeryService {
     query: Record<string, string | number | boolean | undefined> = {}
   ): Promise<T> {
     const url = new URL(`${this.baseURL}${path}`);
-
-    // Add API key if available (premium)
-    if (this.apiKey) {
-      url.searchParams.set("apikey", this.apiKey);
-    }
 
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) {
