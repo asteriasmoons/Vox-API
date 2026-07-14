@@ -188,6 +188,17 @@ export interface SeeryVideo {
   publishedAt: string | null;
 }
 
+export interface SeeryReview {
+  id: string;
+  author: string;
+  authorUsername: string | null;
+  authorAvatarURL: string | null;
+  authorRating: number | null;
+  content: string;
+  createdAt: string;
+  url: string | null;
+}
+
 export interface SeeryIDMapping {
   tvMazeID: number | null;
   tmdbID: number | null;
@@ -876,6 +887,40 @@ export class SeeryTMDBService {
     }));
   }
 
+  // ── Reviews ─────────────────────────────────────────────────
+
+  async reviews(
+    tmdbId: number,
+    page = 1
+  ): Promise<SeeryPagedResponse<SeeryReview>> {
+    const data = await this.request<{
+      page: number;
+      total_pages: number;
+      total_results: number;
+      results: TMDBReview[];
+    }>(`/tv/${tmdbId}/reviews`, { page });
+
+    return {
+      page: data.page,
+      totalPages: data.total_pages,
+      totalResults: data.total_results,
+      results: data.results.map((r) => ({
+        id: r.id,
+        author: r.author,
+        authorUsername: r.author_details?.username ?? null,
+        authorAvatarURL: r.author_details?.avatar_path
+          ? r.author_details.avatar_path.startsWith("/http")
+            ? r.author_details.avatar_path.slice(1)
+            : `${this.imageBase}w185${r.author_details.avatar_path}`
+          : null,
+        authorRating: r.author_details?.rating ?? null,
+        content: r.content,
+        createdAt: r.created_at,
+        url: r.url ?? null,
+      })),
+    };
+  }
+
   // ── Find by External ID (for ID mapping) ────────────────────
 
   async findByImdbId(
@@ -1325,4 +1370,18 @@ interface TMDBVideo {
   type: string;
   official?: boolean;
   published_at?: string;
+}
+
+interface TMDBReview {
+  id: string;
+  author: string;
+  author_details?: {
+    name?: string;
+    username?: string;
+    avatar_path?: string | null;
+    rating?: number | null;
+  };
+  content: string;
+  created_at: string;
+  url?: string;
 }

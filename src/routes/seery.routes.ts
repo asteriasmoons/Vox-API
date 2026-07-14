@@ -350,6 +350,54 @@ router.get(
   }
 );
 
+/**
+ * GET /api/seery/series/:seriesId/reviews?page=1
+ *
+ * Accepts a TMDB series ID.
+ */
+router.get(
+  "/series/:seriesId/reviews",
+  async (req: Request, res: Response) => {
+    try {
+      const tmdbId = readId(req.params.seriesId, "seriesId");
+      const page = readOptionalPositiveInt(req.query.page) ?? 1;
+      const data = await tmdbService.reviews(tmdbId, page);
+      res.status(200).json({ success: true, data });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
+);
+
+/**
+ * GET /api/seery/tvmaze/:showId/reviews?page=1
+ *
+ * Convenience: maps TVmaze ID → TMDB ID, then fetches reviews.
+ */
+router.get(
+  "/tvmaze/:showId/reviews",
+  async (req: Request, res: Response) => {
+    try {
+      const tvMazeId = readId(req.params.showId, "showId");
+      const page = readOptionalPositiveInt(req.query.page) ?? 1;
+
+      const tmdbId = await idMapper.tmdbIdFromTVmaze(tvMazeId);
+      if (!tmdbId) {
+        throw new SeeryServiceError(
+          404,
+          "SEERY_TMDB_ID_NOT_FOUND",
+          `Could not find a TMDB match for TVmaze show ${tvMazeId}.`
+        );
+      }
+
+      const data = await tmdbService.reviews(tmdbId, page);
+      res.status(200).json({ success: true, data });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }
+);
+
 // ═══════════════════════════════════════════════════════════════════
 // ID Mapping Routes
 // ═══════════════════════════════════════════════════════════════════
