@@ -60,7 +60,17 @@ router.post("/", async (req, res) => {
       ...(daysUntilSabbat !== undefined && { daysUntilSabbat }),
     };
 
+    console.log("[current-correspondences] request", input);
+
     const correspondences = await generateCurrentCorrespondences(input);
+
+    console.log("[current-correspondences] response", {
+      planet: correspondences.planet,
+      element: correspondences.element,
+      color: correspondences.color,
+      crystal: correspondences.crystal,
+      herb: correspondences.herb,
+    });
 
     return res.json(correspondences);
   } catch (error) {
