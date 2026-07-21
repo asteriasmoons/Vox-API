@@ -150,7 +150,10 @@ export async function approveSubmissionAndPostToFeed(input: {
     username: submission.username,
     challengeID: submission.challengeID,
     challengeTitle: cleanString(input.challengeTitle),
-    text: submission.submissionNote || submission.proofSummary || "Challenge submission approved.",
+    text:
+      submission.submissionNote ||
+      formatProofSummaryForFeed(submission.proofSummary) ||
+      "Challenge submission approved.",
     photoURL: "",
     likeCount: 0,
     commentCount: 0,
@@ -629,6 +632,14 @@ export async function deleteAnnouncement(announcementID: string) {
 function cleanString(value: unknown): string {
   if (typeof value !== "string") return "";
   return value.trim();
+}
+
+function formatProofSummaryForFeed(value: unknown): string {
+  const cleaned = cleanString(value);
+  if (!cleaned) return "";
+  if (cleaned.includes("\n")) return cleaned;
+
+  return cleaned.replace(/, /g, "\n");
 }
 
 function cleanStringArray(value: unknown): string[] {
