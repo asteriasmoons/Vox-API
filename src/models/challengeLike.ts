@@ -37,4 +37,4 @@ challengeLikeSchema.index(
 
 export const LumeyChallengeLike =
   lumeyDB.models.LumeyChallengeLike ||
-  lumeyDB.model("LumeyChallengeLike", challengeLikeSchema);
+  lumeyDB.model("LumeyChallengeLike", challengeLikeSchema, "challengelikes");

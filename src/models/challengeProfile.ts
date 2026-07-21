@@ -68,4 +68,8 @@ const challengeProfileSchema = new mongoose.Schema(
 
 export const LumeyChallengeProfile =
   lumeyDB.models.LumeyChallengeProfile ||
-  lumeyDB.model("LumeyChallengeProfile", challengeProfileSchema);
+  lumeyDB.model(
+    "LumeyChallengeProfile",
+    challengeProfileSchema,
+    "challengeprofiles",
+  );

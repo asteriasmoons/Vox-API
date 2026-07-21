@@ -37,4 +37,8 @@ challengeCommentLikeSchema.index(
 
 export const LumeyChallengeCommentLike =
   lumeyDB.models.LumeyChallengeCommentLike ||
-  lumeyDB.model("LumeyChallengeCommentLike", challengeCommentLikeSchema);
+  lumeyDB.model(
+    "LumeyChallengeCommentLike",
+    challengeCommentLikeSchema,
+    "challengecommentlikes",
+  );

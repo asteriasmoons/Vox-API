@@ -126,4 +126,4 @@ challengePostSchema.pre("validate", function (next) {
 
 export const LumeyChallengePost =
   lumeyDB.models.LumeyChallengePost ||
-  lumeyDB.model("LumeyChallengePost", challengePostSchema);
+  lumeyDB.model("LumeyChallengePost", challengePostSchema, "challengeposts");

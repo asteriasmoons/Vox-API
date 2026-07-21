@@ -59,4 +59,8 @@ const feedAnnouncementSchema = new mongoose.Schema(
 
 export const LumeyFeedAnnouncement =
   lumeyDB.models.LumeyFeedAnnouncement ||
-  lumeyDB.model("LumeyFeedAnnouncement", feedAnnouncementSchema);
+  lumeyDB.model(
+    "LumeyFeedAnnouncement",
+    feedAnnouncementSchema,
+    "feedannouncement",
+  );

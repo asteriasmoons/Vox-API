@@ -131,4 +131,8 @@ challengeFeedItemSchema.pre("validate", function (next) {
 
 export const LumeyChallengeFeedItem =
   lumeyDB.models.LumeyChallengeFeedItem ||
-  lumeyDB.model("LumeyChallengeFeedItem", challengeFeedItemSchema);
+  lumeyDB.model(
+    "LumeyChallengeFeedItem",
+    challengeFeedItemSchema,
+    "challengefeeditems",
+  );

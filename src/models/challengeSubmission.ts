@@ -63,4 +63,8 @@ const challengeSubmissionSchema = new mongoose.Schema(
 
 export const LumeyChallengeSubmission =
   lumeyDB.models.LumeyChallengeSubmission ||
-  lumeyDB.model("LumeyChallengeSubmission", challengeSubmissionSchema);
+  lumeyDB.model(
+    "LumeyChallengeSubmission",
+    challengeSubmissionSchema,
+    "challengesubmissions",
+  );

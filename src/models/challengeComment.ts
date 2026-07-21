@@ -65,4 +65,8 @@ challengeCommentSchema.index({ feedItemID: 1, createdDate: 1 });
 
 export const LumeyChallengeComment =
   lumeyDB.models.LumeyChallengeComment ||
-  lumeyDB.model("LumeyChallengeComment", challengeCommentSchema);
+  lumeyDB.model(
+    "LumeyChallengeComment",
+    challengeCommentSchema,
+    "challengecomments",
+  );
