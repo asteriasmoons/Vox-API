@@ -68,4 +68,4 @@ conversationSchema.index(
 
 export const LumeyConversation =
   lumeyDB.models.LumeyConversation ||
-  lumeyDB.model("LumeyConversation", conversationSchema);
+  lumeyDB.model("LumeyConversation", conversationSchema, "conversation");

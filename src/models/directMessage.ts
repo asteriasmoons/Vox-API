@@ -48,4 +48,4 @@ directMessageSchema.index({ conversationID: 1, createdDate: 1 });
 
 export const LumeyDirectMessage =
   lumeyDB.models.LumeyDirectMessage ||
-  lumeyDB.model("LumeyDirectMessage", directMessageSchema);
+  lumeyDB.model("LumeyDirectMessage", directMessageSchema, "directmessage");

@@ -47,4 +47,8 @@ challengeFollowSchema.pre("save", function (next) {
 
 export const LumeyChallengeFollow =
   lumeyDB.models.LumeyChallengeFollow ||
-  lumeyDB.model("LumeyChallengeFollow", challengeFollowSchema);
+  lumeyDB.model(
+    "LumeyChallengeFollow",
+    challengeFollowSchema,
+    "challengefollows",
+  );
