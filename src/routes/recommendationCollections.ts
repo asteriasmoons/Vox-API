@@ -5,7 +5,7 @@ const router = Router();
 
 /**
  * POST /api/books/recommendation-collections
- * body: { userId?: string, readerContext?: {...}, excludeBookKeys?: string[] }
+ * body: { userId?: string, collectionId?: string, readerContext?: {...}, excludeBookKeys?: string[] }
  *
  * Returns: { collections: [...] }
  */
@@ -26,9 +26,14 @@ router.post("/", async (req, res) => {
         : undefined;
     const userId =
       typeof req.body?.userId === "string" ? req.body.userId : undefined;
+    const collectionId =
+      typeof req.body?.collectionId === "string"
+        ? req.body.collectionId
+        : undefined;
 
     const response = await buildRecommendationCollections({
       ...(userId ? { userId } : {}),
+      ...(collectionId ? { collectionId } : {}),
       ...(req.body?.readerContext ? { readerContext: req.body.readerContext } : {}),
       ...(excludeBookKeys ? { excludeBookKeys } : {}),
       ...(desiredCollections !== undefined ? { desiredCollections } : {}),

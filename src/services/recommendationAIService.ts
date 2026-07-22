@@ -23,11 +23,15 @@ const PROFILE_TEMPERATURE = 0.2;
 const CANDIDATE_TEMPERATURE = 0.35;
 const FALLBACK_TEMPERATURE = 0.45;
 const ANALYZE_MAX_TOKENS = 700;
+const HOME_ANALYZE_MAX_TOKENS = 350;
 const PROFILE_MAX_TOKENS = 900;
+const HOME_PROFILE_MAX_TOKENS = 500;
 const CANDIDATE_MAX_TOKENS = 3200;
+const HOME_CANDIDATE_MAX_TOKENS = 900;
 const FALLBACK_MAX_TOKENS = 2200;
+const HOME_FALLBACK_MAX_TOKENS = 700;
 const GROQ_TIMEOUT_MS = 45_000;
-const GROQ_RETRIES = 1;
+const GROQ_RETRIES = 2;
 
 type GroqChatResponse = {
   choices?: Array<{
@@ -214,6 +218,37 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function groqRateLimitDelayMs(error: unknown, attempt: number): number | null {
+  if (!(error instanceof Error)) return null;
+
+  try {
+    const parsed = JSON.parse(error.message) as {
+      status?: unknown;
+      body?: {
+        error?: {
+          message?: unknown;
+        };
+      };
+    };
+
+    if (parsed.status !== 429) return null;
+
+    const message =
+      typeof parsed.body?.error?.message === "string"
+        ? parsed.body.error.message
+        : "";
+    const retryMatch = message.match(/try again in\s+([\d.]+)s/i);
+    const retrySeconds = retryMatch?.[1] ? Number(retryMatch[1]) : NaN;
+    const retryMs = Number.isFinite(retrySeconds)
+      ? Math.ceil(retrySeconds * 1000) + 500
+      : 1200 * (attempt + 1);
+
+    return Math.max(750, Math.min(retryMs, 20_000));
+  } catch {
+    return null;
+  }
+}
+
 async function groqChatJson(
   systemPrompt: string,
   userPrompt: string,
@@ -268,7 +303,7 @@ async function groqChatJson(
     } catch (error) {
       lastError = error;
       if (attempt >= GROQ_RETRIES) break;
-      await sleep(350 * (attempt + 1));
+      await sleep(groqRateLimitDelayMs(error, attempt) ?? 350 * (attempt + 1));
     } finally {
       clearTimeout(timeout);
     }
@@ -438,6 +473,7 @@ function parseCandidateGroups(raw: string): CandidateGroup[] {
 
 export const recommendationAIService = {
   async analyzeRequest(request: RecommendationRequest): Promise<RecommendationIntent> {
+    const isHomeSurface = request.surface === "home";
     const cacheKey = `intent:${request.groqModel ?? ""}:${request.surface}:${request.requestTypeHint ?? ""}:${request.query}`;
     const cached = recommendationCacheService.getRequestIntent(cacheKey);
     if (cached) return cached;
@@ -479,7 +515,7 @@ Return JSON only with this exact shape:
       prompt,
       {
         temperature: ANALYZE_TEMPERATURE,
-        maxTokens: ANALYZE_MAX_TOKENS,
+        maxTokens: isHomeSurface ? HOME_ANALYZE_MAX_TOKENS : ANALYZE_MAX_TOKENS,
         ...(request.groqModel ? { model: request.groqModel } : {}),
       },
     );
@@ -494,6 +530,7 @@ Return JSON only with this exact shape:
     intent: RecommendationIntent;
     seedBook: SeedBook | null;
   }): Promise<RecommendationProfile> {
+    const isHomeSurface = input.request.surface === "home";
     const cacheKey = `profile:${input.request.groqModel ?? ""}:${input.request.surface}:${input.intent.requestType}:${input.intent.normalizedQuery}:${input.seedBook?.title ?? ""}:${input.seedBook?.author ?? ""}`;
     const cached = recommendationCacheService.getRequestProfile(cacheKey);
     if (cached) return cached;
@@ -538,7 +575,7 @@ Do not recommend books in this step.`;
       prompt,
       {
         temperature: PROFILE_TEMPERATURE,
-        maxTokens: PROFILE_MAX_TOKENS,
+        maxTokens: isHomeSurface ? HOME_PROFILE_MAX_TOKENS : PROFILE_MAX_TOKENS,
         ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
       },
     );
@@ -554,6 +591,7 @@ Do not recommend books in this step.`;
     profile: RecommendationProfile;
     seedBook: SeedBook | null;
   }): Promise<CandidateGroup[]> {
+    const isHomeSurface = input.request.surface === "home";
     const seedContext = formatSeedContext(
       input.seedBook,
       input.intent.normalizedQuery || input.request.query,
@@ -609,14 +647,14 @@ Return JSON only:
   ]
 }
 
-Return 10 books per strategy where possible.`;
+Return ${isHomeSurface ? "4" : "10"} books per strategy where possible.`;
 
     const raw = await groqChatJson(
       "You generate real book recommendation candidates for catalog verification. Return strict JSON only.",
       prompt,
       {
         temperature: CANDIDATE_TEMPERATURE,
-        maxTokens: CANDIDATE_MAX_TOKENS,
+        maxTokens: isHomeSurface ? HOME_CANDIDATE_MAX_TOKENS : CANDIDATE_MAX_TOKENS,
         ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
       },
     );
@@ -631,6 +669,7 @@ Return 10 books per strategy where possible.`;
     seedBook: SeedBook | null;
     excludedTitles: string[];
   }): Promise<CandidateGroup[]> {
+    const isHomeSurface = input.request.surface === "home";
     const prompt = `Loomey needs a second recommendation candidate pass because too few books survived catalog verification.
 
 Seed/request context:
@@ -669,14 +708,14 @@ Return JSON only:
   ]
 }
 
-Return up to 8 books per strategy.`;
+Return up to ${isHomeSurface ? "3" : "8"} books per strategy.`;
 
     const raw = await groqChatJson(
       "You generate additional real book recommendation candidates for catalog verification. Return strict JSON only.",
       prompt,
       {
         temperature: FALLBACK_TEMPERATURE,
-        maxTokens: FALLBACK_MAX_TOKENS,
+        maxTokens: isHomeSurface ? HOME_FALLBACK_MAX_TOKENS : FALLBACK_MAX_TOKENS,
         ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
       },
     );

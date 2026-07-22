@@ -82,6 +82,7 @@ type RecommendationCollection = {
   title: string;
   description: string;
   reason: string;
+  bookCount: number;
   books: RecommendationResult[];
   previewCoverUrls: string[];
 };
@@ -92,6 +93,7 @@ type RecommendationCollectionsResponse = {
 
 type BuildRecommendationCollectionsInput = {
   userId?: string;
+  collectionId?: string;
   readerContext?: CollectionReaderContext;
   excludeBookKeys?: string[];
   desiredCollections?: number;
@@ -108,9 +110,9 @@ type CollectionBlueprint = {
 };
 
 const DEFAULT_COLLECTION_COUNT = 5;
-const DEFAULT_BOOKS_PER_COLLECTION = 10;
+const DEFAULT_BOOKS_PER_COLLECTION = 30;
 const MAX_COLLECTION_COUNT = 6;
-const MAX_BOOKS_PER_COLLECTION = 12;
+const MAX_BOOKS_PER_COLLECTION = 30;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -332,42 +334,66 @@ export async function buildRecommendationCollections(
     500,
   );
   const returnedBookKeys = new Set<string>();
-  const collections: RecommendationCollection[] = [];
+  const blueprints = collectionBlueprints(context, desiredCollections);
 
-  for (const blueprint of collectionBlueprints(context, desiredCollections)) {
-    const response = await buildRecommendations({
-      query: blueprint.query,
-      surface: "home",
-      desiredCount: booksPerCollection,
-      minVerifiedResults: Math.min(4, booksPerCollection),
-      groqModel,
-      requestTypeHint: blueprint.requestTypeHint,
-      readerContext: context,
-      excludeBookKeys: collectionExclusions(baseExcluded, returnedBookKeys),
-    });
-    const books = response.recs.filter((book) => {
-      const key = normalizeBookKey(book.title, book.author);
-      if (returnedBookKeys.has(key)) return false;
-      returnedBookKeys.add(key);
-      return true;
-    });
+  if (!input.collectionId) {
+    return {
+      collections: blueprints.map((blueprint) => ({
+        id: blueprint.id,
+        title: blueprint.title,
+        description: blueprint.description,
+        reason: blueprint.reason,
+        bookCount: booksPerCollection,
+        books: [],
+        previewCoverUrls: [],
+      })),
+    };
+  }
 
-    if (books.length === 0) continue;
+  const blueprint = blueprints.find((item) => item.id === input.collectionId);
+  if (!blueprint) {
+    return {
+      collections: [],
+    };
+  }
 
-    collections.push({
-      id: blueprint.id,
-      title: blueprint.title,
-      description: blueprint.description,
-      reason: blueprint.reason,
-      books,
-      previewCoverUrls: books
-        .map((book) => book.coverUrl)
-        .filter((url): url is string => Boolean(url))
-        .slice(0, 4),
-    });
+  const response = await buildRecommendations({
+    query: blueprint.query,
+    surface: "shelf",
+    desiredCount: booksPerCollection,
+    minVerifiedResults: Math.min(12, booksPerCollection),
+    groqModel,
+    requestTypeHint: blueprint.requestTypeHint,
+    readerContext: context,
+    excludeBookKeys: collectionExclusions(baseExcluded, returnedBookKeys),
+  });
+  const books = response.recs.filter((book) => {
+    const key = normalizeBookKey(book.title, book.author);
+    if (returnedBookKeys.has(key)) return false;
+    returnedBookKeys.add(key);
+    return true;
+  });
+
+  if (books.length === 0) {
+    return {
+      collections: [],
+    };
   }
 
   return {
-    collections,
+    collections: [
+      {
+        id: blueprint.id,
+        title: blueprint.title,
+        description: blueprint.description,
+        reason: blueprint.reason,
+        bookCount: booksPerCollection,
+        books,
+        previewCoverUrls: books
+          .map((book) => book.coverUrl)
+          .filter((url): url is string => Boolean(url))
+          .slice(0, 4),
+      },
+    ],
   };
 }
