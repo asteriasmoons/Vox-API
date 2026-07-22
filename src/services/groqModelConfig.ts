@@ -8,7 +8,7 @@ export function recommendationGroqModel(): string {
     DEFAULT_RECOMMENDATION_GROQ_MODEL
   );
 }
-
+  
 export function recommendationCollectionGroqModel(): string {
   return (
     process.env.RECOMMENDATION_COLLECTION_GROQ_MODEL ||
