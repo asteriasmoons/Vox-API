@@ -31,6 +31,10 @@ type BookDescriptionInput = {
   summary?: string;
 };
 
+type BookDescriptionOptions = {
+  groqModel?: string;
+};
+
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -94,7 +98,10 @@ async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function generateDescription(input: BookDescriptionInput): Promise<string> {
+async function generateDescription(
+  input: BookDescriptionInput,
+  options?: BookDescriptionOptions,
+): Promise<string> {
   const title = cleanText(input.title);
   const author = cleanText(input.author);
   if (!title) return "";
@@ -119,7 +126,7 @@ async function generateDescription(input: BookDescriptionInput): Promise<string>
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: bookDescriptionGroqModel(),
+          model: options?.groqModel ?? bookDescriptionGroqModel(),
           temperature: 0.35,
           max_tokens: DESCRIPTION_MAX_TOKENS,
           response_format: { type: "json_object" },
@@ -203,23 +210,27 @@ async function mapWithBoundedConcurrency<T, R>(
 }
 
 export const bookDescriptionAIService = {
-  async ensureDescription(input: BookDescriptionInput): Promise<string> {
+  async ensureDescription(
+    input: BookDescriptionInput,
+    options?: BookDescriptionOptions,
+  ): Promise<string> {
     if (hasUsableBookDescription(input.summary)) {
       return normalizeDescription(cleanText(input.summary));
     }
 
-    return generateDescription(input);
+    return generateDescription(input, options);
   },
 
   async ensureDescriptions<T extends BookDescriptionInput>(
     books: T[],
+    options?: BookDescriptionOptions,
   ): Promise<Array<T & { summary: string }>> {
     return mapWithBoundedConcurrency(
       books,
       DESCRIPTION_CONCURRENCY,
       async (book) => ({
         ...book,
-        summary: await this.ensureDescription(book),
+        summary: await this.ensureDescription(book, options),
       }),
     );
   },

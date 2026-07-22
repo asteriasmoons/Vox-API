@@ -70,6 +70,7 @@ export type RecommendationRequest = {
   surface: RecommendationSurface;
   desiredCount: number;
   minVerifiedResults: number;
+  groqModel?: string;
   requestTypeHint?: RecommendationRequestType;
   seedBook?: SeedBook;
   readerContext?: ReaderRecommendationContext;

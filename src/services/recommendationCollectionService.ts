@@ -1,4 +1,5 @@
 import { buildRecommendations } from "./recommendationEngine";
+import { recommendationCollectionGroqModel } from "./groqModelConfig";
 import { normalizeBookKey } from "./recommendationCacheService";
 import type {
   RecommendationResult,
@@ -310,6 +311,7 @@ export async function buildRecommendationCollections(
   input: BuildRecommendationCollectionsInput,
 ): Promise<RecommendationCollectionsResponse> {
   const context: CollectionReaderContext = input.readerContext ?? {};
+  const groqModel = recommendationCollectionGroqModel();
   const desiredCollections = clampCount(
     input.desiredCollections,
     DEFAULT_COLLECTION_COUNT,
@@ -338,6 +340,7 @@ export async function buildRecommendationCollections(
       surface: "home",
       desiredCount: booksPerCollection,
       minVerifiedResults: Math.min(4, booksPerCollection),
+      groqModel,
       requestTypeHint: blueprint.requestTypeHint,
       readerContext: context,
       excludeBookKeys: collectionExclusions(baseExcluded, returnedBookKeys),

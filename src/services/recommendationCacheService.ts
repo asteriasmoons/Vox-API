@@ -104,6 +104,7 @@ export function makeRequestCacheKey(request: RecommendationRequest): string {
     normalizeCacheText(request.query),
     request.desiredCount,
     request.minVerifiedResults,
+    request.groqModel ?? "",
     request.requestTypeHint ?? "",
     exclusions,
     readerContext,

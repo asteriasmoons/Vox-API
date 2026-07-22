@@ -40,6 +40,7 @@ type GroqChatResponse = {
 type GroqOptions = {
   temperature: number;
   maxTokens: number;
+  model?: string;
 };
 
 function cleanText(value: unknown): string {
@@ -237,7 +238,7 @@ async function groqChatJson(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: recommendationGroqModel(),
+          model: options.model ?? recommendationGroqModel(),
           temperature: options.temperature,
           max_tokens: options.maxTokens,
           response_format: { type: "json_object" },
@@ -437,7 +438,7 @@ function parseCandidateGroups(raw: string): CandidateGroup[] {
 
 export const recommendationAIService = {
   async analyzeRequest(request: RecommendationRequest): Promise<RecommendationIntent> {
-    const cacheKey = `intent:${request.surface}:${request.requestTypeHint ?? ""}:${request.query}`;
+    const cacheKey = `intent:${request.groqModel ?? ""}:${request.surface}:${request.requestTypeHint ?? ""}:${request.query}`;
     const cached = recommendationCacheService.getRequestIntent(cacheKey);
     if (cached) return cached;
 
@@ -476,7 +477,11 @@ Return JSON only with this exact shape:
     const raw = await groqChatJson(
       "You classify book recommendation requests for a reading companion. Return strict JSON only.",
       prompt,
-      { temperature: ANALYZE_TEMPERATURE, maxTokens: ANALYZE_MAX_TOKENS },
+      {
+        temperature: ANALYZE_TEMPERATURE,
+        maxTokens: ANALYZE_MAX_TOKENS,
+        ...(request.groqModel ? { model: request.groqModel } : {}),
+      },
     );
     const intent = parseIntent(raw, request);
 
@@ -489,7 +494,7 @@ Return JSON only with this exact shape:
     intent: RecommendationIntent;
     seedBook: SeedBook | null;
   }): Promise<RecommendationProfile> {
-    const cacheKey = `profile:${input.request.surface}:${input.intent.requestType}:${input.intent.normalizedQuery}:${input.seedBook?.title ?? ""}:${input.seedBook?.author ?? ""}`;
+    const cacheKey = `profile:${input.request.groqModel ?? ""}:${input.request.surface}:${input.intent.requestType}:${input.intent.normalizedQuery}:${input.seedBook?.title ?? ""}:${input.seedBook?.author ?? ""}`;
     const cached = recommendationCacheService.getRequestProfile(cacheKey);
     if (cached) return cached;
 
@@ -531,7 +536,11 @@ Do not recommend books in this step.`;
     const raw = await groqChatJson(
       "You analyze books and reading tastes for a recommendation engine. Return strict JSON only.",
       prompt,
-      { temperature: PROFILE_TEMPERATURE, maxTokens: PROFILE_MAX_TOKENS },
+      {
+        temperature: PROFILE_TEMPERATURE,
+        maxTokens: PROFILE_MAX_TOKENS,
+        ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
+      },
     );
     const profile = parseProfile(raw, input.request, input.intent);
 
@@ -605,7 +614,11 @@ Return 10 books per strategy where possible.`;
     const raw = await groqChatJson(
       "You generate real book recommendation candidates for catalog verification. Return strict JSON only.",
       prompt,
-      { temperature: CANDIDATE_TEMPERATURE, maxTokens: CANDIDATE_MAX_TOKENS },
+      {
+        temperature: CANDIDATE_TEMPERATURE,
+        maxTokens: CANDIDATE_MAX_TOKENS,
+        ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
+      },
     );
 
     return parseCandidateGroups(raw);
@@ -661,7 +674,11 @@ Return up to 8 books per strategy.`;
     const raw = await groqChatJson(
       "You generate additional real book recommendation candidates for catalog verification. Return strict JSON only.",
       prompt,
-      { temperature: FALLBACK_TEMPERATURE, maxTokens: FALLBACK_MAX_TOKENS },
+      {
+        temperature: FALLBACK_TEMPERATURE,
+        maxTokens: FALLBACK_MAX_TOKENS,
+        ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
+      },
     );
 
     return parseCandidateGroups(raw);

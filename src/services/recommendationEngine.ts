@@ -26,6 +26,7 @@ type BuildRecommendationsInput = {
   seedBook?: SeedBook;
   excludeBookKeys?: string[];
   readerContext?: RecommendationRequest["readerContext"];
+  groqModel?: string;
 };
 
 const DEFAULT_RESULT_COUNT = 30;
@@ -56,6 +57,7 @@ function normalizeRequest(input: BuildRecommendationsInput): RecommendationReque
     surface: input.surface ?? "route",
     desiredCount,
     minVerifiedResults,
+    ...(input.groqModel ? { groqModel: input.groqModel } : {}),
     ...(input.requestTypeHint ? { requestTypeHint: input.requestTypeHint } : {}),
     ...(input.seedBook ? { seedBook: input.seedBook } : {}),
     ...(input.readerContext ? { readerContext: input.readerContext } : {}),
@@ -139,7 +141,7 @@ export async function buildRecommendations(
           title: resolvedSeedBook.title,
           author: resolvedSeedBook.author,
           summary: resolvedSeedBook.description,
-        }),
+        }, request.groqModel ? { groqModel: request.groqModel } : undefined),
       }
     : null;
   const profile = await recommendationAIService.analyzeSeedBook({
@@ -195,7 +197,10 @@ export async function buildRecommendations(
     return true;
   });
   const describedVerified =
-    await bookDescriptionAIService.ensureDescriptions(dedupedVerified);
+    await bookDescriptionAIService.ensureDescriptions(
+      dedupedVerified,
+      request.groqModel ? { groqModel: request.groqModel } : undefined,
+    );
 
   const recs = recommendationScoringService.scoreRecommendations({
     request,
