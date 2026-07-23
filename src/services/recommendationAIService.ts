@@ -34,7 +34,7 @@ const FALLBACK_MAX_TOKENS = 3800;
 const HOME_FALLBACK_MAX_TOKENS = 1100;
 const GROQ_TIMEOUT_MS = 45_000;
 const GROQ_RETRIES = 2;
-const OPENROUTER_CANDIDATE_SCHEMA_RETRIES = 1;
+const GROQ_CANDIDATE_SCHEMA_RETRIES = 1;
 const PRIMARY_CANDIDATE_STRATEGIES: RecommendationStrategy[] = [
   "closest_match",
   "reader_safe",
@@ -417,7 +417,74 @@ async function generateMistralCandidateDraft(input: {
   return draft;
 }
 
-async function finalizeCandidateGroupWithOpenRouter(input: {
+async function finalizeCandidateGroupWithGroq(input: {
+  stage: string;
+  systemPrompt: string;
+  userPrompt: string;
+  openRouterRaw: string;
+  mistralDraft: string;
+  strategy: RecommendationStrategy;
+  label: string;
+  temperature: number;
+  maxTokens: number;
+}): Promise<CandidateGroup> {
+  let prompt = [
+    input.userPrompt,
+    "",
+    "OpenRouter candidate data to parse:",
+    input.openRouterRaw.trim() || "(OpenRouter returned empty content.)",
+    "",
+    "Mistral draft candidate data if OpenRouter output is missing or malformed:",
+    input.mistralDraft.slice(0, 12_000),
+    "",
+    "Groq final JSON parser job:",
+    "Convert the candidate data above into one complete strict JSON object.",
+    "Do not summarize. Do not explain. Do not use markdown.",
+    "Preserve real title and author pairs from the supplied candidate data.",
+    "If OpenRouter returned empty content, recover the final candidate JSON from the Mistral draft and the supplied constraints.",
+    "Return one JSON object only in the exact requested shape.",
+  ].join("\n");
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= GROQ_CANDIDATE_SCHEMA_RETRIES; attempt += 1) {
+    const raw = await groqChatJson(
+      "You are the final strict JSON parser for book recommendation candidates. Return JSON only.",
+      prompt,
+      {
+        stage: `${input.stage}:groq-final-parse`,
+        temperature: 0.05,
+        maxTokens: input.maxTokens,
+      },
+    );
+
+    try {
+      const group = parseCandidateGroup(raw, input.strategy, input.label);
+      console.log("[recommendations:groq] parsed final candidates", {
+        stage: input.stage,
+        strategy: input.strategy,
+        attempt: attempt + 1,
+        candidates: group.candidates.length,
+      });
+      return group;
+    } catch (error) {
+      lastError = error;
+      console.error("[recommendations:groq] final candidate parse failure", {
+        stage: input.stage,
+        strategy: input.strategy,
+        attempt: attempt + 1,
+        message: error instanceof Error ? error.message : String(error),
+        rawLength: raw.length,
+      });
+
+      if (attempt >= GROQ_CANDIDATE_SCHEMA_RETRIES) break;
+      prompt = `${prompt}${candidateSchemaRetryInstruction(error)}`;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+async function finalizeCandidateGroupWithOpenRouterAndGroq(input: {
   stage: string;
   systemPrompt: string;
   userPrompt: string;
@@ -427,41 +494,24 @@ async function finalizeCandidateGroupWithOpenRouter(input: {
   temperature: number;
   maxTokens: number;
 }): Promise<CandidateGroup> {
-  let prompt = input.userPrompt;
-  let lastError: unknown = null;
+  const openRouterRaw = await openRouterChatJson(input.systemPrompt, input.userPrompt, {
+    stage: `${input.stage}:openrouter-final-candidates`,
+    temperature: input.temperature,
+    maxTokens: input.maxTokens,
+  });
 
-  for (let attempt = 0; attempt <= OPENROUTER_CANDIDATE_SCHEMA_RETRIES; attempt += 1) {
-    const raw = await openRouterChatJson(input.systemPrompt, prompt, {
-      stage: `${input.stage}:openrouter-final-json`,
-      temperature: input.temperature,
-      maxTokens: input.maxTokens,
-    });
+  console.log("[recommendations:openrouter] finalized candidate data", {
+    stage: input.stage,
+    strategy: input.strategy,
+    rawLength: openRouterRaw.length,
+  });
 
-    try {
-      const group = parseCandidateGroup(raw, input.strategy, input.label);
-      console.log("[recommendations:openrouter] parsed candidates", {
-        stage: input.stage,
-        strategy: input.strategy,
-        attempt: attempt + 1,
-        candidates: group.candidates.length,
-      });
-      return group;
-    } catch (error) {
-      lastError = error;
-      console.error("[recommendations:openrouter] candidate parse failure", {
-        stage: input.stage,
-        strategy: input.strategy,
-        attempt: attempt + 1,
-        message: error instanceof Error ? error.message : String(error),
-        rawLength: raw.length,
-      });
-
-      if (attempt >= OPENROUTER_CANDIDATE_SCHEMA_RETRIES) break;
-      prompt = `${input.userPrompt}${candidateSchemaRetryInstruction(error)}`;
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  return finalizeCandidateGroupWithGroq({
+    ...input,
+    openRouterRaw,
+    systemPrompt:
+      "You parse and repair finalized book recommendation candidates into strict JSON for catalog verification. Return JSON only.",
+  });
 }
 
 async function generateCandidateGroupWithProviders(input: {
@@ -540,7 +590,7 @@ async function generateCandidateGroupWithProviders(input: {
     ),
   ].join("\n");
 
-  return finalizeCandidateGroupWithOpenRouter({
+  return finalizeCandidateGroupWithOpenRouterAndGroq({
     ...input,
     systemPrompt:
       "You finalize book recommendation candidates into one strict JSON object for catalog verification. Return JSON only.",
@@ -564,6 +614,7 @@ async function generateCandidateGroupsByStrategy(input: {
 
   for (const strategy of input.strategies) {
     const label = strategyLabel(strategy);
+    const stageSegment = input.isFullShelfRequest ? "full_shelf" : strategy;
     const strategyPrompt = input.isFullShelfRequest
       ? [
           "Generate the full opened collection shelf in this single request.",
@@ -581,7 +632,7 @@ async function generateCandidateGroupsByStrategy(input: {
           `Return up to ${input.booksPerStrategy} books for this strategy.`,
         ];
     const group = await generateCandidateGroupWithProviders({
-      stage: `${input.stage}:${strategy}`,
+      stage: `${input.stage}:${stageSegment}`,
       systemPrompt: input.systemPrompt,
       userPrompt: [
         input.userPrompt,

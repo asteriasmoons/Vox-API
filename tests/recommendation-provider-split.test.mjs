@@ -201,11 +201,12 @@ test("seed-book analysis calls Groq and not Mistral", async () => {
   assert.equal(mistralCalls, 0);
 });
 
-test("primary candidate generation drafts with Mistral and finalizes with OpenRouter", async () => {
+test("primary candidate generation drafts with Mistral, finalizes with OpenRouter, and parses with Groq", async () => {
   let groqCalls = 0;
   let mistralCalls = 0;
   let openRouterCalls = 0;
   const sentUserPrompts = [];
+  const sentGroqPrompts = [];
   globalThis.fetch = async (url, init) => {
     const body = JSON.parse(init.body);
     if (String(url) === MISTRAL_URL) {
@@ -219,7 +220,13 @@ test("primary candidate generation drafts with Mistral and finalizes with OpenRo
       );
       return jsonResponse(providerResponse(candidatePayload));
     }
-    if (String(url) === GROQ_URL) groqCalls += 1;
+    if (String(url) === GROQ_URL) {
+      groqCalls += 1;
+      sentGroqPrompts.push(
+        body.messages.find((message) => message.role === "user").content,
+      );
+      return jsonResponse(providerResponse(candidatePayload));
+    }
     throw new Error(`Unexpected URL ${url}`);
   };
 
@@ -233,7 +240,7 @@ test("primary candidate generation drafts with Mistral and finalizes with OpenRo
   assert.equal(groups[0].candidates[0].title, "The Little Stranger");
   assert.equal(mistralCalls, 6);
   assert.equal(openRouterCalls, 6);
-  assert.equal(groqCalls, 0);
+  assert.equal(groqCalls, 6);
   const sentUserPrompt = sentUserPrompts.join("\n");
   assert.match(sentUserPrompt, /requestAnalysis/);
   assert.match(sentUserPrompt, /recommendationProfile/);
@@ -242,9 +249,10 @@ test("primary candidate generation drafts with Mistral and finalizes with OpenRo
   assert.match(sentUserPrompt, /Mistral draft candidate data/);
   assert.match(sentUserPrompt, /Strategy: closest_match/);
   assert.match(sentUserPrompt, /Strategy: adjacent_reads/);
+  assert.match(sentGroqPrompts.join("\n"), /OpenRouter candidate data to parse/);
 });
 
-test("fallback candidate generation drafts with Mistral and finalizes with OpenRouter", async () => {
+test("fallback candidate generation drafts with Mistral, finalizes with OpenRouter, and parses with Groq", async () => {
   let groqCalls = 0;
   let mistralCalls = 0;
   let openRouterCalls = 0;
@@ -257,7 +265,10 @@ test("fallback candidate generation drafts with Mistral and finalizes with OpenR
       openRouterCalls += 1;
       return jsonResponse(providerResponse(candidatePayload));
     }
-    if (String(url) === GROQ_URL) groqCalls += 1;
+    if (String(url) === GROQ_URL) {
+      groqCalls += 1;
+      return jsonResponse(providerResponse(candidatePayload));
+    }
     throw new Error(`Unexpected URL ${url}`);
   };
 
@@ -272,7 +283,7 @@ test("fallback candidate generation drafts with Mistral and finalizes with OpenR
   assert.equal(groups[0].strategy, "closest_match");
   assert.equal(mistralCalls, 5);
   assert.equal(openRouterCalls, 5);
-  assert.equal(groqCalls, 0);
+  assert.equal(groqCalls, 5);
 });
 
 test("opened recommendation collection returns 30 books when enough candidates verify", async () => {
@@ -291,6 +302,12 @@ test("opened recommendation collection returns 30 books when enough candidates v
       const body = JSON.parse(init.body);
       const prompt =
         body.messages.find((message) => message.role === "user")?.content ?? "";
+      if (/Groq final JSON parser job|OpenRouter candidate data to parse/.test(prompt)) {
+        return jsonResponse(
+          providerResponse(strategyCandidatePayload("closest_match", 30)),
+        );
+      }
+
       return jsonResponse(
         providerResponse(
           prompt.includes("Classify")
@@ -393,7 +410,7 @@ test("opened recommendation collection returns 30 books when enough candidates v
   assert.equal(collection.bookCount, 30);
   assert.equal(collection.books.length, 30);
   assert.equal(new Set(collection.books.map((book) => book.title)).size, 30);
-  assert.equal(groqCalls, 2);
+  assert.equal(groqCalls, 3);
   assert.equal(mistralCalls, 1);
   assert.equal(openRouterCalls, 1);
   assert.match(openRouterPrompts.join("\n"), /full opened collection shelf/i);
@@ -421,10 +438,11 @@ test("candidate parser accepts a single strategy object", () => {
   assert.equal(groups[0].candidates[0].author, "Sarah Waters");
 });
 
-test("malformed OpenRouter candidate output retries with stricter JSON instruction", async () => {
+test("malformed OpenRouter candidate output is repaired by final Groq parse", async () => {
+  let groqCalls = 0;
   let mistralCalls = 0;
   let openRouterCalls = 0;
-  const sentPrompts = [];
+  const sentGroqPrompts = [];
   globalThis.fetch = async (url, init) => {
     const body = JSON.parse(init.body);
     if (String(url) === MISTRAL_URL) {
@@ -434,12 +452,15 @@ test("malformed OpenRouter candidate output retries with stricter JSON instructi
 
     if (String(url) === OPENROUTER_URL) {
       openRouterCalls += 1;
-      sentPrompts.push(body.messages.find((message) => message.role === "user").content);
-      if (openRouterCalls > 1) {
-        return jsonResponse(providerResponse(candidatePayload));
-      }
-
       return jsonResponse(providerResponse("not json"));
+    }
+
+    if (String(url) === GROQ_URL) {
+      groqCalls += 1;
+      sentGroqPrompts.push(
+        body.messages.find((message) => message.role === "user").content,
+      );
+      return jsonResponse(providerResponse(candidatePayload));
     }
 
     throw new Error(`Unexpected URL ${url}`);
@@ -454,13 +475,14 @@ test("malformed OpenRouter candidate output retries with stricter JSON instructi
 
   assert.equal(groups[0].candidates[0].title, "The Little Stranger");
   assert.equal(mistralCalls, 6);
-  assert.equal(openRouterCalls, 7);
-  assert.ok(
-    sentPrompts.some((prompt) => /Critical formatting correction/.test(prompt)),
-  );
+  assert.equal(openRouterCalls, 6);
+  assert.equal(groqCalls, 6);
+  assert.match(sentGroqPrompts.join("\n"), /OpenRouter candidate data to parse/);
+  assert.match(sentGroqPrompts.join("\n"), /not json/);
 });
 
-test("malformed OpenRouter candidate output fails cleanly", async () => {
+test("malformed Groq final candidate output fails cleanly", async () => {
+  let groqCalls = 0;
   let mistralCalls = 0;
   let openRouterCalls = 0;
   globalThis.fetch = async (url) => {
@@ -471,7 +493,12 @@ test("malformed OpenRouter candidate output fails cleanly", async () => {
 
     if (String(url) === OPENROUTER_URL) {
       openRouterCalls += 1;
-    return jsonResponse(providerResponse("not json"));
+      return jsonResponse(providerResponse("not json"));
+    }
+
+    if (String(url) === GROQ_URL) {
+      groqCalls += 1;
+      return jsonResponse(providerResponse("not json"));
     }
 
     throw new Error(`Unexpected URL ${url}`);
@@ -487,7 +514,8 @@ test("malformed OpenRouter candidate output fails cleanly", async () => {
     /malformed JSON/,
   );
   assert.equal(mistralCalls, 1);
-  assert.equal(openRouterCalls, 2);
+  assert.equal(openRouterCalls, 1);
+  assert.equal(groqCalls, 2);
 });
 
 test("transient Mistral errors use bounded retries", async () => {
