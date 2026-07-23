@@ -216,11 +216,17 @@ export async function buildRecommendations(
     const seedBook = resolvedSeedBook
       ? {
           ...resolvedSeedBook,
-          description: await bookDescriptionAIService.ensureDescription({
-            title: resolvedSeedBook.title,
-            author: resolvedSeedBook.author,
-            summary: resolvedSeedBook.description,
-          }, request.groqModel ? { groqModel: request.groqModel } : undefined),
+          description:
+            request.surface === "shelf"
+              ? resolvedSeedBook.description
+              : await bookDescriptionAIService.ensureDescription(
+                  {
+                    title: resolvedSeedBook.title,
+                    author: resolvedSeedBook.author,
+                    summary: resolvedSeedBook.description,
+                  },
+                  request.groqModel ? { groqModel: request.groqModel } : undefined,
+                ),
         }
       : null;
     console.log("[recommendations:engine] seed resolved", {
@@ -337,13 +343,16 @@ export async function buildRecommendations(
     });
 
     const describedVerified =
-      await bookDescriptionAIService.ensureDescriptions(
-        dedupedVerified,
-        request.groqModel ? { groqModel: request.groqModel } : undefined,
-      );
+      request.surface === "shelf"
+        ? dedupedVerified
+        : await bookDescriptionAIService.ensureDescriptions(
+            dedupedVerified,
+            request.groqModel ? { groqModel: request.groqModel } : undefined,
+          );
     console.log("[recommendations:engine] descriptions ready", {
       surface: request.surface,
       describedCandidateCount: describedVerified.length,
+      source: request.surface === "shelf" ? "catalog" : "catalog-and-ai",
     });
 
     const recs = recommendationScoringService.scoreRecommendations({

@@ -35,6 +35,9 @@ const HOME_FALLBACK_MAX_TOKENS = 1100;
 const GROQ_TIMEOUT_MS = 45_000;
 const GROQ_RETRIES = 2;
 const GROQ_CANDIDATE_SCHEMA_RETRIES = 1;
+const FINAL_GROQ_SHELF_MAX_TOKENS = 2400;
+const FINAL_GROQ_STRATEGY_MAX_TOKENS = 1800;
+const FINAL_GROQ_SOURCE_MAX_CHARS = 4500;
 const PRIMARY_CANDIDATE_STRATEGIES: RecommendationStrategy[] = [
   "closest_match",
   "reader_safe",
@@ -508,6 +511,54 @@ function candidateSchemaRetryInstruction(error: unknown): string {
   ].join("\n");
 }
 
+function numericCandidateLimit(value: string, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), 50));
+}
+
+function compactCandidateSourceForRepair(input: {
+  raw: string;
+  strategy: RecommendationStrategy;
+  label: string;
+  maxBooks: number;
+}): string {
+  const raw = input.raw.trim();
+  if (!raw) return "";
+
+  try {
+    const group = parseCandidateGroup(raw, input.strategy, input.label);
+    return JSON.stringify(
+      {
+        strategy: input.strategy,
+        label: input.label,
+        books: group.candidates.slice(0, input.maxBooks).map((candidate) => ({
+          title: candidate.title,
+          author: candidate.author ?? "",
+          ...(candidate.genres?.length ? { genres: candidate.genres.slice(0, 4) } : {}),
+          ...(candidate.moods?.length ? { moods: candidate.moods.slice(0, 4) } : {}),
+          ...(candidate.tropes?.length ? { tropes: candidate.tropes.slice(0, 4) } : {}),
+        })),
+      },
+      null,
+      2,
+    );
+  } catch {
+    return raw.slice(0, FINAL_GROQ_SOURCE_MAX_CHARS);
+  }
+}
+
+function shouldContinueAfterOpenRouterError(error: unknown): boolean {
+  if (!(error instanceof Error)) return true;
+  if (/timed out after/i.test(error.message)) return true;
+
+  const statusMatch = error.message.match(/HTTP\s+(\d+)/i);
+  if (!statusMatch?.[1]) return false;
+
+  const status = Number(statusMatch[1]);
+  return [408, 429, 500, 502, 503, 504].includes(status);
+}
+
 async function generateMistralCandidateDraft(input: {
   stage: string;
   systemPrompt: string;
@@ -536,29 +587,72 @@ async function generateMistralCandidateDraft(input: {
 async function finalizeCandidateGroupWithGroq(input: {
   stage: string;
   systemPrompt: string;
-  userPrompt: string;
+  candidateInput: string;
   openRouterRaw: string;
   mistralDraft: string;
   strategy: RecommendationStrategy;
   label: string;
+  booksPerStrategy: string;
+  isFullShelfRequest?: boolean;
   temperature: number;
   maxTokens: number;
 }): Promise<CandidateGroup> {
+  const requestedCount = numericCandidateLimit(
+    input.booksPerStrategy,
+    input.isFullShelfRequest ? 40 : 10,
+  );
+  const maxRepairBooks = input.isFullShelfRequest
+    ? Math.min(requestedCount, 40)
+    : requestedCount;
+  const openRouterRepairSource = compactCandidateSourceForRepair({
+    raw: input.openRouterRaw,
+    strategy: input.strategy,
+    label: input.label,
+    maxBooks: maxRepairBooks,
+  });
+  const mistralRepairSource = compactCandidateSourceForRepair({
+    raw: input.mistralDraft,
+    strategy: input.strategy,
+    label: input.label,
+    maxBooks: maxRepairBooks,
+  });
   let prompt = [
-    input.userPrompt,
+    input.candidateInput,
     "",
-    "OpenRouter candidate data to parse:",
-    input.openRouterRaw.trim() || "(OpenRouter returned empty content.)",
+    `Strategy: ${input.strategy}`,
+    `Label: ${input.label}`,
+    `Return up to ${maxRepairBooks} books.`,
+    "",
+    "OpenRouter candidate data to parse first:",
+    openRouterRepairSource || "(OpenRouter returned empty content.)",
     "",
     "Mistral draft candidate data if OpenRouter output is missing or malformed:",
-    input.mistralDraft.slice(0, 12_000),
+    mistralRepairSource || "(Mistral returned empty content.)",
     "",
     "Groq final JSON parser job:",
     "Convert the candidate data above into one complete strict JSON object.",
     "Do not summarize. Do not explain. Do not use markdown.",
     "Preserve real title and author pairs from the supplied candidate data.",
     "If OpenRouter returned empty content, recover the final candidate JSON from the Mistral draft and the supplied constraints.",
-    "Return one JSON object only in the exact requested shape.",
+    "Do not return rationale or themes.",
+    "Return one JSON object only in this exact shape:",
+    JSON.stringify(
+      {
+        strategy: input.strategy,
+        label: input.label,
+        books: [
+          {
+            title: "Book Title",
+            author: "Author Name",
+            genres: ["Fantasy"],
+            moods: ["Cozy"],
+            tropes: ["Found family"],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
   ].join("\n");
   let lastError: unknown = null;
 
@@ -569,7 +663,12 @@ async function finalizeCandidateGroupWithGroq(input: {
       {
         stage: `${input.stage}:groq-final-parse`,
         temperature: 0.05,
-        maxTokens: input.maxTokens,
+        maxTokens: Math.min(
+          input.maxTokens,
+          input.isFullShelfRequest
+            ? FINAL_GROQ_SHELF_MAX_TOKENS
+            : FINAL_GROQ_STRATEGY_MAX_TOKENS,
+        ),
       },
     );
 
@@ -604,17 +703,31 @@ async function finalizeCandidateGroupWithOpenRouterAndGroq(input: {
   stage: string;
   systemPrompt: string;
   userPrompt: string;
+  candidateInput: string;
   mistralDraft: string;
   strategy: RecommendationStrategy;
   label: string;
+  booksPerStrategy: string;
+  isFullShelfRequest?: boolean;
   temperature: number;
   maxTokens: number;
 }): Promise<CandidateGroup> {
-  const openRouterRaw = await openRouterChatJson(input.systemPrompt, input.userPrompt, {
-    stage: `${input.stage}:openrouter-final-candidates`,
-    temperature: input.temperature,
-    maxTokens: input.maxTokens,
-  });
+  let openRouterRaw = "";
+  try {
+    openRouterRaw = await openRouterChatJson(input.systemPrompt, input.userPrompt, {
+      stage: `${input.stage}:openrouter-final-candidates`,
+      temperature: input.temperature,
+      maxTokens: input.maxTokens,
+    });
+  } catch (error) {
+    if (!shouldContinueAfterOpenRouterError(error)) throw error;
+
+    console.error("[recommendations:openrouter] finalization unavailable", {
+      stage: `${input.stage}:openrouter-final-candidates`,
+      strategy: input.strategy,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   logProviderOutput(
     "openrouter",
     `${input.stage}:openrouter-final-candidates`,
@@ -639,8 +752,10 @@ async function generateCandidateGroupWithProviders(input: {
   stage: string;
   systemPrompt: string;
   userPrompt: string;
+  candidateInput: string;
   strategy: RecommendationStrategy;
   label: string;
+  booksPerStrategy: string;
   isFullShelfRequest?: boolean;
   temperature: number;
   maxTokens: number;
@@ -725,6 +840,7 @@ async function generateCandidateGroupsByStrategy(input: {
   stage: string;
   systemPrompt: string;
   userPrompt: string;
+  candidateInput: string;
   strategies: RecommendationStrategy[];
   booksPerStrategy: string;
   isFullShelfRequest?: boolean;
@@ -784,6 +900,8 @@ async function generateCandidateGroupsByStrategy(input: {
       ].join("\n"),
       strategy,
       label,
+      booksPerStrategy: input.booksPerStrategy,
+      candidateInput: input.candidateInput,
       ...(input.isFullShelfRequest ? { isFullShelfRequest: true } : {}),
       temperature: input.temperature,
       maxTokens: input.maxTokens,
@@ -846,6 +964,21 @@ function groqRateLimitDelayMs(error: unknown, attempt: number): number | null {
   }
 }
 
+function groqErrorStatus(error: unknown): number | null {
+  if (!(error instanceof Error)) return null;
+
+  try {
+    const parsed = JSON.parse(error.message) as { status?: unknown };
+    return typeof parsed.status === "number" ? parsed.status : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRetriableGroqStatus(status: number): boolean {
+  return [408, 429, 500, 502, 503, 504].includes(status);
+}
+
 async function groqChatJson(
   systemPrompt: string,
   userPrompt: string,
@@ -869,6 +1002,8 @@ async function groqChatJson(
         stage: options.stage,
         model,
         attempt: attempt + 1,
+        promptChars: userPrompt.length,
+        maxTokens: options.maxTokens,
       });
 
       const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
@@ -925,6 +1060,8 @@ async function groqChatJson(
     } catch (error) {
       lastError = error;
       if (attempt >= GROQ_RETRIES) break;
+      const status = groqErrorStatus(error);
+      if (status !== null && !isRetriableGroqStatus(status)) break;
       await sleep(groqRateLimitDelayMs(error, attempt) ?? 350 * (attempt + 1));
     } finally {
       clearTimeout(timeout);
@@ -1282,12 +1419,13 @@ Do not recommend books in this step.`;
     seedBook: SeedBook | null;
   }): Promise<CandidateGroup[]> {
     const candidateCount = candidateCountForSurface(input.request);
+    const candidateInput = formatCandidateHandoff({ ...input, candidateCount });
     const prompt = `You are the candidate-generation stage of a sequential Loomey book recommendation pipeline.
 
 Groq has already interpreted the request. The backend has built a compact taste profile from the reader's data.
 Use only the compact candidate input below. Do not ask for, infer, or require the reader's full library.
 
-${formatCandidateHandoff({ ...input, candidateCount })}
+${candidateInput}
 
 Generate multiple candidate groups. Each group should contain real, verifiable books.
 
@@ -1337,6 +1475,7 @@ Return ${candidateCount} books per strategy where possible.`;
       systemPrompt:
         "You generate one strategy group of real book recommendation candidates for catalog verification. Return one complete valid JSON object only.",
       userPrompt: prompt,
+      candidateInput,
       strategies: primaryStrategiesForSurface(input.request),
       booksPerStrategy: candidateCount,
       isFullShelfRequest: input.request.surface === "shelf",
@@ -1356,10 +1495,11 @@ Return ${candidateCount} books per strategy where possible.`;
     excludedTitles: string[];
   }): Promise<CandidateGroup[]> {
     const candidateCount = fallbackCountForSurface(input.request);
+    const candidateInput = formatCandidateHandoff({ ...input, candidateCount });
     const prompt = `Loomey needs a second recommendation candidate pass because too few books survived catalog verification.
 
 Use only this compact taste payload:
-${formatCandidateHandoff({ ...input, candidateCount })}
+${candidateInput}
 
 Generate additional real books only. Prefer catalog-friendly titles with clear authors and enough metadata to verify.
 Use these strategies only: closest_match, hidden_gems, recent_releases, backlist, adjacent_reads.
@@ -1393,6 +1533,7 @@ Return up to ${candidateCount} books per strategy.`;
       systemPrompt:
         "You generate one strategy group of additional real book recommendation candidates for catalog verification. Return one complete valid JSON object only.",
       userPrompt: prompt,
+      candidateInput,
       strategies: fallbackStrategiesForSurface(input.request),
       booksPerStrategy: candidateCount,
       isFullShelfRequest: input.request.surface === "shelf",

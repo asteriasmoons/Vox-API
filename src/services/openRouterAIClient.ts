@@ -2,7 +2,7 @@ import { recommendationOpenRouterModel } from "./openRouterModelConfig";
 
 const OPENROUTER_CHAT_COMPLETIONS_URL =
   "https://openrouter.ai/api/v1/chat/completions";
-const OPENROUTER_TIMEOUT_MS = 60_000;
+const OPENROUTER_TIMEOUT_MS = 25_000;
 const OPENROUTER_RETRIES = 2;
 
 type OpenRouterMessage = {
@@ -227,4 +227,3 @@ export async function openRouterChatJson(
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
-
