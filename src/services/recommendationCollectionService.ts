@@ -1,12 +1,16 @@
 import { buildRecommendations } from "./recommendationEngine";
 import { recommendationCollectionGroqModel } from "./groqModelConfig";
+import {
+  generatedRecommendationShelfService,
+  type GeneratedRecommendationShelfService,
+} from "./generatedRecommendationShelfService";
 import { normalizeBookKey } from "./recommendationCacheService";
 import type {
   RecommendationResult,
   RecommendationRequestType,
 } from "../types/recommendations";
 
-type CollectionReaderContext = {
+export type CollectionReaderContext = {
   libraryBookKeys?: string[];
   finishedBookKeys?: string[];
   currentlyReadingBookKeys?: string[];
@@ -77,7 +81,7 @@ type CollectionReaderContext = {
   };
 };
 
-type RecommendationCollection = {
+export type RecommendationCollection = {
   id: string;
   title: string;
   description: string;
@@ -87,11 +91,11 @@ type RecommendationCollection = {
   previewCoverUrls: string[];
 };
 
-type RecommendationCollectionsResponse = {
+export type RecommendationCollectionsResponse = {
   collections: RecommendationCollection[];
 };
 
-type BuildRecommendationCollectionsInput = {
+export type BuildRecommendationCollectionsInput = {
   userId?: string;
   collectionId?: string;
   readerContext?: CollectionReaderContext;
@@ -107,6 +111,13 @@ type CollectionBlueprint = {
   reason: string;
   query: string;
   requestTypeHint: RecommendationRequestType;
+};
+
+type BuildRecommendationsFn = typeof buildRecommendations;
+
+type RecommendationCollectionBuilderDependencies = {
+  buildRecommendations: BuildRecommendationsFn;
+  shelfService: GeneratedRecommendationShelfService;
 };
 
 const DEFAULT_COLLECTION_COUNT = 5;
@@ -309,9 +320,155 @@ function collectionExclusions(
   return [...baseExcluded, ...returnedBookKeys];
 }
 
-export async function buildRecommendationCollections(
-  input: BuildRecommendationCollectionsInput,
-): Promise<RecommendationCollectionsResponse> {
+async function generateShelfResponse(input: {
+  blueprint: CollectionBlueprint;
+  context: CollectionReaderContext;
+  groqModel: string;
+  baseExcluded: string[];
+  returnedBookKeys: Set<string>;
+  booksPerCollection: number;
+  buildRecommendationsFn: BuildRecommendationsFn;
+  startedAt: number;
+}): Promise<RecommendationCollectionsResponse> {
+  let response: Awaited<ReturnType<typeof buildRecommendations>>;
+  try {
+    response = await input.buildRecommendationsFn({
+      query: input.blueprint.query,
+      surface: "shelf",
+      desiredCount: input.booksPerCollection,
+      minVerifiedResults: Math.min(8, input.booksPerCollection),
+      groqModel: input.groqModel,
+      requestTypeHint: input.blueprint.requestTypeHint,
+      readerContext: input.context,
+      excludeBookKeys: collectionExclusions(
+        input.baseExcluded,
+        input.returnedBookKeys,
+      ),
+    });
+  } catch (error) {
+    console.error("[recommendations:collections] shelf failed", {
+      collectionId: input.blueprint.id,
+      title: input.blueprint.title,
+      requestTypeHint: input.blueprint.requestTypeHint,
+      booksPerCollection: input.booksPerCollection,
+      durationMs: Date.now() - input.startedAt,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+
+  const books = response.recs.filter((book) => {
+    const key = normalizeBookKey(book.title, book.author);
+    if (input.returnedBookKeys.has(key)) return false;
+    input.returnedBookKeys.add(key);
+    return true;
+  });
+
+  if (books.length === 0) {
+    console.warn("[recommendations:collections] shelf empty", {
+      collectionId: input.blueprint.id,
+      title: input.blueprint.title,
+      engineReturnedCount: response.recs.length,
+      verifiedCandidateCount: response.meta.verifiedCandidateCount,
+      candidateGroups: response.meta.candidateGroups,
+      durationMs: Date.now() - input.startedAt,
+    });
+    return {
+      collections: [],
+    };
+  }
+
+  console.log("[recommendations:collections] shelf complete", {
+    collectionId: input.blueprint.id,
+    title: input.blueprint.title,
+    requestedBookCount: input.booksPerCollection,
+    returnedBookCount: books.length,
+    verifiedCandidateCount: response.meta.verifiedCandidateCount,
+    candidateGroups: response.meta.candidateGroups,
+    previewCoverCount: books
+      .map((book) => book.coverUrl)
+      .filter((url): url is string => Boolean(url))
+      .slice(0, 4).length,
+    durationMs: Date.now() - input.startedAt,
+  });
+
+  return {
+    collections: [
+      {
+        id: input.blueprint.id,
+        title: input.blueprint.title,
+        description: input.blueprint.description,
+        reason: input.blueprint.reason,
+        bookCount: input.booksPerCollection,
+        books,
+        previewCoverUrls: books
+          .map((book) => book.coverUrl)
+          .filter((url): url is string => Boolean(url))
+          .slice(0, 4),
+      },
+    ],
+  };
+}
+
+async function refreshSavedShelf(input: {
+  userId: string;
+  shelfKey: string;
+  generationId: string;
+  blueprint: CollectionBlueprint;
+  context: CollectionReaderContext;
+  groqModel: string;
+  baseExcluded: string[];
+  booksPerCollection: number;
+  deps: RecommendationCollectionBuilderDependencies;
+}): Promise<void> {
+  const startedAt = Date.now();
+  try {
+    const response = await generateShelfResponse({
+      blueprint: input.blueprint,
+      context: input.context,
+      groqModel: input.groqModel,
+      baseExcluded: input.baseExcluded,
+      returnedBookKeys: new Set<string>(),
+      booksPerCollection: input.booksPerCollection,
+      buildRecommendationsFn: input.deps.buildRecommendations,
+      startedAt,
+    });
+    await input.deps.shelfService.completeRefresh({
+      userId: input.userId,
+      shelfKey: input.shelfKey,
+      generationId: input.generationId,
+      response,
+    });
+    console.log("[recommendations:collections] shelf refresh complete", {
+      userId: input.userId,
+      shelfKey: input.shelfKey,
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (error) {
+    await input.deps.shelfService.failRefresh({
+      userId: input.userId,
+      shelfKey: input.shelfKey,
+      generationId: input.generationId,
+      error,
+    });
+    console.error("[recommendations:collections] shelf refresh failed", {
+      userId: input.userId,
+      shelfKey: input.shelfKey,
+      durationMs: Date.now() - startedAt,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export function createRecommendationCollectionBuilder(
+  deps: RecommendationCollectionBuilderDependencies = {
+    buildRecommendations,
+    shelfService: generatedRecommendationShelfService,
+  },
+) {
+  return async function buildRecommendationCollections(
+    input: BuildRecommendationCollectionsInput,
+  ): Promise<RecommendationCollectionsResponse> {
   const startedAt = Date.now();
   const context: CollectionReaderContext = input.readerContext ?? {};
   const groqModel = recommendationCollectionGroqModel();
@@ -381,79 +538,127 @@ export async function buildRecommendationCollections(
     excludedCount: baseExcluded.length,
   });
 
-  let response: Awaited<ReturnType<typeof buildRecommendations>>;
-  try {
-    response = await buildRecommendations({
-      query: blueprint.query,
-      surface: "shelf",
-      desiredCount: booksPerCollection,
-      minVerifiedResults: Math.min(8, booksPerCollection),
-      groqModel,
-      requestTypeHint: blueprint.requestTypeHint,
-      readerContext: context,
-      excludeBookKeys: collectionExclusions(baseExcluded, returnedBookKeys),
+  if (input.userId) {
+    const shelfKey = blueprint.id;
+    const cached = await deps.shelfService.lookup(input.userId, shelfKey);
+
+    if (cached.state === "fresh") {
+      console.log("[recommendations:collections] shelf cache hit", {
+        userId: input.userId,
+        shelfKey,
+        durationMs: Date.now() - startedAt,
+      });
+      return cached.response;
+    }
+
+    if (cached.state === "expired") {
+      const refreshClaim = await deps.shelfService.claimRefresh({
+        userId: input.userId,
+        shelfKey,
+        shelfTitle: blueprint.title,
+      });
+      if (refreshClaim) {
+        void refreshSavedShelf({
+          userId: input.userId,
+          shelfKey,
+          generationId: refreshClaim.generationId,
+          blueprint,
+          context,
+          groqModel,
+          baseExcluded,
+          booksPerCollection,
+          deps,
+        });
+      }
+      console.log("[recommendations:collections] shelf stale cache served", {
+        userId: input.userId,
+        shelfKey,
+        refreshStarted: Boolean(refreshClaim),
+        durationMs: Date.now() - startedAt,
+      });
+      return cached.response;
+    }
+
+    if (cached.state === "generating") {
+      const completed = await deps.shelfService.waitForCompletedShelf(
+        input.userId,
+        shelfKey,
+      );
+      if (completed) {
+        console.log("[recommendations:collections] shelf waited for existing generation", {
+          userId: input.userId,
+          shelfKey,
+          durationMs: Date.now() - startedAt,
+        });
+        return completed;
+      }
+    }
+
+    const claim = await deps.shelfService.claimGeneration({
+      userId: input.userId,
+      shelfKey,
+      shelfTitle: blueprint.title,
     });
-  } catch (error) {
-    console.error("[recommendations:collections] shelf failed", {
-      collectionId: blueprint.id,
-      title: blueprint.title,
-      requestTypeHint: blueprint.requestTypeHint,
-      booksPerCollection,
-      durationMs: Date.now() - startedAt,
-      message: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+
+    if (!claim) {
+      const completed = await deps.shelfService.waitForCompletedShelf(
+        input.userId,
+        shelfKey,
+      );
+      if (completed) return completed;
+
+      console.warn("[recommendations:collections] shelf generation already running", {
+        userId: input.userId,
+        shelfKey,
+        durationMs: Date.now() - startedAt,
+      });
+      return { collections: [] };
+    }
+
+    try {
+      const generated = await generateShelfResponse({
+        blueprint,
+        context,
+        groqModel,
+        baseExcluded,
+        returnedBookKeys,
+        booksPerCollection,
+        buildRecommendationsFn: deps.buildRecommendations,
+        startedAt,
+      });
+      await deps.shelfService.completeGeneration({
+        userId: input.userId,
+        shelfKey,
+        generationId: claim.generationId,
+        response: generated,
+      });
+      return generated;
+    } catch (error) {
+      await deps.shelfService.failGeneration({
+        userId: input.userId,
+        shelfKey,
+        generationId: claim.generationId,
+        error,
+      });
+      throw error;
+    }
   }
 
-  const books = response.recs.filter((book) => {
-    const key = normalizeBookKey(book.title, book.author);
-    if (returnedBookKeys.has(key)) return false;
-    returnedBookKeys.add(key);
-    return true;
-  });
-
-  if (books.length === 0) {
-    console.warn("[recommendations:collections] shelf empty", {
-      collectionId: blueprint.id,
-      title: blueprint.title,
-      engineReturnedCount: response.recs.length,
-      verifiedCandidateCount: response.meta.verifiedCandidateCount,
-      candidateGroups: response.meta.candidateGroups,
-      durationMs: Date.now() - startedAt,
-    });
-    return {
-      collections: [],
-    };
-  }
-
-  console.log("[recommendations:collections] shelf complete", {
+  console.warn("[recommendations:collections] shelf cache skipped without userId", {
     collectionId: blueprint.id,
-    title: blueprint.title,
-    requestedBookCount: booksPerCollection,
-    returnedBookCount: books.length,
-    verifiedCandidateCount: response.meta.verifiedCandidateCount,
-    candidateGroups: response.meta.candidateGroups,
-    previewCoverCount: books
-      .map((book) => book.coverUrl)
-      .filter((url): url is string => Boolean(url))
-      .slice(0, 4).length,
-    durationMs: Date.now() - startedAt,
   });
 
-  return {
-    collections: [
-      {
-        id: blueprint.id,
-        title: blueprint.title,
-        description: blueprint.description,
-        reason: blueprint.reason,
-        bookCount: booksPerCollection,
-        books,
-        previewCoverUrls: books
-          .map((book) => book.coverUrl)
-          .filter((url): url is string => Boolean(url))
-          .slice(0, 4),
-      },
-    ],
+  return generateShelfResponse({
+    blueprint,
+    context,
+    groqModel,
+    baseExcluded,
+    returnedBookKeys,
+    booksPerCollection,
+    buildRecommendationsFn: deps.buildRecommendations,
+    startedAt,
+  });
   };
 }
+
+export const buildRecommendationCollections = createRecommendationCollectionBuilder();
