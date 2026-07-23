@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
+    "test": "node --test tests/*.test.mjs",
     "start": "node dist/server.js"
   },
   "dependencies": {

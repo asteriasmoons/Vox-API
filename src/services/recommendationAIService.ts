@@ -1,5 +1,6 @@
 import { recommendationCacheService } from "./recommendationCacheService";
 import { recommendationGroqModel } from "./groqModelConfig";
+import { mistralChatJson } from "./mistralAIClient";
 import type {
   AiBookCandidate,
   CandidateGroup,
@@ -42,6 +43,7 @@ type GroqChatResponse = {
 };
 
 type GroqOptions = {
+  stage: string;
   temperature: number;
   maxTokens: number;
   model?: string;
@@ -214,6 +216,66 @@ function formatReaderContext(request: RecommendationRequest): string {
     .join("\n");
 }
 
+function formatCandidateHandoff(input: {
+  request: RecommendationRequest;
+  intent: RecommendationIntent;
+  profile: RecommendationProfile;
+  seedBook: SeedBook | null;
+}): string {
+  return [
+    "Sequential pipeline input from Groq:",
+    JSON.stringify(
+      {
+        request: {
+          surface: input.request.surface,
+          desiredCount: input.request.desiredCount,
+          minVerifiedResults: input.request.minVerifiedResults,
+          requestTypeHint: input.request.requestTypeHint,
+          query: input.request.query,
+        },
+        requestAnalysis: input.intent,
+        recommendationProfile: input.profile,
+        seedBook: input.seedBook
+          ? {
+              title: input.seedBook.title,
+              author: input.seedBook.author,
+              subjects: input.seedBook.subjects.slice(0, 18),
+              releaseYear: input.seedBook.releaseYear,
+              source: input.seedBook.source,
+            }
+          : null,
+      },
+      null,
+      2,
+    ),
+  ].join("\n");
+}
+
+function formatRequestExclusions(request: RecommendationRequest): string {
+  const readerContext = request.readerContext;
+  const excluded = [
+    ...(request.excludeBookKeys ?? []),
+    ...(readerContext?.libraryBookKeys ?? []),
+    ...(readerContext?.dismissedBookKeys ?? []),
+    ...(readerContext?.alreadyRecommendedBookKeys ?? []),
+  ];
+
+  const cleaned = cleanList(excluded, 80);
+  return cleaned.length > 0
+    ? `Excluded normalized title-author keys:\n${cleaned.join("\n")}`
+    : "No explicit excluded title-author keys supplied.";
+}
+
+function candidateCountForSurface(request: RecommendationRequest): string {
+  if (request.surface === "home") return "4";
+  return "10";
+}
+
+function fallbackCountForSurface(request: RecommendationRequest): string {
+  if (request.surface === "home") return "3";
+  return "8";
+}
+
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -262,10 +324,18 @@ async function groqChatJson(
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= GROQ_RETRIES; attempt += 1) {
+    const startedAt = Date.now();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
 
     try {
+      const model = options.model ?? recommendationGroqModel();
+      console.log("[recommendations:groq] request", {
+        stage: options.stage,
+        model,
+        attempt: attempt + 1,
+      });
+
       const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
         method: "POST",
         headers: {
@@ -273,7 +343,7 @@ async function groqChatJson(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: options.model ?? recommendationGroqModel(),
+          model,
           temperature: options.temperature,
           max_tokens: options.maxTokens,
           response_format: { type: "json_object" },
@@ -288,8 +358,16 @@ async function groqChatJson(
       const json = (await response.json().catch(() => null)) as
         | GroqChatResponse
         | null;
+      const durationMs = Date.now() - startedAt;
 
       if (!response.ok) {
+        console.error("[recommendations:groq] failure", {
+          stage: options.stage,
+          model,
+          attempt: attempt + 1,
+          durationMs,
+          status: response.status,
+        });
         throw new Error(
           JSON.stringify({
             status: response.status,
@@ -298,6 +376,13 @@ async function groqChatJson(
           }),
         );
       }
+
+      console.log("[recommendations:groq] success", {
+        stage: options.stage,
+        model,
+        attempt: attempt + 1,
+        durationMs,
+      });
 
       return cleanText(json?.choices?.[0]?.message?.content);
     } catch (error) {
@@ -411,14 +496,18 @@ function parseProfile(
   };
 }
 
-function parseCandidateGroups(raw: string): CandidateGroup[] {
+export function parseCandidateGroups(raw: string): CandidateGroup[] {
   const parsed = parseJsonObject(raw);
-  if (!parsed || typeof parsed !== "object") return [];
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Mistral candidate stage returned malformed JSON");
+  }
 
   const groups = (parsed as Record<string, unknown>).groups;
-  if (!Array.isArray(groups)) return [];
+  if (!Array.isArray(groups)) {
+    throw new Error("Mistral candidate stage returned JSON without groups");
+  }
 
-  return groups
+  const parsedGroups = groups
     .map((group): CandidateGroup | null => {
       if (!group || typeof group !== "object") return null;
 
@@ -444,13 +533,13 @@ function parseCandidateGroups(raw: string): CandidateGroup[] {
           const tropes = cleanList(item.tropes, 5);
           const themes = cleanList(item.themes, 5);
 
-          if (!title) return null;
+          if (!title || !author) return null;
 
           return {
             title,
+            author,
             strategy,
             strategyLabel: cleanText(record.label) || strategy.replace(/_/g, " "),
-            ...(author ? { author } : {}),
             ...(summary ? { summary } : {}),
             ...(rationale ? { rationale } : {}),
             ...(genres.length > 0 ? { genres } : {}),
@@ -469,6 +558,12 @@ function parseCandidateGroups(raw: string): CandidateGroup[] {
     })
     .filter((group): group is CandidateGroup => Boolean(group))
     .filter((group) => group.candidates.length > 0);
+
+  if (parsedGroups.length === 0) {
+    throw new Error("Mistral candidate stage returned no usable candidates");
+  }
+
+  return parsedGroups;
 }
 
 export const recommendationAIService = {
@@ -514,6 +609,7 @@ Return JSON only with this exact shape:
       "You classify book recommendation requests for a reading companion. Return strict JSON only.",
       prompt,
       {
+        stage: "request-analysis",
         temperature: ANALYZE_TEMPERATURE,
         maxTokens: isHomeSurface ? HOME_ANALYZE_MAX_TOKENS : ANALYZE_MAX_TOKENS,
         ...(request.groqModel ? { model: request.groqModel } : {}),
@@ -574,6 +670,7 @@ Do not recommend books in this step.`;
       "You analyze books and reading tastes for a recommendation engine. Return strict JSON only.",
       prompt,
       {
+        stage: "seed-profile-analysis",
         temperature: PROFILE_TEMPERATURE,
         maxTokens: isHomeSurface ? HOME_PROFILE_MAX_TOKENS : PROFILE_MAX_TOKENS,
         ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
@@ -591,19 +688,23 @@ Do not recommend books in this step.`;
     profile: RecommendationProfile;
     seedBook: SeedBook | null;
   }): Promise<CandidateGroup[]> {
-    const isHomeSurface = input.request.surface === "home";
     const seedContext = formatSeedContext(
       input.seedBook,
       input.intent.normalizedQuery || input.request.query,
     );
-    const prompt = `You are Loomey's recommendation candidate generator.
+    const prompt = `You are the candidate-generation stage of a sequential Loomey book recommendation pipeline.
+
+A separate reasoning model, Groq, has already interpreted the user's request and created the structured recommendation profile supplied below.
+Do not redo the request-analysis stage. Treat the supplied request analysis and recommendation profile as authoritative.
+Your job is to generate real, relevant book candidates that satisfy the supplied profile and constraints.
 
 ${seedContext}
 
-Recommendation profile:
-${formatProfile(input.profile)}
+${formatCandidateHandoff(input)}
 
 ${formatReaderContext(input.request)}
+
+${formatRequestExclusions(input.request)}
 
 Generate multiple candidate groups. Each group should contain real, verifiable books.
 
@@ -619,6 +720,7 @@ Rules:
 - Do not recommend the seed book itself.
 - Do not invent books.
 - Do not duplicate titles across groups.
+- Do not include any excluded title-author keys when a title or author clearly matches.
 - Stay faithful to the request type.
 - For author requests, include books by the author and compatible adjacent authors when useful.
 - For genre/subgenre/trope/theme/mood requests, recommend books that strongly express that quality.
@@ -636,6 +738,7 @@ Return JSON only:
         {
           "title":"Book Title",
           "author":"Author Name",
+          "summary":"brief optional premise and reading-experience note",
           "rationale":"brief optional reason",
           "genres":["Fantasy"],
           "moods":["Cozy"],
@@ -647,15 +750,18 @@ Return JSON only:
   ]
 }
 
-Return ${isHomeSurface ? "4" : "10"} books per strategy where possible.`;
+Return ${candidateCountForSurface(input.request)} books per strategy where possible.`;
 
-    const raw = await groqChatJson(
+    const raw = await mistralChatJson(
       "You generate real book recommendation candidates for catalog verification. Return strict JSON only.",
       prompt,
       {
+        stage: "primary-candidate-generation",
         temperature: CANDIDATE_TEMPERATURE,
-        maxTokens: isHomeSurface ? HOME_CANDIDATE_MAX_TOKENS : CANDIDATE_MAX_TOKENS,
-        ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
+        maxTokens:
+          input.request.surface === "home"
+            ? HOME_CANDIDATE_MAX_TOKENS
+            : CANDIDATE_MAX_TOKENS,
       },
     );
 
@@ -669,16 +775,17 @@ Return ${isHomeSurface ? "4" : "10"} books per strategy where possible.`;
     seedBook: SeedBook | null;
     excludedTitles: string[];
   }): Promise<CandidateGroup[]> {
-    const isHomeSurface = input.request.surface === "home";
     const prompt = `Loomey needs a second recommendation candidate pass because too few books survived catalog verification.
 
 Seed/request context:
 ${formatSeedContext(input.seedBook, input.intent.normalizedQuery || input.request.query)}
 
-Recommendation profile:
-${formatProfile(input.profile)}
+Sequential pipeline input from Groq:
+${formatCandidateHandoff(input)}
 
 ${formatReaderContext(input.request)}
+
+${formatRequestExclusions(input.request)}
 
 Already tried or excluded titles:
 ${input.excludedTitles.slice(0, 80).join("\n") || "none"}
@@ -697,6 +804,7 @@ Return JSON only:
         {
           "title":"Book Title",
           "author":"Author Name",
+          "summary":"brief optional premise and reading-experience note",
           "rationale":"brief optional reason",
           "genres":["Fantasy"],
           "moods":["Cozy"],
@@ -708,15 +816,18 @@ Return JSON only:
   ]
 }
 
-Return up to ${isHomeSurface ? "3" : "8"} books per strategy.`;
+Return up to ${fallbackCountForSurface(input.request)} books per strategy.`;
 
-    const raw = await groqChatJson(
+    const raw = await mistralChatJson(
       "You generate additional real book recommendation candidates for catalog verification. Return strict JSON only.",
       prompt,
       {
+        stage: "fallback-candidate-generation",
         temperature: FALLBACK_TEMPERATURE,
-        maxTokens: isHomeSurface ? HOME_FALLBACK_MAX_TOKENS : FALLBACK_MAX_TOKENS,
-        ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
+        maxTokens:
+          input.request.surface === "home"
+            ? HOME_FALLBACK_MAX_TOKENS
+            : FALLBACK_MAX_TOKENS,
       },
     );
 
