@@ -312,6 +312,7 @@ function collectionExclusions(
 export async function buildRecommendationCollections(
   input: BuildRecommendationCollectionsInput,
 ): Promise<RecommendationCollectionsResponse> {
+  const startedAt = Date.now();
   const context: CollectionReaderContext = input.readerContext ?? {};
   const groqModel = recommendationCollectionGroqModel();
   const desiredCollections = clampCount(
@@ -337,6 +338,14 @@ export async function buildRecommendationCollections(
   const blueprints = collectionBlueprints(context, desiredCollections);
 
   if (!input.collectionId) {
+    console.log("[recommendations:collections] metadata response", {
+      collectionCount: blueprints.length,
+      booksPerCollection,
+      desiredCollections,
+      hasReaderContext: Boolean(input.readerContext),
+      excludedCount: baseExcluded.length,
+      durationMs: Date.now() - startedAt,
+    });
     return {
       collections: blueprints.map((blueprint) => ({
         id: blueprint.id,
@@ -352,21 +361,50 @@ export async function buildRecommendationCollections(
 
   const blueprint = blueprints.find((item) => item.id === input.collectionId);
   if (!blueprint) {
+    console.warn("[recommendations:collections] unknown collection", {
+      collectionId: input.collectionId,
+      availableCollectionIds: blueprints.map((item) => item.id),
+      durationMs: Date.now() - startedAt,
+    });
     return {
       collections: [],
     };
   }
 
-  const response = await buildRecommendations({
-    query: blueprint.query,
-    surface: "shelf",
-    desiredCount: booksPerCollection,
-    minVerifiedResults: Math.min(12, booksPerCollection),
-    groqModel,
+  console.log("[recommendations:collections] shelf start", {
+    collectionId: blueprint.id,
+    title: blueprint.title,
     requestTypeHint: blueprint.requestTypeHint,
-    readerContext: context,
-    excludeBookKeys: collectionExclusions(baseExcluded, returnedBookKeys),
+    booksPerCollection,
+    desiredCollections,
+    hasReaderContext: Boolean(input.readerContext),
+    excludedCount: baseExcluded.length,
   });
+
+  let response: Awaited<ReturnType<typeof buildRecommendations>>;
+  try {
+    response = await buildRecommendations({
+      query: blueprint.query,
+      surface: "shelf",
+      desiredCount: booksPerCollection,
+      minVerifiedResults: Math.min(12, booksPerCollection),
+      groqModel,
+      requestTypeHint: blueprint.requestTypeHint,
+      readerContext: context,
+      excludeBookKeys: collectionExclusions(baseExcluded, returnedBookKeys),
+    });
+  } catch (error) {
+    console.error("[recommendations:collections] shelf failed", {
+      collectionId: blueprint.id,
+      title: blueprint.title,
+      requestTypeHint: blueprint.requestTypeHint,
+      booksPerCollection,
+      durationMs: Date.now() - startedAt,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+
   const books = response.recs.filter((book) => {
     const key = normalizeBookKey(book.title, book.author);
     if (returnedBookKeys.has(key)) return false;
@@ -375,10 +413,32 @@ export async function buildRecommendationCollections(
   });
 
   if (books.length === 0) {
+    console.warn("[recommendations:collections] shelf empty", {
+      collectionId: blueprint.id,
+      title: blueprint.title,
+      engineReturnedCount: response.recs.length,
+      verifiedCandidateCount: response.meta.verifiedCandidateCount,
+      candidateGroups: response.meta.candidateGroups,
+      durationMs: Date.now() - startedAt,
+    });
     return {
       collections: [],
     };
   }
+
+  console.log("[recommendations:collections] shelf complete", {
+    collectionId: blueprint.id,
+    title: blueprint.title,
+    requestedBookCount: booksPerCollection,
+    returnedBookCount: books.length,
+    verifiedCandidateCount: response.meta.verifiedCandidateCount,
+    candidateGroups: response.meta.candidateGroups,
+    previewCoverCount: books
+      .map((book) => book.coverUrl)
+      .filter((url): url is string => Boolean(url))
+      .slice(0, 4).length,
+    durationMs: Date.now() - startedAt,
+  });
 
   return {
     collections: [
