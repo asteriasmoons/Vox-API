@@ -657,20 +657,56 @@ async function finalizeCandidateGroupWithGroq(input: {
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= GROQ_CANDIDATE_SCHEMA_RETRIES; attempt += 1) {
-    const raw = await groqChatJson(
-      "You are the final strict JSON parser for book recommendation candidates. Return JSON only.",
-      prompt,
-      {
-        stage: `${input.stage}:groq-final-parse`,
-        temperature: 0.05,
-        maxTokens: Math.min(
-          input.maxTokens,
-          input.isFullShelfRequest
-            ? FINAL_GROQ_SHELF_MAX_TOKENS
-            : FINAL_GROQ_STRATEGY_MAX_TOKENS,
-        ),
-      },
-    );
+    let raw: string;
+    try {
+      raw = await groqChatJson(
+        "You are the final strict JSON parser for book recommendation candidates. Return JSON only.",
+        prompt,
+        {
+          stage: `${input.stage}:groq-final-parse`,
+          temperature: 0.05,
+          maxTokens: Math.min(
+            input.maxTokens,
+            input.isFullShelfRequest
+              ? FINAL_GROQ_SHELF_MAX_TOKENS
+              : FINAL_GROQ_STRATEGY_MAX_TOKENS,
+          ),
+        },
+      );
+    } catch (error) {
+      lastError = error;
+      const status = groqErrorStatus(error);
+      if (status !== 413 && status !== 429) throw error;
+
+      console.error("[recommendations:groq] final parse unavailable", {
+        stage: input.stage,
+        strategy: input.strategy,
+        attempt: attempt + 1,
+        status,
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      const repairSources = [
+        ["openrouter", input.openRouterRaw],
+        ["mistral", input.mistralDraft],
+      ] as const;
+      for (const [source, sourceRaw] of repairSources) {
+        try {
+          const group = parseCandidateGroup(sourceRaw, input.strategy, input.label);
+          console.warn("[recommendations:engine] using provider candidates without final Groq parse", {
+            stage: input.stage,
+            strategy: input.strategy,
+            source,
+            candidates: group.candidates.length,
+          });
+          return group;
+        } catch {
+          // Try the next provider source.
+        }
+      }
+
+      break;
+    }
 
     try {
       const group = parseCandidateGroup(raw, input.strategy, input.label);
@@ -1396,16 +1432,35 @@ Return JSON only with this exact shape:
 
 Do not recommend books in this step.`;
 
-    const raw = await groqChatJson(
-      "You analyze books and reading tastes for a recommendation engine. Return strict JSON only.",
-      prompt,
-      {
-        stage: "seed-profile-analysis",
-        temperature: PROFILE_TEMPERATURE,
-        maxTokens: isHomeSurface ? HOME_PROFILE_MAX_TOKENS : PROFILE_MAX_TOKENS,
-        ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
-      },
-    );
+    let raw: string;
+    try {
+      raw = await groqChatJson(
+        "You analyze books and reading tastes for a recommendation engine. Return strict JSON only.",
+        prompt,
+        {
+          stage: "seed-profile-analysis",
+          temperature: PROFILE_TEMPERATURE,
+          maxTokens: isHomeSurface ? HOME_PROFILE_MAX_TOKENS : PROFILE_MAX_TOKENS,
+          ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
+        },
+      );
+    } catch (error) {
+      const status = groqErrorStatus(error);
+      if (input.request.surface !== "shelf" || (status !== 413 && status !== 429)) {
+        throw error;
+      }
+
+      const profile = fallbackProfile(input.request, input.intent);
+      console.warn("[recommendations:groq] seed profile unavailable; using intent profile for shelf", {
+        surface: input.request.surface,
+        requestType: input.intent.requestType,
+        status,
+        queryLength: input.request.query.length,
+      });
+      recommendationCacheService.setRequestProfile(cacheKey, profile);
+      return profile;
+    }
+
     const profile = parseProfile(raw, input.request, input.intent);
 
     recommendationCacheService.setRequestProfile(cacheKey, profile);

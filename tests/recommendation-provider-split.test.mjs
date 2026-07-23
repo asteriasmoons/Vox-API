@@ -236,6 +236,45 @@ test("seed-book analysis calls Groq and not Mistral", async () => {
   assert.equal(mistralCalls, 0);
 });
 
+test("shelf seed-profile Groq payload errors recover with intent profile", async () => {
+  let groqCalls = 0;
+  let mistralCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url) === GROQ_URL) {
+      groqCalls += 1;
+      return jsonResponse(
+        {
+          error: {
+            message: "Request Entity Too Large",
+            type: "invalid_request_error",
+            code: "request_too_large",
+          },
+        },
+        413,
+      );
+    }
+    if (String(url) === MISTRAL_URL) mistralCalls += 1;
+    throw new Error(`Unexpected URL ${url}`);
+  };
+
+  const result = await recommendationAIService.analyzeSeedBook({
+    request: {
+      ...makeRequest("shelf profile payload recovery"),
+      surface: "shelf",
+      desiredCount: 15,
+      minVerifiedResults: 8,
+    },
+    intent,
+    seedBook,
+  });
+
+  assert.equal(result.requestType, intent.requestType);
+  assert.equal(result.query, intent.normalizedQuery);
+  assert.equal(result.genre, intent.entities.genre);
+  assert.equal(groqCalls, 1);
+  assert.equal(mistralCalls, 0);
+});
+
 test("primary candidate generation drafts with Mistral, finalizes with OpenRouter, and parses with Groq", async () => {
   let groqCalls = 0;
   let mistralCalls = 0;
@@ -536,6 +575,56 @@ test("malformed OpenRouter candidate output is repaired by final Groq parse", as
   assert.equal(groqCalls, 6);
   assert.match(sentGroqPrompts.join("\n"), /OpenRouter candidate data to parse/);
   assert.match(sentGroqPrompts.join("\n"), /not json/);
+});
+
+test("final Groq payload errors recover from valid OpenRouter candidate JSON", async () => {
+  let groqCalls = 0;
+  let mistralCalls = 0;
+  let openRouterCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url) === MISTRAL_URL) {
+      mistralCalls += 1;
+      return jsonResponse(providerResponse("Mistral draft"));
+    }
+
+    if (String(url) === OPENROUTER_URL) {
+      openRouterCalls += 1;
+      return jsonResponse(providerResponse(candidatePayload));
+    }
+
+    if (String(url) === GROQ_URL) {
+      groqCalls += 1;
+      return jsonResponse(
+        {
+          error: {
+            message: "Request Entity Too Large",
+            type: "invalid_request_error",
+            code: "request_too_large",
+          },
+        },
+        413,
+      );
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  };
+
+  const groups = await recommendationAIService.generateCandidates({
+    request: {
+      ...makeRequest("final groq payload recovery"),
+      surface: "shelf",
+      desiredCount: 15,
+      minVerifiedResults: 8,
+    },
+    intent,
+    profile,
+    seedBook,
+  });
+
+  assert.equal(groups[0].candidates[0].title, "The Little Stranger");
+  assert.equal(mistralCalls, 1);
+  assert.equal(openRouterCalls, 1);
+  assert.equal(groqCalls, 1);
 });
 
 test("malformed Groq final candidate output fails cleanly", async () => {
