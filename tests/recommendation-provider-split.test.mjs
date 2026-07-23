@@ -212,8 +212,44 @@ test("candidate parser recovers code-fenced JSON", () => {
   assert.equal(groups[0].candidates[0].author, "Sarah Waters");
 });
 
+test("candidate parser accepts a top-level groups array", () => {
+  const payload = JSON.stringify(JSON.parse(candidatePayload).groups);
+  const groups = parseCandidateGroups(payload);
+  assert.equal(groups[0].candidates[0].title, "The Little Stranger");
+});
+
+test("malformed Mistral candidate output retries with stricter JSON instruction", async () => {
+  let calls = 0;
+  let secondPrompt = "";
+  globalThis.fetch = async (url, init) => {
+    calls += 1;
+    const body = JSON.parse(init.body);
+    if (calls === 2) {
+      secondPrompt = body.messages.find((message) => message.role === "user").content;
+      return jsonResponse(providerResponse(candidatePayload));
+    }
+
+    return jsonResponse(providerResponse("not json"));
+  };
+
+  const groups = await recommendationAIService.generateCandidates({
+    request: makeRequest("malformed then valid candidate provider split"),
+    intent,
+    profile,
+    seedBook,
+  });
+
+  assert.equal(groups[0].candidates[0].title, "The Little Stranger");
+  assert.equal(calls, 2);
+  assert.match(secondPrompt, /Critical formatting correction/);
+});
+
 test("malformed Mistral candidate output fails cleanly", async () => {
-  globalThis.fetch = async () => jsonResponse(providerResponse("not json"));
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return jsonResponse(providerResponse("not json"));
+  };
 
   await assert.rejects(
     recommendationAIService.generateCandidates({
@@ -224,6 +260,7 @@ test("malformed Mistral candidate output fails cleanly", async () => {
     }),
     /malformed JSON/,
   );
+  assert.equal(calls, 2);
 });
 
 test("transient Mistral errors use bounded retries", async () => {
@@ -308,4 +345,3 @@ test("deterministic scoring still runs after verification", () => {
   assert.equal(recs[0].title, "The Little Stranger");
   assert.ok(recs[0].finalScore > 0);
 });
-

@@ -27,12 +27,13 @@ const ANALYZE_MAX_TOKENS = 700;
 const HOME_ANALYZE_MAX_TOKENS = 350;
 const PROFILE_MAX_TOKENS = 900;
 const HOME_PROFILE_MAX_TOKENS = 500;
-const CANDIDATE_MAX_TOKENS = 3200;
-const HOME_CANDIDATE_MAX_TOKENS = 900;
-const FALLBACK_MAX_TOKENS = 2200;
-const HOME_FALLBACK_MAX_TOKENS = 700;
+const CANDIDATE_MAX_TOKENS = 6200;
+const HOME_CANDIDATE_MAX_TOKENS = 1400;
+const FALLBACK_MAX_TOKENS = 3800;
+const HOME_FALLBACK_MAX_TOKENS = 1100;
 const GROQ_TIMEOUT_MS = 45_000;
 const GROQ_RETRIES = 2;
+const MISTRAL_CANDIDATE_SCHEMA_RETRIES = 1;
 
 type GroqChatResponse = {
   choices?: Array<{
@@ -88,7 +89,11 @@ function clampScore(value: unknown): number {
 }
 
 function parseJsonObject(raw: string): unknown | null {
-  const content = raw.trim();
+  const content = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
   if (!content) return null;
 
   try {
@@ -99,6 +104,37 @@ function parseJsonObject(raw: string): unknown | null {
 
     try {
       return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function parseJsonObjectOrArray(raw: string): unknown | null {
+  const content = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  if (!content) return null;
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    const objectMatch = content.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      try {
+        return JSON.parse(objectMatch[0]);
+      } catch {
+        // Try an array below.
+      }
+    }
+
+    const arrayMatch = content.match(/\[[\s\S]*\]/);
+    if (!arrayMatch) return null;
+
+    try {
+      return JSON.parse(arrayMatch[0]);
     } catch {
       return null;
     }
@@ -274,6 +310,64 @@ function candidateCountForSurface(request: RecommendationRequest): string {
 function fallbackCountForSurface(request: RecommendationRequest): string {
   if (request.surface === "home") return "3";
   return "8";
+}
+
+function candidateSchemaRetryInstruction(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return [
+    "",
+    "Critical formatting correction:",
+    `The previous candidate-generation response could not be parsed: ${message}.`,
+    "Return one complete JSON object only.",
+    "Do not use markdown, code fences, comments, explanations, or trailing prose.",
+    "Do not truncate the JSON.",
+    "The top-level object must be exactly shaped like {\"groups\":[...]} with valid arrays.",
+    "Every book must include non-empty string title and author fields.",
+  ].join("\n");
+}
+
+async function generateMistralCandidateGroups(input: {
+  stage: string;
+  systemPrompt: string;
+  userPrompt: string;
+  temperature: number;
+  maxTokens: number;
+}): Promise<CandidateGroup[]> {
+  let prompt = input.userPrompt;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= MISTRAL_CANDIDATE_SCHEMA_RETRIES; attempt += 1) {
+    const raw = await mistralChatJson(input.systemPrompt, prompt, {
+      stage: input.stage,
+      temperature: input.temperature,
+      maxTokens: input.maxTokens,
+    });
+
+    try {
+      const groups = parseCandidateGroups(raw);
+      console.log("[recommendations:mistral] parsed candidates", {
+        stage: input.stage,
+        attempt: attempt + 1,
+        groups: groups.length,
+        candidates: groups.reduce((total, group) => total + group.candidates.length, 0),
+      });
+      return groups;
+    } catch (error) {
+      lastError = error;
+      console.error("[recommendations:mistral] candidate parse failure", {
+        stage: input.stage,
+        attempt: attempt + 1,
+        message: error instanceof Error ? error.message : String(error),
+        rawLength: raw.length,
+      });
+
+      if (attempt >= MISTRAL_CANDIDATE_SCHEMA_RETRIES) break;
+      prompt = `${input.userPrompt}${candidateSchemaRetryInstruction(error)}`;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -497,12 +591,14 @@ function parseProfile(
 }
 
 export function parseCandidateGroups(raw: string): CandidateGroup[] {
-  const parsed = parseJsonObject(raw);
+  const parsed = parseJsonObjectOrArray(raw);
   if (!parsed || typeof parsed !== "object") {
     throw new Error("Mistral candidate stage returned malformed JSON");
   }
 
-  const groups = (parsed as Record<string, unknown>).groups;
+  const groups = Array.isArray(parsed)
+    ? parsed
+    : (parsed as Record<string, unknown>).groups;
   if (!Array.isArray(groups)) {
     throw new Error("Mistral candidate stage returned JSON without groups");
   }
@@ -752,20 +848,17 @@ Return JSON only:
 
 Return ${candidateCountForSurface(input.request)} books per strategy where possible.`;
 
-    const raw = await mistralChatJson(
-      "You generate real book recommendation candidates for catalog verification. Return strict JSON only.",
-      prompt,
-      {
-        stage: "primary-candidate-generation",
-        temperature: CANDIDATE_TEMPERATURE,
-        maxTokens:
-          input.request.surface === "home"
-            ? HOME_CANDIDATE_MAX_TOKENS
-            : CANDIDATE_MAX_TOKENS,
-      },
-    );
-
-    return parseCandidateGroups(raw);
+    return generateMistralCandidateGroups({
+      stage: "primary-candidate-generation",
+      systemPrompt:
+        "You generate real book recommendation candidates for catalog verification. Return one complete valid JSON object only.",
+      userPrompt: prompt,
+      temperature: CANDIDATE_TEMPERATURE,
+      maxTokens:
+        input.request.surface === "home"
+          ? HOME_CANDIDATE_MAX_TOKENS
+          : CANDIDATE_MAX_TOKENS,
+    });
   },
 
   async generateFallbackCandidates(input: {
@@ -818,19 +911,16 @@ Return JSON only:
 
 Return up to ${fallbackCountForSurface(input.request)} books per strategy.`;
 
-    const raw = await mistralChatJson(
-      "You generate additional real book recommendation candidates for catalog verification. Return strict JSON only.",
-      prompt,
-      {
-        stage: "fallback-candidate-generation",
-        temperature: FALLBACK_TEMPERATURE,
-        maxTokens:
-          input.request.surface === "home"
-            ? HOME_FALLBACK_MAX_TOKENS
-            : FALLBACK_MAX_TOKENS,
-      },
-    );
-
-    return parseCandidateGroups(raw);
+    return generateMistralCandidateGroups({
+      stage: "fallback-candidate-generation",
+      systemPrompt:
+        "You generate additional real book recommendation candidates for catalog verification. Return one complete valid JSON object only.",
+      userPrompt: prompt,
+      temperature: FALLBACK_TEMPERATURE,
+      maxTokens:
+        input.request.surface === "home"
+          ? HOME_FALLBACK_MAX_TOKENS
+          : FALLBACK_MAX_TOKENS,
+    });
   },
 };
