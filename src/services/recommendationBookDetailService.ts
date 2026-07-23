@@ -1,15 +1,14 @@
 import { GeneratedRecommendationBookDetail } from "../models/GeneratedRecommendationBookDetail";
-import { bookDescriptionGroqModel } from "./groqModelConfig";
+import { geminiGenerateJson } from "./geminiAIClient";
+import { recommendationBookSummaryGeminiModel } from "./geminiModelConfig";
 import { normalizeBookKey } from "./recommendationCacheService";
 
 const GOOGLE_BOOKS_SEARCH_URL = "https://www.googleapis.com/books/v1/volumes";
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
-const GROQ_CHAT_COMPLETIONS_URL =
-  "https://api.groq.com/openai/v1/chat/completions";
 
 const CATALOG_TIMEOUT_MS = 12_000;
-const AI_TIMEOUT_MS = 30_000;
 const AI_MAX_TOKENS = 900;
+const DETAIL_CACHE_VERSION = 3;
 
 type RecommendationBookDetailRequest = {
   title: string;
@@ -80,14 +79,6 @@ type OpenLibrarySearchResponse = {
     subject?: string[];
     isbn?: string[];
     publisher?: string[];
-  }>;
-};
-
-type GroqDetailResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string | null;
-    } | null;
   }>;
 };
 
@@ -504,16 +495,23 @@ async function generateAIEnrichment(
   input: RecommendationBookDetailRequest,
   catalog: CatalogDetail,
 ): Promise<AIEnrichment> {
-  const apiKey = process.env.GROQ_API_KEY || "";
-  if (!apiKey) return {};
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
-  const prompt = [
+  const systemPrompt = [
+    "You are Lumey's book discovery copywriter for recommended shelf book detail pages.",
+    "Your job is to make a reader think, 'oooo I want to read that,' while staying truthful to the supplied metadata.",
+    "Return valid JSON only.",
+    "Do not invent publication facts, ISBNs, publishers, awards, or endings.",
+    "Do not write generic book-report prose.",
+    "Do not reuse the shelf summary or catalog description verbatim.",
+  ].join(" ");
+  const userPrompt = [
     "Build a rich book detail payload for a recommended book in Loomey.",
     "Use the catalog metadata as the source of truth for factual metadata.",
-    "Write a compelling, reader-facing summary that explains premise, tone, genre texture, and reading experience without spoilers.",
-    "Return strict JSON only.",
+    "Write the summary yourself in two polished short paragraphs.",
+    "Paragraph 1 should hook the reader with the premise, emotional promise, and what kind of story they are stepping into.",
+    "Paragraph 2 should explain the tone, genre texture, pacing or atmosphere, and why this book fits the recommendation shelf.",
+    "Make the copy vivid, specific, sensory, and irresistible without sounding like marketing spam.",
+    "Avoid spoilers, fake facts, fake awards, fake comparisons, and vague phrases like 'a must-read' unless the supplied data supports them.",
+    "Return strict JSON only. The summary field is required.",
     "",
     "Recommendation context:",
     JSON.stringify(
@@ -556,90 +554,46 @@ async function generateAIEnrichment(
       2,
     ),
   ].join("\n");
+  const model = recommendationBookSummaryGeminiModel();
 
   try {
-    console.log("[recommendation-book-detail] ai request", {
+    console.log("[recommendation-book-detail] gemini request", {
       title: input.title,
       author: input.author,
-      model: bookDescriptionGroqModel(),
-      promptChars: prompt.length,
+      model,
+      promptChars: userPrompt.length,
     });
 
-    const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: bookDescriptionGroqModel(),
-        temperature: 0.25,
-        max_tokens: AI_MAX_TOKENS,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "You enrich verified book metadata for a reading app. Return valid JSON only. Do not invent publication facts, ISBNs, publishers, awards, or endings.",
-          },
-          { role: "user", content: prompt },
-        ],
-      }),
-      signal: controller.signal,
+    const raw = await geminiGenerateJson(systemPrompt, userPrompt, {
+      stage: "recommendation-book-detail",
+      temperature: 0.35,
+      maxOutputTokens: AI_MAX_TOKENS,
+      model,
     });
+    const parsed = parseAIEnrichment(raw);
 
-    const json = (await response.json().catch(() => null)) as
-      | GroqDetailResponse
-      | null;
-
-    if (!response.ok) {
-      throw new Error(
-        JSON.stringify({
-          status: response.status,
-          statusText: response.statusText,
-          body: json,
-        }),
-      );
+    if (!cleanText(parsed.summary)) {
+      throw new Error("Gemini book detail stage returned no usable summary");
     }
 
-    const raw = cleanText(json?.choices?.[0]?.message?.content);
-    const parsed = parseAIEnrichment(raw);
-    console.log("[recommendation-book-detail] ai success", {
+    console.log("[recommendation-book-detail] gemini success", {
       title: input.title,
       author: input.author,
       outputLength: raw.length,
-      hasSummary: Boolean(parsed.summary),
+      hasSummary: true,
+      genres: parsed.genres?.length ?? 0,
+      tags: parsed.tags?.length ?? 0,
     });
+
     return parsed;
   } catch (error) {
-    console.error("[recommendation-book-detail] ai failed", {
+    console.error("[recommendation-book-detail] gemini failed", {
       title: input.title,
       author: input.author,
       message: error instanceof Error ? error.message : String(error),
     });
-    return {};
-  } finally {
-    clearTimeout(timeout);
+    throw error;
   }
-}
-
-function fallbackSummary(
-  input: RecommendationBookDetailRequest,
-  catalog: CatalogDetail,
-): string {
-  const summary = cleanText(catalog.summary) || cleanText(input.summary);
-  if (summary) return stripHtml(summary);
-
-  const labels = uniqueStrings([
-    ...(input.genres ?? []),
-    ...(input.moods ?? []),
-    ...(input.tropes ?? []),
-    ...(catalog.categories ?? []),
-  ], 4);
-
-  return labels.length > 0
-    ? `${catalog.title} by ${catalog.author} is a recommended read shaped by ${labels.join(", ")}.`
-    : `${catalog.title} by ${catalog.author} is a recommended read from this shelf.`;
 }
 
 function buildResponse(
@@ -647,6 +601,11 @@ function buildResponse(
   catalog: CatalogDetail,
   ai: AIEnrichment,
 ): RecommendationBookDetailResponse {
+  const summary = cleanText(ai.summary);
+  if (!summary) {
+    throw new Error("Gemini book detail stage did not return a summary");
+  }
+
   const genres = uniqueStrings(
     [...(ai.genres ?? []), ...(input.genres ?? []), ...catalog.categories],
     10,
@@ -659,7 +618,7 @@ function buildResponse(
   return {
     title: catalog.title,
     author: catalog.author,
-    summary: cleanText(ai.summary) || fallbackSummary(input, catalog),
+    summary,
     genres,
     subgenres: uniqueStrings(ai.subgenres ?? [], 8),
     moods: uniqueStrings([...(ai.moods ?? []), ...(input.moods ?? [])], 10),
@@ -696,8 +655,11 @@ export async function buildRecommendationBookDetail(
 
   const bookKey = normalizeBookKey(title, author);
   const cached = await GeneratedRecommendationBookDetail.findOne({ bookKey }).lean();
-  if (cached?.response) {
-    console.log("[recommendation-book-detail] cache hit", { bookKey });
+  if (cached?.response && cached.cacheVersion === DETAIL_CACHE_VERSION) {
+    console.log("[recommendation-book-detail] cache hit", {
+      bookKey,
+      cacheVersion: DETAIL_CACHE_VERSION,
+    });
     return cached.response;
   }
 
@@ -705,6 +667,8 @@ export async function buildRecommendationBookDetail(
     title,
     author,
     hasSummary: Boolean(input.summary),
+    cacheVersion: DETAIL_CACHE_VERSION,
+    cacheRefreshReason: cached?.response ? "detail-cache-version-change" : "missing",
   });
 
   const request = { ...input, title, author };
@@ -736,6 +700,7 @@ export async function buildRecommendationBookDetail(
     {
       $set: {
         bookKey,
+        cacheVersion: DETAIL_CACHE_VERSION,
         title: response.title,
         author: response.author,
         response,
@@ -748,6 +713,7 @@ export async function buildRecommendationBookDetail(
     bookKey,
     title: response.title,
     author: response.author,
+    cacheVersion: DETAIL_CACHE_VERSION,
     hasCover: Boolean(response.coverUrl),
     tagCount: response.tags.length,
   });
