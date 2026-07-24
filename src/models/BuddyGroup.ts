@@ -67,4 +67,4 @@ const BuddyGroupSchema = new Schema<IBuddyGroup>(
 
 export const BuddyGroup: Model<IBuddyGroup> =
   lumeyDB.models.BuddyGroup ||
-  lumeyDB.model<IBuddyGroup>("BuddyGroup", BuddyGroupSchema);
+  lumeyDB.model<IBuddyGroup>("BuddyGroup", BuddyGroupSchema, "buddygroups");

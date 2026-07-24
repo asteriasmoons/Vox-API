@@ -7,6 +7,8 @@ import {
   getBoard,
   getMyAnnouncements,
   removeAnnouncement,
+  archiveAnnouncement,
+  closeAnnouncement,
   updateAnnouncement,
   requestToJoin,
   respondToJoinRequest,
@@ -28,6 +30,7 @@ export function createBuddyRouter(io: SocketIOServer): Router {
 
     const status =
       message === "ANNOUNCEMENT_NOT_FOUND" ? 404
+      : message === "ANNOUNCEMENT_CLOSED" ? 409
       : message === "ANNOUNCEMENT_LIMIT_REACHED" ? 409
       : message === "GROUP_NOT_FOUND" ? 404
       : message === "REQUEST_NOT_FOUND" ? 404
@@ -100,6 +103,30 @@ export function createBuddyRouter(io: SocketIOServer): Router {
       const ownerUserId = str(req.query.userId);
       await removeAnnouncement(str(req.params.id), ownerUserId);
       return res.json({ success: true });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  });
+
+  router.post("/announcements/:id/archive", async (req: Request, res: Response) => {
+    try {
+      const announcement = await archiveAnnouncement({
+        announcementId: str(req.params.id),
+        ownerUserId: req.body.ownerUserId,
+      });
+      return res.json({ success: true, announcement });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  });
+
+  router.post("/announcements/:id/close", async (req: Request, res: Response) => {
+    try {
+      const announcement = await closeAnnouncement({
+        announcementId: str(req.params.id),
+        ownerUserId: req.body.ownerUserId,
+      });
+      return res.json({ success: true, announcement });
     } catch (error) {
       return handleError(res, error);
     }

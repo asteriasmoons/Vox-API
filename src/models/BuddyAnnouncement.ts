@@ -3,6 +3,8 @@
 import { lumeyDB } from "../config/databases";
 import mongoose, { Schema, Document, Model } from "mongoose";
 
+export type BuddyAnnouncementStatus = "open" | "closed" | "archived" | "deleted";
+
 export interface IBuddyAnnouncement extends Document {
   ownerUserId: string;
   ownerDisplayName: string;
@@ -17,9 +19,13 @@ export interface IBuddyAnnouncement extends Document {
   currentPage: number | null;
 
   maxMembers: number; // 2–4
-  groupId: string | null; // set once a group is formed and announcement is closed
+  groupId: string | null; // set once a group is formed
 
-  isActive: boolean; // false = removed from board (left, paired, expired)
+  isActive: boolean; // legacy board hint; status/date fields decide availability
+  status: BuddyAnnouncementStatus;
+  closedAt: Date | null;
+  archivedAt: Date | null;
+  deletedAt: Date | null;
   expiresAt: Date;
 
   createdAt: Date;
@@ -44,6 +50,15 @@ const BuddyAnnouncementSchema = new Schema<IBuddyAnnouncement>(
     groupId: { type: String, default: null },
 
     isActive: { type: Boolean, default: true, index: true },
+    status: {
+      type: String,
+      enum: ["open", "closed", "archived", "deleted"],
+      default: "open",
+      index: true,
+    },
+    closedAt: { type: Date, default: null },
+    archivedAt: { type: Date, default: null },
+    deletedAt: { type: Date, default: null },
     expiresAt: { type: Date, required: true, index: true },
   },
   {
@@ -56,4 +71,5 @@ export const BuddyAnnouncement: Model<IBuddyAnnouncement> =
   lumeyDB.model<IBuddyAnnouncement>(
     "BuddyAnnouncement",
     BuddyAnnouncementSchema,
+    "buddyannouncements",
   );
