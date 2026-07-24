@@ -9,7 +9,6 @@ export interface IBuddyMember {
   userId: string;
   displayName: string;
   status: BuddyMemberStatus;
-  isOwner: boolean; // the person who posted the announcement
   joinedAt: Date | null;
   requestedAt: Date;
 }
@@ -39,7 +38,6 @@ const BuddyMemberSchema = new Schema<IBuddyMember>(
       enum: ["pending", "joined", "left"],
       default: "pending",
     },
-    isOwner: { type: Boolean, default: false },
     joinedAt: { type: Date, default: null },
     requestedAt: { type: Date, required: true },
   },

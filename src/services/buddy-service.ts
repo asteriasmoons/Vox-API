@@ -205,7 +205,18 @@ export async function getBoard(
   return announcements
     .filter((announcement) => {
       const group = groupsByAnnouncement.get(String(announcement._id));
-      return !group || activeJoinedCount(group) < (group.maxMembers ?? announcement.maxMembers);
+      if (!group) return true;
+
+      // Always surface groups the caller is already part of, even when full —
+      // this is where they manage/leave the read.
+      const isMyGroup =
+        !!currentUserId &&
+        group.members.some(
+          (member) => member.userId === currentUserId && member.status === "joined",
+        );
+      if (isMyGroup) return true;
+
+      return activeJoinedCount(group) < (group.maxMembers ?? announcement.maxMembers);
     })
     .map((announcement) =>
       serializeAnnouncement(
@@ -268,6 +279,29 @@ export async function closeAnnouncement(
   return announcement;
 }
 
+/**
+ * Admin-only escape hatch. Reopens a closed or archived announcement — used
+ * when an announcement was auto-closed because its author left the group.
+ * Deleted announcements stay deleted.
+ */
+export async function reopenAnnouncement(
+  announcementId: string,
+): Promise<IBuddyAnnouncement> {
+  const announcement = await BuddyAnnouncement.findById(announcementId);
+  if (!announcement) throw new Error("ANNOUNCEMENT_NOT_FOUND");
+  if (announcement.status === "deleted" || announcement.deletedAt) {
+    throw new Error("ANNOUNCEMENT_NOT_FOUND");
+  }
+
+  announcement.status = "open";
+  announcement.closedAt = null;
+  announcement.archivedAt = null;
+  announcement.isActive = true;
+  announcement.expiresAt = new Date(Date.now() + ANNOUNCEMENT_TTL_MS);
+  await announcement.save();
+  return announcement;
+}
+
 export async function updateAnnouncement(
   input: UpdateAnnouncementInput,
 ): Promise<IBuddyAnnouncement> {
@@ -314,7 +348,6 @@ export async function requestToJoin(
           userId: announcement.ownerUserId,
           displayName: announcement.ownerDisplayName,
           status: "joined",
-          isOwner: true,
           joinedAt: announcement.createdAt,
           requestedAt: announcement.createdAt,
         },
@@ -341,15 +374,7 @@ export async function requestToJoin(
         : "pending";
     existing.requestedAt = new Date();
     existing.joinedAt = existing.status === "joined" ? new Date() : null;
-    if (existing.status === "joined") {
-      if (input.requesterUserId === announcement.ownerUserId) {
-        group.members.forEach((member) => {
-          member.isOwner = false;
-        });
-      }
-      existing.isOwner = true;
-      joinedMember = existing;
-    }
+    if (existing.status === "joined") joinedMember = existing;
     group.isActive = true;
   } else {
     const joinedCount = activeJoinedCount(group);
@@ -360,12 +385,12 @@ export async function requestToJoin(
       userId: input.requesterUserId,
       displayName: input.requesterDisplayName,
       status: joinsImmediately ? "joined" as const : "pending" as const,
-      isOwner: joinsImmediately,
       joinedAt: joinsImmediately ? new Date() : null,
       requestedAt: new Date(),
     };
     group.members.push(newMember);
     if (joinsImmediately) joinedMember = newMember;
+    group.isActive = true;
   }
 
   announcement.isActive = true;
@@ -404,8 +429,9 @@ export async function respondToJoinRequest(
   const group = await BuddyGroup.findById(input.groupId);
   if (!group || !group.isActive) throw new Error("GROUP_NOT_FOUND");
 
+  // Buddy reads have no owner — any joined member can approve or decline.
   const actor = group.members.find((m) => m.userId === input.actorUserId);
-  if (!actor || !actor.isOwner) throw new Error("FORBIDDEN");
+  if (!actor || actor.status !== "joined") throw new Error("FORBIDDEN");
 
   const target = group.members.find((m) => m.userId === input.targetUserId);
   if (!target || target.status !== "pending") throw new Error("REQUEST_NOT_FOUND");
@@ -462,28 +488,24 @@ export async function leaveGroup(
   if (!group || !group.isActive) throw new Error("GROUP_NOT_FOUND");
 
   const member = assertMember(group, input.userId);
-  const wasOwner = member.isOwner;
   member.status = "left";
   member.joinedAt = null;
-
-  if (wasOwner) {
-    const nextOwner = group.members.find(
-      (m) => m.userId !== input.userId && m.status === "joined",
-    );
-
-    if (nextOwner) {
-      member.isOwner = false;
-      nextOwner.isOwner = true;
-    }
-  }
 
   const joinedCount = activeJoinedCount(group);
   group.isActive = joinedCount > 0;
 
   const announcement = await BuddyAnnouncement.findById(group.announcementId);
   if (announcement && isAnnouncementOpen(announcement)) {
-    announcement.isActive = joinedCount < group.maxMembers;
-    announcement.expiresAt = new Date(Date.now() + ANNOUNCEMENT_TTL_MS);
+    if (announcement.ownerUserId === input.userId) {
+      // The reader who posted this has left. Close the announcement so nobody
+      // joins an ownerless read — an admin can reopen it if that was a mistake.
+      announcement.isActive = false;
+      announcement.status = "closed";
+      announcement.closedAt = new Date();
+    } else {
+      announcement.isActive = joinedCount < group.maxMembers;
+      announcement.expiresAt = new Date(Date.now() + ANNOUNCEMENT_TTL_MS);
+    }
     await announcement.save();
   }
 
@@ -514,11 +536,17 @@ export async function getGroup(
   return group;
 }
 
-export async function getMyGroup(userId: string): Promise<IBuddyGroup | null> {
-  return BuddyGroup.findOne({
-    isActive: true,
+/**
+ * All groups the user is currently a joined member of, newest activity first.
+ *
+ * Intentionally does NOT filter on `isActive`. That flag is derived from
+ * membership and has historically gone stale, which silently hid groups the
+ * user was still a member of. Membership status is the source of truth.
+ */
+export async function getMyGroups(userId: string): Promise<IBuddyGroup[]> {
+  return BuddyGroup.find({
     members: { $elemMatch: { userId, status: "joined" } },
-  });
+  }).sort({ updatedAt: -1 });
 }
 
 // ---------------------------------------------------------------------------

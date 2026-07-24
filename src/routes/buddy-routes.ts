@@ -9,12 +9,13 @@ import {
   removeAnnouncement,
   archiveAnnouncement,
   closeAnnouncement,
+  reopenAnnouncement,
   updateAnnouncement,
   requestToJoin,
   respondToJoinRequest,
   leaveGroup,
   getGroup,
-  getMyGroup,
+  getMyGroups,
   sendMessage,
   getMessages,
 } from "../services/buddy-service";
@@ -132,6 +133,21 @@ export function createBuddyRouter(io: SocketIOServer): Router {
     }
   });
 
+  // POST /api/buddy/announcements/:id/reopen — admin only.
+  // Reopens an announcement that was auto-closed when its author left.
+  router.post("/announcements/:id/reopen", async (req: Request, res: Response) => {
+    try {
+      const userId = str(req.body.userId) || str(req.query.userId);
+      if (userId !== ADMIN_USER_ID) {
+        return res.status(403).json({ success: false, error: "FORBIDDEN" });
+      }
+      const announcement = await reopenAnnouncement(str(req.params.id));
+      return res.json({ success: true, announcement });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  });
+
   // ── Groups ────────────────────────────────────────────────────────────────
 
   router.post("/groups/request", async (req: Request, res: Response) => {
@@ -179,8 +195,8 @@ export function createBuddyRouter(io: SocketIOServer): Router {
   router.get("/groups/mine", async (req: Request, res: Response) => {
     try {
       const userId = str(req.query.userId);
-      const group = await getMyGroup(userId);
-      return res.json({ success: true, group });
+      const groups = await getMyGroups(userId);
+      return res.json({ success: true, groups });
     } catch (error) {
       return handleError(res, error);
     }
