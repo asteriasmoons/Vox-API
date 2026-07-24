@@ -101,6 +101,33 @@ export function createGeneratedRecommendationShelfService(
   model: GeneratedShelfModelLike = GeneratedRecommendationShelf,
 ) {
   return {
+    async getOtherShelfBookKeys(
+      userId: string,
+      excludeShelfKey: string,
+    ): Promise<string[]> {
+      const docs = await (model as any).find({
+        userId,
+        shelfKey: { $ne: excludeShelfKey },
+        status: "completed",
+        response: { $exists: true },
+      }).lean();
+
+      const keys: string[] = [];
+      for (const doc of docs ?? []) {
+        const collections = doc.response?.collections;
+        if (!Array.isArray(collections)) continue;
+        for (const collection of collections) {
+          if (!Array.isArray(collection.books)) continue;
+          for (const book of collection.books) {
+            if (book.title) {
+              keys.push(`${(book.title ?? "").toLowerCase().trim()}|${(book.author ?? "").toLowerCase().trim()}`);
+            }
+          }
+        }
+      }
+      return keys;
+    },
+
     async lookup(userId: string, shelfKey: string): Promise<ShelfCacheLookup> {
       const now = nowDate();
       const staleBefore = new Date(now.getTime() - STALE_GENERATION_MS);

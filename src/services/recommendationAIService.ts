@@ -40,7 +40,7 @@ const FINAL_GROQ_SHELF_MAX_TOKENS = 2400;
 const FINAL_GROQ_STRATEGY_MAX_TOKENS = 1800;
 const FINAL_GROQ_SOURCE_MAX_CHARS = 2500;
 const FINAL_GROQ_PROMPT_MAX_CHARS = 7_500;
-const FINAL_SHELF_REPAIR_BOOKS = 24;
+const FINAL_SHELF_REPAIR_BOOKS = 16;
 const PRIMARY_CANDIDATE_STRATEGIES: RecommendationStrategy[] = [
   "closest_match",
   "reader_safe",
@@ -56,7 +56,7 @@ const FALLBACK_CANDIDATE_STRATEGIES: RecommendationStrategy[] = [
   "backlist",
   "adjacent_reads",
 ];
-const SHELF_CANDIDATE_COUNT = 40;
+const SHELF_CANDIDATE_COUNT = 25;
 
 type GroqChatResponse = {
   choices?: Array<{
@@ -773,7 +773,18 @@ async function finalizeCandidateGroupWithGroq(input: {
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  // Instead of crashing the shelf, return an empty group so other strategies can still contribute.
+  console.error("[recommendations:groq] all final parse attempts exhausted, returning empty group", {
+    stage: input.stage,
+    strategy: input.strategy,
+    label: input.label,
+    message: lastError instanceof Error ? lastError.message : String(lastError),
+  });
+  return {
+    strategy: input.strategy,
+    label: input.label,
+    candidates: [],
+  };
 }
 
 async function finalizeCandidateGroupWithOpenRouterAndGroq(input: {

@@ -615,6 +615,18 @@ export function createRecommendationCollectionBuilder(
       return { collections: [] };
     }
 
+    // Cross-shelf dedup: seed returnedBookKeys with books already on other shelves
+    try {
+      const otherKeys = await deps.shelfService.getOtherShelfBookKeys(input.userId, shelfKey);
+      for (const key of otherKeys) returnedBookKeys.add(key);
+    } catch (e) {
+      console.warn("[recommendations:collections] cross-shelf dedup lookup failed, continuing", {
+        userId: input.userId,
+        shelfKey,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+
     try {
       const generated = await generateShelfResponse({
         blueprint,
