@@ -1,4 +1,7 @@
-import { recommendationBookSummaryGeminiModel } from "./geminiModelConfig";
+import {
+  recommendationBookSummaryGeminiFallbackModels,
+  recommendationBookSummaryGeminiModel,
+} from "./geminiModelConfig";
 
 const GEMINI_GENERATE_CONTENT_BASE_URL =
   "https://generativelanguage.googleapis.com/v1beta/models";
@@ -76,6 +79,28 @@ function isTransientStatus(status: number): boolean {
   return [408, 429, 500, 502, 503, 504].includes(status);
 }
 
+function isUnavailableModelError(status: number, message: string): boolean {
+  return (
+    status === 404 &&
+    (/not found/i.test(message) || /no longer available/i.test(message))
+  );
+}
+
+function candidateModels(preferredModel: string): string[] {
+  const seen = new Set<string>();
+  const models = [
+    preferredModel,
+    ...recommendationBookSummaryGeminiFallbackModels(),
+  ].filter((model) => {
+    const trimmed = model.trim();
+    if (!trimmed || seen.has(trimmed)) return false;
+    seen.add(trimmed);
+    return true;
+  });
+
+  return models.length > 0 ? models : recommendationBookSummaryGeminiFallbackModels();
+}
+
 function isAbortError(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -99,124 +124,133 @@ export async function geminiGenerateJson(
     throw new Error("Missing GEMINI_API_KEY environment variable");
   }
 
-  const model = options.model ?? recommendationBookSummaryGeminiModel();
-  const url = new URL(
-    `${GEMINI_GENERATE_CONTENT_BASE_URL}/${encodeURIComponent(model)}:generateContent`,
-  );
-  url.searchParams.set("key", apiKey);
-
   let lastError: unknown = null;
 
-  for (let attempt = 0; attempt <= GEMINI_RETRIES; attempt += 1) {
-    const startedAt = Date.now();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  for (const model of candidateModels(options.model ?? recommendationBookSummaryGeminiModel())) {
+    for (let attempt = 0; attempt <= GEMINI_RETRIES; attempt += 1) {
+      const startedAt = Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+      const url = new URL(
+        `${GEMINI_GENERATE_CONTENT_BASE_URL}/${encodeURIComponent(model)}:generateContent`,
+      );
+      url.searchParams.set("key", apiKey);
 
-    try {
-      console.log("[recommendation-book-detail:gemini] request", {
-        stage: options.stage,
-        model,
-        attempt: attempt + 1,
-      });
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: userPrompt }],
-            },
-          ],
-          generationConfig: {
-            temperature: options.temperature,
-            maxOutputTokens: options.maxOutputTokens,
-            responseMimeType: "application/json",
-          },
-        }),
-        signal: controller.signal,
-      });
-      const json = (await response.json().catch(() => null)) as
-        | GeminiGenerateContentResponse
-        | ProviderErrorBody
-        | null;
-      const durationMs = Date.now() - startedAt;
-
-      if (!response.ok) {
-        const message = safeErrorMessage(json as ProviderErrorBody | null);
-        console.error("[recommendation-book-detail:gemini] failure", {
+      try {
+        console.log("[recommendation-book-detail:gemini] request", {
           stage: options.stage,
           model,
           attempt: attempt + 1,
-          durationMs,
-          status: response.status,
-          transient: isTransientStatus(response.status),
-          message,
         });
 
-        const error = new Error(
-          `Gemini ${options.stage} failed with HTTP ${response.status}: ${message}`,
-        );
-        lastError = error;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [{ text: systemPrompt }],
+            },
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: userPrompt }],
+              },
+            ],
+            generationConfig: {
+              temperature: options.temperature,
+              maxOutputTokens: options.maxOutputTokens,
+              responseMimeType: "application/json",
+            },
+          }),
+          signal: controller.signal,
+        });
+        const json = (await response.json().catch(() => null)) as
+          | GeminiGenerateContentResponse
+          | ProviderErrorBody
+          | null;
+        const durationMs = Date.now() - startedAt;
 
-        if (!isTransientStatus(response.status) || attempt >= GEMINI_RETRIES) {
-          throw error;
+        if (!response.ok) {
+          const message = safeErrorMessage(json as ProviderErrorBody | null);
+          console.error("[recommendation-book-detail:gemini] failure", {
+            stage: options.stage,
+            model,
+            attempt: attempt + 1,
+            durationMs,
+            status: response.status,
+            transient: isTransientStatus(response.status),
+            message,
+          });
+
+          const error = new Error(
+            `Gemini ${options.stage} failed with HTTP ${response.status}: ${message}`,
+          );
+          lastError = error;
+
+          if (isUnavailableModelError(response.status, message)) {
+            console.warn("[recommendation-book-detail:gemini] trying fallback model", {
+              stage: options.stage,
+              failedModel: model,
+              message,
+            });
+            break;
+          }
+
+          if (!isTransientStatus(response.status) || attempt >= GEMINI_RETRIES) {
+            throw error;
+          }
+
+          await sleep(retryAfterDelayMs(response, attempt));
+          continue;
         }
 
-        await sleep(retryAfterDelayMs(response, attempt));
-        continue;
-      }
-
-      const content = cleanText(contentToText(json as GeminiGenerateContentResponse | null));
-      console.log("[recommendation-book-detail:gemini] success", {
-        stage: options.stage,
-        model,
-        attempt: attempt + 1,
-        durationMs,
-        finishReason: (json as GeminiGenerateContentResponse | null)?.candidates?.[0]
-          ?.finishReason,
-        promptTokens: (json as GeminiGenerateContentResponse | null)?.usageMetadata
-          ?.promptTokenCount,
-        completionTokens: (json as GeminiGenerateContentResponse | null)?.usageMetadata
-          ?.candidatesTokenCount,
-        totalTokens: (json as GeminiGenerateContentResponse | null)?.usageMetadata
-          ?.totalTokenCount,
-      });
-
-      return content;
-    } catch (error) {
-      const durationMs = Date.now() - startedAt;
-      lastError = error;
-
-      if (isAbortError(error)) {
-        console.error("[recommendation-book-detail:gemini] timeout", {
+        const content = cleanText(contentToText(json as GeminiGenerateContentResponse | null));
+        console.log("[recommendation-book-detail:gemini] success", {
           stage: options.stage,
           model,
           attempt: attempt + 1,
           durationMs,
-          timeoutMs: GEMINI_TIMEOUT_MS,
+          finishReason: (json as GeminiGenerateContentResponse | null)?.candidates?.[0]
+            ?.finishReason,
+          promptTokens: (json as GeminiGenerateContentResponse | null)?.usageMetadata
+            ?.promptTokenCount,
+          completionTokens: (json as GeminiGenerateContentResponse | null)?.usageMetadata
+            ?.candidatesTokenCount,
+          totalTokens: (json as GeminiGenerateContentResponse | null)?.usageMetadata
+            ?.totalTokenCount,
         });
-      } else if (!(error instanceof Error && error.message.startsWith("Gemini "))) {
-        console.error("[recommendation-book-detail:gemini] failure", {
-          stage: options.stage,
-          model,
-          attempt: attempt + 1,
-          durationMs,
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
 
-      if (attempt >= GEMINI_RETRIES) break;
-      if (error instanceof Error && error.message.startsWith("Gemini ")) break;
-      await sleep(Math.min(750 * 2 ** attempt, 8_000));
-    } finally {
-      clearTimeout(timeout);
+        return content;
+      } catch (error) {
+        const durationMs = Date.now() - startedAt;
+        lastError = error;
+
+        if (isAbortError(error)) {
+          console.error("[recommendation-book-detail:gemini] timeout", {
+            stage: options.stage,
+            model,
+            attempt: attempt + 1,
+            durationMs,
+            timeoutMs: GEMINI_TIMEOUT_MS,
+          });
+        } else if (!(error instanceof Error && error.message.startsWith("Gemini "))) {
+          console.error("[recommendation-book-detail:gemini] failure", {
+            stage: options.stage,
+            model,
+            attempt: attempt + 1,
+            durationMs,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+
+        if (attempt >= GEMINI_RETRIES) break;
+        if (error instanceof Error && error.message.startsWith("Gemini ")) break;
+        await sleep(Math.min(750 * 2 ** attempt, 8_000));
+      } finally {
+        clearTimeout(timeout);
+      }
     }
   }
 

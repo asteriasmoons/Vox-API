@@ -8,7 +8,7 @@ const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
 
 const CATALOG_TIMEOUT_MS = 12_000;
 const AI_MAX_TOKENS = 900;
-const DETAIL_CACHE_VERSION = 3;
+const DETAIL_CACHE_VERSION = 4;
 
 type RecommendationBookDetailRequest = {
   title: string;
