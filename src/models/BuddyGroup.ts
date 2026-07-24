@@ -16,6 +16,13 @@ export interface IBuddyMember {
 export interface IBuddyGroup extends Document {
   announcementId: string;
 
+  // Snapshot of who posted the announcement, copied at creation and never
+  // reassigned. Display only — it grants no permissions. Membership decides
+  // who can act, so this cannot drift into an authority the way the old
+  // per-member isOwner flag did.
+  ownerUserId: string | null;
+  ownerDisplayName: string | null;
+
   bookTitle: string;
   bookAuthor: string | null;
   bookCoverUrl: string | null;
@@ -47,6 +54,9 @@ const BuddyMemberSchema = new Schema<IBuddyMember>(
 const BuddyGroupSchema = new Schema<IBuddyGroup>(
   {
     announcementId: { type: String, required: true, index: true },
+
+    ownerUserId: { type: String, default: null, index: true },
+    ownerDisplayName: { type: String, default: null },
 
     bookTitle: { type: String, required: true },
     bookAuthor: { type: String, default: null },

@@ -131,6 +131,23 @@ async function loadGroupsForAnnouncements(
   return new Map(groups.map((group) => [group.announcementId, group]));
 }
 
+/**
+ * Fills in the owner snapshot for groups created before the field existed.
+ * Self-healing so no migration is needed — a group is corrected the first time
+ * it's read. Never overwrites an existing value.
+ */
+async function backfillGroupOwner(group: IBuddyGroup): Promise<IBuddyGroup> {
+  if (group.ownerUserId) return group;
+
+  const announcement = await BuddyAnnouncement.findById(group.announcementId);
+  if (!announcement) return group;
+
+  group.ownerUserId = announcement.ownerUserId;
+  group.ownerDisplayName = announcement.ownerDisplayName;
+  await group.save();
+  return group;
+}
+
 async function assertOwnedAnnouncement(
   input: OwnerAnnouncementInput,
 ): Promise<IBuddyAnnouncement> {
@@ -338,6 +355,8 @@ export async function requestToJoin(
   if (!group) {
     group = await BuddyGroup.create({
       announcementId: String(announcement._id),
+      ownerUserId: announcement.ownerUserId,
+      ownerDisplayName: announcement.ownerDisplayName,
       bookTitle: announcement.bookTitle,
       bookAuthor: announcement.bookAuthor,
       bookCoverUrl: announcement.bookCoverUrl,
@@ -357,6 +376,24 @@ export async function requestToJoin(
 
     announcement.groupId = String(group._id);
     await announcement.save();
+  }
+
+  // The reader who posted this is always part of it. A group can otherwise end
+  // up with its author sitting at "left" — from a group that predates the
+  // owner-leaves-closes-announcement rule, or from an admin reopen — and the
+  // next requester would walk into an apparently empty group without approval.
+  const owner = group.members.find((m) => m.userId === announcement.ownerUserId);
+  if (!owner) {
+    group.members.push({
+      userId: announcement.ownerUserId,
+      displayName: announcement.ownerDisplayName,
+      status: "joined",
+      joinedAt: announcement.createdAt,
+      requestedAt: announcement.createdAt,
+    });
+  } else if (owner.status !== "joined") {
+    owner.status = "joined";
+    owner.joinedAt = owner.joinedAt ?? new Date();
   }
 
   const existing = group.members.find((m) => m.userId === input.requesterUserId);
@@ -533,7 +570,7 @@ export async function getGroup(
   const group = await BuddyGroup.findById(groupId);
   if (!group) throw new Error("GROUP_NOT_FOUND");
   assertMember(group, userId);
-  return group;
+  return backfillGroupOwner(group);
 }
 
 /**
@@ -544,9 +581,11 @@ export async function getGroup(
  * user was still a member of. Membership status is the source of truth.
  */
 export async function getMyGroups(userId: string): Promise<IBuddyGroup[]> {
-  return BuddyGroup.find({
+  const groups = await BuddyGroup.find({
     members: { $elemMatch: { userId, status: "joined" } },
   }).sort({ updatedAt: -1 });
+
+  return Promise.all(groups.map(backfillGroupOwner));
 }
 
 // ---------------------------------------------------------------------------
