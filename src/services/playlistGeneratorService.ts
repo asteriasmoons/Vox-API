@@ -1,7 +1,7 @@
 // src/services/playlistGeneratorService.ts
 
-import { recommendationGroqModel } from "./groqModelConfig.js";
-import { lookupTrackMetadata, type TrackMetadataResult } from "./trackLookupService.js";
+import { recommendationGroqModel } from "./groqModelConfig";
+import { lookupTrackMetadata, type TrackMetadataResult } from "./trackLookupService";
 
 const GROQ_CHAT_COMPLETIONS_URL =
   "https://api.groq.com/openai/v1/chat/completions";

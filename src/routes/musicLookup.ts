@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { lookupTrackMetadata } from "../services/trackLookupService.js";
-import { generatePlaylist, type PlaylistTrackInput } from "../services/playlistGeneratorService.js";
-import { GeneratedPlaylist } from "../models/GeneratedPlaylist.js";
+import { lookupTrackMetadata } from "../services/trackLookupService";
+import { generatePlaylist, type PlaylistTrackInput } from "../services/playlistGeneratorService";
+import { GeneratedPlaylist } from "../models/GeneratedPlaylist";
 
 const router = Router();
 

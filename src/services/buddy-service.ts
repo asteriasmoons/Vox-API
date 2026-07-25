@@ -383,6 +383,7 @@ export async function requestToJoin(
   // owner-leaves-closes-announcement rule, or from an admin reopen — and the
   // next requester would walk into an apparently empty group without approval.
   const owner = group.members.find((m) => m.userId === announcement.ownerUserId);
+  let restoredOwner = false;
   if (!owner) {
     group.members.push({
       userId: announcement.ownerUserId,
@@ -391,15 +392,26 @@ export async function requestToJoin(
       joinedAt: announcement.createdAt,
       requestedAt: announcement.createdAt,
     });
+    restoredOwner = true;
   } else if (owner.status !== "joined") {
     owner.status = "joined";
     owner.joinedAt = owner.joinedAt ?? new Date();
+    restoredOwner = true;
   }
 
   const existing = group.members.find((m) => m.userId === input.requesterUserId);
   let joinedMember: typeof existing | null = null;
   if (existing) {
-    if (existing.status === "joined") return group;
+    if (existing.status === "joined") {
+      // Already in. If the restoration above is what put them here — the author
+      // rejoining their own read — that edit still has to be persisted, or the
+      // caller gets a success describing a state that was never written.
+      if (restoredOwner) {
+        group.isActive = true;
+        await group.save();
+      }
+      return group;
+    }
     if (existing.status === "pending") throw new Error("REQUEST_ALREADY_SENT");
 
     const joinedCount = activeJoinedCount(group);
