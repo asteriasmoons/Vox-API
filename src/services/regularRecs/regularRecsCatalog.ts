@@ -274,7 +274,7 @@ export async function verifyRegularCandidate(
 
   const releaseYear =
     extractYear(google?.publishedDate) ?? firstNumber(openLibrary?.first_publish_year);
-  const summary = cleanText(google?.description) || "No description available.";
+  const summary = cleanText(google?.description);
 
   if (suspiciousPenalty(`${title} ${summary}`) >= 60) return null;
 
