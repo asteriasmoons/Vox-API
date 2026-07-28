@@ -18,6 +18,36 @@ import {
 
 const REGULAR_CURRENT_YEAR = new Date().getFullYear();
 
+// The set of terms a good recommendation should touch: the profile's genres,
+// subgenres, tropes, themes, moods, keywords, plus the seed book's subjects.
+export function regularReferenceTerms(
+  profile: RegularRequestProfile,
+  seedSubjects: string[],
+): string[] {
+  return uniqueStrings([
+    ...profile.primaryGenres,
+    ...profile.subgenres,
+    ...profile.tropes,
+    ...profile.themes,
+    ...profile.moods,
+    ...profile.keywords,
+    ...seedSubjects,
+  ]);
+}
+
+// A book is "off-topic" only when it has REAL category metadata (so we can
+// judge it) and none of it overlaps the reference terms. Books with sparse
+// metadata get the benefit of the doubt.
+export function regularIsOffTopic(
+  rec: RegularBookRec,
+  reference: string[],
+): boolean {
+  if (reference.length === 0) return false;
+  const bookTerms = uniqueStrings([...rec.genres, ...rec.subjects]);
+  if (bookTerms.length < 3) return false;
+  return overlapCount(reference, bookTerms) === 0;
+}
+
 export function scoreRegularRelevance(
   rec: RegularBookRec,
   profile: RegularRequestProfile,

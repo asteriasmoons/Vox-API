@@ -13,8 +13,16 @@ import {
   dedupeRegularCandidates,
   generateAllRegularCandidates,
 } from "./regularRecsCandidates";
-import { buildRegularRequestProfile } from "./regularRecsRequestProfile";
-import { applyRegularDiversity, scoreRegularRelevance } from "./regularRecsScoring";
+import {
+  buildRegularRequestProfile,
+  extractRegularCompTitles,
+} from "./regularRecsRequestProfile";
+import {
+  applyRegularDiversity,
+  regularIsOffTopic,
+  regularReferenceTerms,
+  scoreRegularRelevance,
+} from "./regularRecsScoring";
 import {
   mapWithConcurrency,
   normalizeAuthor,
@@ -87,10 +95,23 @@ export async function buildRegularRecommendations(
   const seed = await resolveRegularSeedBook(requestText);
   const profile = await buildRegularRequestProfile(requestText, seed);
 
-  // Candidate groups are generated across Groq + Mistral + OpenRouter in
-  // parallel (see regularRecsCandidates), so no single provider is a bottleneck.
+  // High-confidence "comp" titles named in the seed's own jacket copy
+  // (e.g. "perfect for fans of The Hazel Wood and Small Favors").
+  const compCandidates: RegularAiCandidate[] = seed
+    ? extractRegularCompTitles(seed.description).map((title) => ({
+        title,
+        author: "",
+        reason: "Named as a comparable title in the book's description",
+        matchTags: [],
+        candidateGroup: "closest" as const,
+      }))
+    : [];
+
+  // Candidate groups are generated across Groq + Mistral + Cerebras in parallel
+  // (see regularRecsCandidates); comps are merged in as extra strong candidates.
+  const aiCandidates = await generateAllRegularCandidates(requestText, seed, profile);
   const candidates = dedupeRegularCandidates(
-    await generateAllRegularCandidates(requestText, seed, profile),
+    [...compCandidates, ...aiCandidates],
     seed,
   ).filter((c) => !isExcluded(c, exclude));
   const generatedCount = candidates.length;
@@ -99,21 +120,27 @@ export async function buildRegularRecommendations(
     (rec) => !isExcluded(rec, exclude),
   );
 
-  for (const rec of verified) rec.finalScore = scoreRegularRelevance(rec, profile);
-  verified.sort((a, b) => b.finalScore - a.finalScore);
+  // Drop books whose REAL metadata is clearly off-topic (genre drift), but keep
+  // the full set if the gate would leave us too thin.
+  const reference = regularReferenceTerms(profile, seed ? seed.subjects : []);
+  const onTopic = verified.filter((rec) => !regularIsOffTopic(rec, reference));
+  const pool = onTopic.length >= 12 ? onTopic : verified;
+
+  for (const rec of pool) rec.finalScore = scoreRegularRelevance(rec, profile);
+  pool.sort((a, b) => b.finalScore - a.finalScore);
 
   const limit = Math.max(
     1,
     Math.min(desiredCount, REGULAR_TARGET_FINAL_RECOMMENDATION_COUNT),
   );
-  const finalRecs = applyRegularDiversity(verified, limit);
+  const finalRecs = applyRegularDiversity(pool, limit);
 
   return {
     recs: finalRecs,
     profile,
     seed,
     generatedCount,
-    verifiedCount: verified.length,
+    verifiedCount: pool.length,
   };
 }
 

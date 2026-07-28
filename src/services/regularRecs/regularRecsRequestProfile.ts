@@ -88,6 +88,31 @@ export function regularSeedContextBlock(
     .join("\n");
 }
 
+// Pull comparable book titles a publisher blurb names, e.g.
+// "Perfect for fans of The Hazel Wood and Small Favors".
+// These are hand-picked, high-confidence matches. Verification filters junk.
+export function extractRegularCompTitles(description: string): string[] {
+  if (!description) return [];
+  const out: string[] = [];
+  const trigger =
+    /(?:fans|readers|lovers|readers looking for|in the tradition)\s+(?:of\s+)?([^.;:!?]+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = trigger.exec(description)) !== null) {
+    const seg = m[1];
+    if (!seg) continue;
+    for (const part of seg.split(/\s+and\s+|\s*&\s*|,/i)) {
+      const title = cleanText(part).replace(/["'“”‘’]/g, "").trim();
+      const words = title.split(/\s+/);
+      if (title.length < 2 || words.length > 6) continue;
+      if (/bestsell|author|times|novel|series|reader|fans|edition|book club/i.test(title)) {
+        continue;
+      }
+      out.push(title);
+    }
+  }
+  return uniqueStrings(out).slice(0, 6);
+}
+
 function coerceProfile(
   parsed: unknown,
   base: RegularRequestProfile,

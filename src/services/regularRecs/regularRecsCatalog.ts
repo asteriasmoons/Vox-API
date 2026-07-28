@@ -216,6 +216,14 @@ function computeMetadataScore(rec: {
   return score;
 }
 
+// Partial/non-book editions we should DROP entirely (not the real readable book).
+const REGULAR_JUNK_EDITION =
+  /(free preview|\bsampler\b|\bexcerpt\b|first \d+ chapters|boxed set|box set|\bbooks?\s*\d+\s*[-–—]\s*\d+\b|\d+-book|complete (?:series|collection|novels))/i;
+
+// Marketing suffixes to strip from an otherwise-real title for a clean display.
+const REGULAR_EDITION_SUFFIX =
+  /\s*[-–—:(]+\s*(?:a read with jenna pick|movie tie-?in edition|media tie-?in edition|tv tie-?in edition|movie tie-?in|deluxe edition|special edition|collector'?s edition|illustrated edition|anniversary edition)\b.*$/i;
+
 export async function verifyRegularCandidate(
   candidate: RegularAiCandidate,
 ): Promise<RegularBookRec | null> {
@@ -233,7 +241,7 @@ export async function verifyRegularCandidate(
     ? openLibrary?.author_name.slice(0, 3).join(", ")
     : "";
 
-  const title =
+  let title =
     cleanText(google?.title) ||
     cleanText(openLibrary?.title) ||
     cleanText(candidate.title);
@@ -242,6 +250,13 @@ export async function verifyRegularCandidate(
     cleanText(openLibraryAuthor) ||
     cleanText(candidate.author);
   if (!title) return null;
+
+  // Drop partial/non-book editions (previews, samplers, boxed sets).
+  if (REGULAR_JUNK_EDITION.test(`${title} ${cleanText(google?.subtitle)}`)) {
+    return null;
+  }
+  // Strip marketing/edition suffixes for a clean display title.
+  title = title.replace(REGULAR_EDITION_SUFFIX, "").trim() || title;
 
   const ids = google ? regularGoogleIdentifiers(google) : {};
   const coverId = firstNumber(openLibrary?.cover_i);
