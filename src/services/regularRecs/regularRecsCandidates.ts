@@ -128,23 +128,29 @@ ${profileBlock(profile)}
 Recommend ${groups.length * perGroup} real, published books (about ${perGroup} for EACH of these candidate groups):
 ${guide}
 
+CRITICAL — NO HALLUCINATION:
+- Only recommend REAL books you are certain exist, with their correct real title and author.
+- NEVER invent or make up titles, authors, plots, genres, tropes, or reasons.
+- The "reason" and "matchTags" MUST truthfully describe the ACTUAL book you named. NEVER copy the reader's request or the seed book's plot onto a different book. (E.g. do not call a psychological thriller a "portal fantasy" just because the request was.)
+- If a book does not genuinely fit the request, LEAVE IT OUT. Returning fewer accurate books is far better than padding the list with wrong or invented ones.
+- If you are not certain a book is real and a real match, do not include it.
+
 Rules:
-- Only real published books. Never invent titles.
 - Do NOT recommend the seed book or alternate editions of it.
 - No duplicate titles.
 - Keep the audience category appropriate (YA, New Adult, Adult, etc.).
 - Prioritize exact subgenre and tonal matches over generic popularity.
 - Do not fill the list with unrelated bestsellers.
-- Give each book an accurate title and author, and tag its candidateGroup with one of: ${groups.join(", ")}.
+- Tag each book's candidateGroup with one of: ${groups.join(", ")}.
 
 Return STRICT JSON only:
 {"books":[{"title":"","author":"","reason":"short internal relevance reason","matchTags":["tag1","tag2"],"candidateGroup":"${groups[0]}"}]}`;
 
   try {
     const content = await run(
-      "You recommend real published books and return strict JSON only. No markdown, no prose, no summaries.",
+      "You are a factual book recommender. You only name REAL published books and describe them truthfully. You never invent titles, authors, or details, and you never mislabel a book's genre or plot. Return strict JSON only — no markdown, prose, or summaries.",
       prompt,
-      { temperature: 0.35, maxTokens: 3500 },
+      { temperature: 0.2, maxTokens: 3500 },
     );
     return parseAiCandidates(content, groups[0] ?? "closest");
   } catch (error) {

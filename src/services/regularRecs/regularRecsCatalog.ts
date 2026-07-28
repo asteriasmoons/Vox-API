@@ -61,6 +61,7 @@ export async function regularGoogleBooksSearch(
     url,
     REGULAR_CATALOG_TIMEOUT_MS,
     "Google Books",
+    1, // fail fast; Open Library is the fallback
   );
   const volumes = (data?.items ?? [])
     .map((item) => item.volumeInfo)
@@ -90,6 +91,7 @@ export async function regularOpenLibrarySearch(
     url,
     REGULAR_CATALOG_TIMEOUT_MS,
     "Open Library",
+    2,
   );
   const docs = (data?.docs ?? []).filter((d) => cleanText(d.title));
   regularRecsCache.set(cacheKey, docs, REGULAR_TTL_CATALOG);

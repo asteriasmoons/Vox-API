@@ -189,10 +189,11 @@ export async function fetchWithRetry(
   init: RequestInit,
   timeoutMs: number,
   label: string,
+  maxRetries: number = REGULAR_MAX_HTTP_RETRIES,
 ): Promise<Response> {
   let lastError: unknown;
 
-  for (let attempt = 0; attempt <= REGULAR_MAX_HTTP_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -205,21 +206,18 @@ export async function fetchWithRetry(
           response.status === 502 ||
           response.status === 503 ||
           response.status === 504) &&
-        attempt < REGULAR_MAX_HTTP_RETRIES
+        attempt < maxRetries
       ) {
-        const backoff = Math.min(4000, 400 * 2 ** attempt);
-        console.warn(`${label} transient ${response.status}; retry in ${backoff}ms`);
-        await sleep(backoff);
+        // Silent retry — do not flood logs. Callers log real failures.
+        await sleep(Math.min(4000, 400 * 2 ** attempt));
         continue;
       }
       return response;
     } catch (error) {
       clearTimeout(timer);
       lastError = error;
-      if (attempt < REGULAR_MAX_HTTP_RETRIES) {
-        const backoff = Math.min(4000, 400 * 2 ** attempt);
-        console.warn(`${label} network error; retry in ${backoff}ms`);
-        await sleep(backoff);
+      if (attempt < maxRetries) {
+        await sleep(Math.min(4000, 400 * 2 ** attempt));
         continue;
       }
     }
@@ -232,16 +230,19 @@ export async function fetchJson<T>(
   url: string | URL,
   timeoutMs: number,
   label: string,
+  maxRetries: number = REGULAR_MAX_HTTP_RETRIES,
 ): Promise<T | null> {
-  const response = await fetchWithRetry(
-    url,
-    { method: "GET", headers: { Accept: "application/json" } },
-    timeoutMs,
-    label,
-  );
-  if (!response.ok) {
-    console.warn(`${label} responded ${response.status}`);
+  try {
+    const response = await fetchWithRetry(
+      url,
+      { method: "GET", headers: { Accept: "application/json" } },
+      timeoutMs,
+      label,
+      maxRetries,
+    );
+    if (!response.ok) return null;
+    return (await response.json().catch(() => null)) as T | null;
+  } catch {
     return null;
   }
-  return (await response.json().catch(() => null)) as T | null;
 }
