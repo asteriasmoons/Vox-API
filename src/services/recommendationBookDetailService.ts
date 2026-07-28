@@ -9,7 +9,7 @@ const GROQ_CHAT_COMPLETIONS_URL =
 const CATALOG_TIMEOUT_MS = 12_000;
 const AI_TIMEOUT_MS = 35_000;
 const AI_MAX_TOKENS = 1200;
-const DETAIL_CACHE_VERSION = 7;
+const DETAIL_CACHE_VERSION = 8;
 const BOOK_DETAIL_GROQ_MODEL = "openai/gpt-oss-120b";
 const GROQ_RETRIES = 2;
 
@@ -562,45 +562,30 @@ async function generateAIEnrichment(
   catalog: CatalogDetail,
 ): Promise<AIEnrichment> {
   const systemPrompt = [
-    "You are Lumey's book discovery copywriter for recommended shelf book detail pages.",
-    "Your job is to make a reader think, 'oooo I want to read that,' while staying truthful to the supplied metadata.",
+    "You are Lumey's book description writer for recommended book detail pages.",
+    "You write clear, accurate, and compelling descriptions that tell the reader what a book is actually about while making them want to read it.",
     "Return valid JSON only.",
-    "Do not invent publication facts, ISBNs, publishers, awards, or endings.",
-    "Do not write generic book-report prose.",
+    "Stay truthful to the supplied metadata and the real book. Never invent characters, plot points, publication facts, ISBNs, publishers, awards, or endings.",
+    "Never be poetic, flowery, cryptic, vague, or riddling, and never withhold the premise to build mystery.",
     "Do not reuse the shelf summary or catalog description verbatim.",
   ].join(" ");
   const userPrompt = [
     "Build a rich book detail payload for a recommended book in Lumey.",
-    "Use the catalog metadata as the source of truth for factual metadata.",
-    "Write an original summary from scratch using the supplied metadata as reference. Never paraphrase or lightly rewrite the provided catalog summary.",
-    "Each paragraph should contain at least four complete, flowing sentences.",
-    "The writing should feel elegant, cinematic, emotionally intelligent, vivid, polished, and highly readable.",
-    "Your sole objective is to make the reader desperately want to pick up this book.",
-    "The summary should create curiosity, emotional investment, fascination, or excitement before the reader reaches the final sentence.",
-    "Do NOT begin by identifying the genre or describing the book from a distance.",
-    "Do NOT sound like a review, encyclopedia, publisher description, AI assistant, or marketing copy.",
-    "Never write phrases like 'this book explores', 'the author examines', 'perfect for fans of', 'readers who enjoy', 'this compelling novel', 'this insightful guide', or similar generic language.",
-    "First determine what kind of book this is from the supplied metadata.",
-    "Adapt your writing naturally to that type of book instead of forcing it into a fiction or nonfiction template.",
-    "If it is fiction:",
-    "Immerse the reader immediately into the emotional heart of the story. Introduce people, places, mysteries, relationships, dangers, dreams, impossible choices, or unanswered questions that make the world feel alive. Build tension and curiosity naturally without revealing spoilers. Leave the reader wondering what happens next.",
-    "If it is nonfiction:",
-    "Lead with the fascinating question, surprising truth, life-changing idea, remarkable story, or powerful insight that sits at the heart of the book. Show why this subject matters emotionally, intellectually, or personally. Make the reader feel they are about to discover something that could genuinely change how they see the world.",
-    "If it is memoir or biography:",
-    "Bring the person to life. Focus on the moments, struggles, triumphs, contradictions, relationships, or defining experiences that make their journey unforgettable. Create emotional curiosity rather than simply recounting events.",
-    "If it is practical nonfiction such as self-help, psychology, business, health, productivity, spirituality, or personal growth:",
-    "Do not list topics or lessons. Instead, make the reader feel the transformation waiting inside the book. Highlight the problems it helps solve, the perspectives it challenges, or the possibilities it opens without sounding instructional or sales-like.",
-    "Regardless of genre:",
-    "Write with the confidence and elegance of an experienced literary editor introducing an extraordinary book. Every sentence should deepen curiosity and create momentum. The reader should feel that stopping now would mean missing something remarkable.",
-    "Every sentence should increase curiosity.",
-    "Every paragraph should reveal just enough to make the reader crave more.",
-    "Make the reader feel there is something remarkable waiting inside these pages.",
-    "Never invent facts, characters, events, awards, or themes that are unsupported by the supplied metadata.",
-    "Never include spoilers or major reveals.",
-    "The final sentence should leave the reader with a lingering feeling of curiosity, wonder, anticipation, or urgency to begin reading.",
-    "Never merely explain what the book is about. Reveal just enough to ignite curiosity while deliberately leaving the most interesting questions unanswered. The summary should feel like opening the first page of a great conversation rather than reading an encyclopedia entry.",
-    "After reading the summary, the ideal reaction should be:",
-    "'...Okay. I need to read this book.'",
+    "Use the catalog metadata as the source of truth for factual metadata, and your knowledge of this specific real book for the summary.",
+    "Write a clear, accurate, and genuinely compelling summary that actually tells the reader what the book is about AND makes them want to read it.",
+    "The reader should finish the summary understanding the book's premise, hooked, and able to decide whether they want to read it.",
+    "In flowing prose, cover: who the main character or subject is; the setup and premise; the central conflict or question the book revolves around; the setting or world; and what is at stake (for fiction) or what the reader will learn or gain (for nonfiction).",
+    "Write two paragraphs. Each paragraph must contain at least four complete, flowing sentences.",
+    "Write an original summary from scratch. Never paraphrase or lightly rewrite the provided catalog summary.",
+    "Write like the best book-jacket copy: vivid, confident, and compelling enough to pull the reader in — but ALWAYS grounded in what actually happens and what the book is truly about. Clarity and pull matter equally; deliver both.",
+    "Open with a real hook — a concrete, intriguing detail about the character, premise, or stakes that grabs attention — never vague mood or scenery.",
+    "Do not sound like an encyclopedia, plot summary, or book report. Never use flat, distancing phrases like 'the central conflict revolves around', 'the narrative follows', 'the story follows', 'readers gain', 'this book tells the story of', or 'the book is about'.",
+    "ABSOLUTELY DO NOT be poetic, flowery, abstract, atmospheric-for-its-own-sake, cryptic, or vague. DO NOT write a riddle. DO NOT tease the reader or leave the interesting questions unanswered. DO NOT withhold the premise to create mystery. If you are describing mood without stating what actually happens or what the book is about, you are doing it wrong.",
+    "Never write phrases like 'this book explores', 'the author examines', 'perfect for fans of', 'readers who enjoy', 'this compelling novel', or 'this insightful guide'.",
+    "Adapt to the book type: for fiction, describe the protagonist, their situation, the central conflict, and the stakes; for nonfiction, describe the core subject, the main ideas or argument, and what the reader takes away; for memoir or biography, describe whose life it is and the defining experiences it covers; for practical nonfiction, describe the actual problem it addresses and what it teaches.",
+    "Do not reveal major twists, spoilers, or the ending — but DO clearly describe the premise, setup, and what the book is actually about.",
+    "Never invent facts, characters, events, awards, or themes that are unsupported by the book.",
+    "Also fill in the remaining metadata fields (genres, subgenres, moods, tags, tropes, themes, tone, pacing, audience, romanceLevel, darknessLevel) accurately based on the book and the supplied metadata.",
     "Return strict JSON only. The summary field is required.",
     "",
     "Recommendation context:",
