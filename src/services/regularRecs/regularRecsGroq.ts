@@ -43,6 +43,11 @@ export async function regularGroqChatJson(
           temperature: options.temperature,
           max_tokens: options.maxTokens,
           response_format: { type: "json_object" },
+          // gpt-oss models are reasoning models; keep reasoning minimal so we
+          // stay well under Groq's tokens-per-minute limit.
+          ...(REGULAR_GROQ_MODEL.includes("gpt-oss")
+            ? { reasoning_effort: "low" }
+            : {}),
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },

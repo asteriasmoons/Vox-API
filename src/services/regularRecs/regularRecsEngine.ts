@@ -4,7 +4,7 @@
 //  Shares NO code with the collections/shelves system.
 //
 
-import { REGULAR_MIN_ACCEPTABLE_RECOMMENDATION_COUNT, REGULAR_TARGET_FINAL_RECOMMENDATION_COUNT } from "./regularRecsConfig";
+import { REGULAR_TARGET_FINAL_RECOMMENDATION_COUNT } from "./regularRecsConfig";
 import {
   resolveRegularSeedBook,
   verifyRegularCandidate,
@@ -12,7 +12,6 @@ import {
 import {
   dedupeRegularCandidates,
   generateAllRegularCandidates,
-  generateRegularFallbackCandidates,
 } from "./regularRecsCandidates";
 import { buildRegularRequestProfile } from "./regularRecsRequestProfile";
 import { applyRegularDiversity, scoreRegularRelevance } from "./regularRecsScoring";
@@ -88,41 +87,17 @@ export async function buildRegularRecommendations(
   const seed = await resolveRegularSeedBook(requestText);
   const profile = await buildRegularRequestProfile(requestText, seed);
 
+  // Candidate groups are generated across Groq + Mistral + OpenRouter in
+  // parallel (see regularRecsCandidates), so no single provider is a bottleneck.
   const candidates = dedupeRegularCandidates(
     await generateAllRegularCandidates(requestText, seed, profile),
     seed,
   ).filter((c) => !isExcluded(c, exclude));
   const generatedCount = candidates.length;
 
-  let verified = verifiedDedupe(await verifyPool(candidates)).filter(
+  const verified = verifiedDedupe(await verifyPool(candidates)).filter(
     (rec) => !isExcluded(rec, exclude),
   );
-
-  // Fallback pass if verification left us too thin.
-  if (
-    verified.length <
-    Math.max(minVerified, REGULAR_MIN_ACCEPTABLE_RECOMMENDATION_COUNT)
-  ) {
-    const extra = dedupeRegularCandidates(
-      [
-        ...candidates,
-        ...(await generateRegularFallbackCandidates(requestText, seed, profile, candidates)),
-      ],
-      seed,
-    ).filter((c) => !isExcluded(c, exclude));
-
-    const attemptedKeys = new Set(candidates.map((c) => normalizeKey(c.title, c.author)));
-    const fresh = extra.filter(
-      (c) => !attemptedKeys.has(normalizeKey(c.title, c.author)),
-    );
-
-    if (fresh.length > 0) {
-      const more = await verifyPool(fresh);
-      verified = verifiedDedupe([...verified, ...more]).filter(
-        (rec) => !isExcluded(rec, exclude),
-      );
-    }
-  }
 
   for (const rec of verified) rec.finalScore = scoreRegularRelevance(rec, profile);
   verified.sort((a, b) => b.finalScore - a.finalScore);

@@ -1,13 +1,17 @@
 //
 //  regularRecsCandidates.ts
-//  AI candidate generation + early deduplication for the REGULAR engine.
+//  Multi-provider AI candidate generation + early deduplication.
 //
-//  IMPORTANT: candidate generation uses a SINGLE Groq call (plus an optional
-//  fallback call) so we never burst many requests at once and trip Groq's
-//  tokens-per-minute rate limit. Books are still tagged by candidate group.
+//  The six candidate groups are spread across THREE providers running in
+//  parallel (Groq, Mistral, Cerebras) so no single provider's per-minute
+//  token limit is a bottleneck and we still get the full multi-pass pool.
 //
 
 import { regularGroqChatJson } from "./regularRecsGroq";
+import {
+  regularCerebrasChatJson,
+  regularMistralChatJson,
+} from "./regularRecsProviders";
 import { regularSeedContextBlock } from "./regularRecsRequestProfile";
 import {
   cleanText,
@@ -18,12 +22,30 @@ import {
 } from "./regularRecsUtils";
 import {
   REGULAR_CANDIDATE_GROUP_BONUS,
+  REGULAR_CANDIDATE_GROUP_BRIEF,
   REGULAR_CANDIDATE_GROUPS,
   type RegularAiCandidate,
   type RegularCandidateGroup,
   type RegularRequestProfile,
   type RegularSeedBook,
 } from "./regularRecsTypes";
+
+type ProviderFn = (
+  systemPrompt: string,
+  userPrompt: string,
+  options: { temperature: number; maxTokens: number },
+) => Promise<string>;
+
+// Which provider generates which candidate groups (parallel, independent budgets).
+const PROVIDER_JOBS: Array<{
+  label: string;
+  run: ProviderFn;
+  groups: RegularCandidateGroup[];
+}> = [
+  { label: "Groq", run: regularGroqChatJson, groups: ["closest", "reader_safe"] },
+  { label: "Mistral", run: regularMistralChatJson, groups: ["hidden_gem", "backlist"] },
+  { label: "Cerebras", run: regularCerebrasChatJson, groups: ["recent_release", "adjacent"] },
+];
 
 const REGULAR_CANDIDATE_GROUP_SET = new Set<string>(REGULAR_CANDIDATE_GROUPS);
 
@@ -82,21 +104,20 @@ function parseAiCandidates(
   return out;
 }
 
-const GROUP_GUIDE = [
-  '- "closest": the closest possible matches in genre, subgenre, tone, audience, themes, pacing, tropes.',
-  '- "reader_safe": reliable, well-known, widely loved books that still closely match.',
-  '- "hidden_gem": less obvious, under-the-radar books that still strongly match.',
-  '- "recent_release": strongly relevant books from roughly the last 5 years.',
-  '- "backlist": older (5+ years) books that remain highly relevant.',
-  '- "adjacent": books that differ slightly in one dimension but still fit the taste.',
-].join("\n");
-
-// One combined Groq call for the whole candidate pool (no burst of requests).
-export async function generateAllRegularCandidates(
+// One provider call covering its assigned candidate groups (~8 books each).
+async function generateGroupsWithProvider(
+  run: ProviderFn,
+  label: string,
+  groups: RegularCandidateGroup[],
   requestText: string,
   seed: RegularSeedBook | null,
   profile: RegularRequestProfile,
 ): Promise<RegularAiCandidate[]> {
+  const guide = groups
+    .map((g) => `- "${g}": ${REGULAR_CANDIDATE_GROUP_BRIEF[g]}`)
+    .join("\n");
+  const perGroup = 10;
+
   const prompt = `You are Lumey's book similarity engine.
 
 ${regularSeedContextBlock(seed, requestText)}
@@ -104,8 +125,8 @@ ${regularSeedContextBlock(seed, requestText)}
 Similarity profile:
 ${profileBlock(profile)}
 
-Recommend 48 real, published books that match this request, spread across these candidate groups (roughly 8 per group):
-${GROUP_GUIDE}
+Recommend ${groups.length * perGroup} real, published books (about ${perGroup} for EACH of these candidate groups):
+${guide}
 
 Rules:
 - Only real published books. Never invent titles.
@@ -114,23 +135,43 @@ Rules:
 - Keep the audience category appropriate (YA, New Adult, Adult, etc.).
 - Prioritize exact subgenre and tonal matches over generic popularity.
 - Do not fill the list with unrelated bestsellers.
-- Include both newer and older relevant books.
-- Give each book an accurate title and author, and tag its candidateGroup.
+- Give each book an accurate title and author, and tag its candidateGroup with one of: ${groups.join(", ")}.
 
 Return STRICT JSON only:
-{"books":[{"title":"","author":"","reason":"short internal relevance reason","matchTags":["tag1","tag2"],"candidateGroup":"closest"}]}`;
+{"books":[{"title":"","author":"","reason":"short internal relevance reason","matchTags":["tag1","tag2"],"candidateGroup":"${groups[0]}"}]}`;
 
   try {
-    const content = await regularGroqChatJson(
+    const content = await run(
       "You recommend real published books and return strict JSON only. No markdown, no prose, no summaries.",
       prompt,
-      { temperature: 0.35, maxTokens: 6000 },
+      { temperature: 0.35, maxTokens: 3500 },
     );
-    return parseAiCandidates(content, "closest");
+    return parseAiCandidates(content, groups[0] ?? "closest");
   } catch (error) {
-    console.error("Candidate generation failed:", error);
+    console.error(`Candidate generation via ${label} failed:`, error);
     return [];
   }
+}
+
+// Fan out across all three providers in parallel, then merge.
+export async function generateAllRegularCandidates(
+  requestText: string,
+  seed: RegularSeedBook | null,
+  profile: RegularRequestProfile,
+): Promise<RegularAiCandidate[]> {
+  const results = await Promise.all(
+    PROVIDER_JOBS.map((job) =>
+      generateGroupsWithProvider(
+        job.run,
+        job.label,
+        job.groups,
+        requestText,
+        seed,
+        profile,
+      ),
+    ),
+  );
+  return results.flat();
 }
 
 function candidatePriority(candidate: RegularAiCandidate): number {
@@ -162,43 +203,4 @@ export function dedupeRegularCandidates(
   }
 
   return [...best.values()];
-}
-
-// Optional single extra Groq call when verification leaves us too thin.
-export async function generateRegularFallbackCandidates(
-  requestText: string,
-  seed: RegularSeedBook | null,
-  profile: RegularRequestProfile,
-  alreadyTried: RegularAiCandidate[],
-): Promise<RegularAiCandidate[]> {
-  const attempted = alreadyTried
-    .slice(0, 60)
-    .map((c) => `${c.title}${c.author ? ` by ${c.author}` : ""}`)
-    .join("; ");
-
-  const prompt = `You are Lumey's book similarity engine. Provide MORE real books for this request.
-
-${regularSeedContextBlock(seed, requestText)}
-
-Similarity profile:
-${profileBlock(profile)}
-
-Recommend 40 additional real, published books that fit this request.
-Do NOT repeat any of these already-tried titles: ${attempted || "none"}.
-Do NOT recommend the seed book or its alternate editions. Only real books.
-
-Return STRICT JSON only:
-{"books":[{"title":"","author":"","reason":"","matchTags":[],"candidateGroup":"closest"}]}`;
-
-  try {
-    const content = await regularGroqChatJson(
-      "You recommend real published books and return strict JSON only.",
-      prompt,
-      { temperature: 0.35, maxTokens: 6000 },
-    );
-    return parseAiCandidates(content, "closest");
-  } catch (error) {
-    console.error("Fallback candidate pass failed:", error);
-    return [];
-  }
 }

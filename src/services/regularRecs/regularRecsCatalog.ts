@@ -19,6 +19,7 @@ import {
   firstNumber,
   normalizeKey,
   scoreTitleAuthorMatch,
+  sleep,
   suspiciousPenalty,
   toStringArray,
   uniqueStrings,
@@ -51,6 +52,10 @@ export async function regularGoogleBooksSearch(
   url.searchParams.set("maxResults", String(maxResults));
   const apiKey = cleanText(process.env.GOOGLE_BOOKS_API_KEY);
   if (apiKey) url.searchParams.set("key", apiKey);
+
+  // Small jitter so parallel verifications don't burst Google Books at once
+  // (it returns 503s under bursts).
+  await sleep(Math.floor(Math.random() * 350));
 
   const data = await fetchJson<RegularGoogleBooksResponse>(
     url,
