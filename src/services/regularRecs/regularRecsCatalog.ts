@@ -163,7 +163,7 @@ async function googleBooksVerify(
     .map((v) => ({ v, score: scoreGoogleVolume(v, candidate) }))
     .sort((a, b) => b.score - a.score);
   const best = scored[0];
-  if (!best || best.score < 25) return null;
+  if (!best || best.score < 18) return null;
   return best.v;
 }
 
@@ -181,7 +181,7 @@ async function openLibraryVerify(
     .map((d) => ({ d, score: scoreOpenLibraryDoc(d, candidate) }))
     .sort((a, b) => b.score - a.score);
   const best = scored[0];
-  if (!best || best.score < 25) return null;
+  if (!best || best.score < 18) return null;
   return best.d;
 }
 
@@ -346,7 +346,7 @@ export async function resolveRegularSeedBook(
     .sort((a, b) => b.score - a.score);
 
   const best = scored[0];
-  if (!best || best.score < 40) {
+  if (!best || best.score < 28) {
     regularRecsCache.set(cacheKey, null, REGULAR_TTL_SEED);
     return null;
   }

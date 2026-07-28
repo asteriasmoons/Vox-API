@@ -1,18 +1,16 @@
 //
 //  regularRecsCandidates.ts
-//  Multi-pass AI candidate generation + early deduplication for the REGULAR engine.
+//  AI candidate generation + early deduplication for the REGULAR engine.
+//
+//  IMPORTANT: candidate generation uses a SINGLE Groq call (plus an optional
+//  fallback call) so we never burst many requests at once and trip Groq's
+//  tokens-per-minute rate limit. Books are still tagged by candidate group.
 //
 
-import {
-  REGULAR_CANDIDATES_PER_GROUP,
-  REGULAR_GROQ_MAX_TOKENS_RECOMMEND,
-  REGULAR_GROQ_TEMPERATURE_RECOMMEND,
-} from "./regularRecsConfig";
 import { regularGroqChatJson } from "./regularRecsGroq";
 import { regularSeedContextBlock } from "./regularRecsRequestProfile";
 import {
   cleanText,
-  mapWithConcurrency,
   normalizeKey,
   normalizeTitle,
   parseJsonLoose,
@@ -20,13 +18,22 @@ import {
 } from "./regularRecsUtils";
 import {
   REGULAR_CANDIDATE_GROUP_BONUS,
-  REGULAR_CANDIDATE_GROUP_BRIEF,
   REGULAR_CANDIDATE_GROUPS,
   type RegularAiCandidate,
   type RegularCandidateGroup,
   type RegularRequestProfile,
   type RegularSeedBook,
 } from "./regularRecsTypes";
+
+const REGULAR_CANDIDATE_GROUP_SET = new Set<string>(REGULAR_CANDIDATE_GROUPS);
+
+function coerceCandidateGroup(
+  value: unknown,
+  fallback: RegularCandidateGroup,
+): RegularCandidateGroup {
+  const raw = cleanText(value).toLowerCase().replace(/[\s-]+/g, "_");
+  return REGULAR_CANDIDATE_GROUP_SET.has(raw) ? (raw as RegularCandidateGroup) : fallback;
+}
 
 function profileBlock(profile: RegularRequestProfile): string {
   return [
@@ -48,7 +55,7 @@ function profileBlock(profile: RegularRequestProfile): string {
 
 function parseAiCandidates(
   raw: string,
-  group: RegularCandidateGroup,
+  fallbackGroup: RegularCandidateGroup,
 ): RegularAiCandidate[] {
   const parsed = parseJsonLoose(raw);
   const books = Array.isArray(parsed)
@@ -69,29 +76,36 @@ function parseAiCandidates(
       author: cleanText(obj.author),
       reason: cleanText(obj.reason) || undefined,
       matchTags: toStringArray(obj.matchTags, 8),
-      candidateGroup: group,
+      candidateGroup: coerceCandidateGroup(obj.candidateGroup, fallbackGroup),
     });
   }
   return out;
 }
 
-async function generateCandidateGroup(
+const GROUP_GUIDE = [
+  '- "closest": the closest possible matches in genre, subgenre, tone, audience, themes, pacing, tropes.',
+  '- "reader_safe": reliable, well-known, widely loved books that still closely match.',
+  '- "hidden_gem": less obvious, under-the-radar books that still strongly match.',
+  '- "recent_release": strongly relevant books from roughly the last 5 years.',
+  '- "backlist": older (5+ years) books that remain highly relevant.',
+  '- "adjacent": books that differ slightly in one dimension but still fit the taste.',
+].join("\n");
+
+// One combined Groq call for the whole candidate pool (no burst of requests).
+export async function generateAllRegularCandidates(
   requestText: string,
   seed: RegularSeedBook | null,
   profile: RegularRequestProfile,
-  group: RegularCandidateGroup,
 ): Promise<RegularAiCandidate[]> {
-  const prompt = `You are Lumey's book similarity engine. Generate ONE candidate group.
+  const prompt = `You are Lumey's book similarity engine.
 
 ${regularSeedContextBlock(seed, requestText)}
 
 Similarity profile:
 ${profileBlock(profile)}
 
-Candidate group: "${group}"
-Goal for this group: ${REGULAR_CANDIDATE_GROUP_BRIEF[group]}
-
-Recommend ${REGULAR_CANDIDATES_PER_GROUP} real, published books for THIS group only.
+Recommend 48 real, published books that match this request, spread across these candidate groups (roughly 8 per group):
+${GROUP_GUIDE}
 
 Rules:
 - Only real published books. Never invent titles.
@@ -100,39 +114,23 @@ Rules:
 - Keep the audience category appropriate (YA, New Adult, Adult, etc.).
 - Prioritize exact subgenre and tonal matches over generic popularity.
 - Do not fill the list with unrelated bestsellers.
-- Match the group's intent (e.g. "recent_release" = last ~5 years; "backlist" = older but still relevant).
-- Provide accurate title and author.
+- Include both newer and older relevant books.
+- Give each book an accurate title and author, and tag its candidateGroup.
 
 Return STRICT JSON only:
-{"books":[{"title":"","author":"","reason":"short internal relevance reason","matchTags":["tag1","tag2"],"candidateGroup":"${group}"}]}`;
+{"books":[{"title":"","author":"","reason":"short internal relevance reason","matchTags":["tag1","tag2"],"candidateGroup":"closest"}]}`;
 
   try {
     const content = await regularGroqChatJson(
       "You recommend real published books and return strict JSON only. No markdown, no prose, no summaries.",
       prompt,
-      {
-        temperature: REGULAR_GROQ_TEMPERATURE_RECOMMEND,
-        maxTokens: REGULAR_GROQ_MAX_TOKENS_RECOMMEND,
-      },
+      { temperature: 0.35, maxTokens: 6000 },
     );
-    return parseAiCandidates(content, group).slice(0, 35);
+    return parseAiCandidates(content, "closest");
   } catch (error) {
-    console.error(`Candidate group "${group}" failed:`, error);
+    console.error("Candidate generation failed:", error);
     return [];
   }
-}
-
-export async function generateAllRegularCandidates(
-  requestText: string,
-  seed: RegularSeedBook | null,
-  profile: RegularRequestProfile,
-): Promise<RegularAiCandidate[]> {
-  const groups = await mapWithConcurrency(
-    REGULAR_CANDIDATE_GROUPS,
-    3,
-    (group) => generateCandidateGroup(requestText, seed, profile, group),
-  );
-  return groups.flat();
 }
 
 function candidatePriority(candidate: RegularAiCandidate): number {
@@ -166,6 +164,7 @@ export function dedupeRegularCandidates(
   return [...best.values()];
 }
 
+// Optional single extra Groq call when verification leaves us too thin.
 export async function generateRegularFallbackCandidates(
   requestText: string,
   seed: RegularSeedBook | null,
@@ -195,12 +194,9 @@ Return STRICT JSON only:
     const content = await regularGroqChatJson(
       "You recommend real published books and return strict JSON only.",
       prompt,
-      {
-        temperature: REGULAR_GROQ_TEMPERATURE_RECOMMEND,
-        maxTokens: REGULAR_GROQ_MAX_TOKENS_RECOMMEND,
-      },
+      { temperature: 0.35, maxTokens: 6000 },
     );
-    return parseAiCandidates(content, "closest").slice(0, 40);
+    return parseAiCandidates(content, "closest");
   } catch (error) {
     console.error("Fallback candidate pass failed:", error);
     return [];

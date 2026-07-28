@@ -43,6 +43,11 @@ export function uniqueStrings(values: Array<string | undefined>): string[] {
   return out;
 }
 
+// Remove accents/diacritics so "Séance" == "Seance", "Léon" == "Leon", etc.
+export function stripDiacritics(value: string): string {
+  return value.normalize("NFKD").replace(/[̀-ͯ]/g, "");
+}
+
 export function stripEditionNoise(title: string): string {
   return title
     .replace(/[:\-–—].*$/g, "")
@@ -52,7 +57,7 @@ export function stripEditionNoise(title: string): string {
 }
 
 export function normalizeTitle(value: string): string {
-  return stripEditionNoise(value)
+  return stripDiacritics(stripEditionNoise(value))
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
@@ -60,7 +65,7 @@ export function normalizeTitle(value: string): string {
 }
 
 export function normalizeAuthor(value: string): string {
-  return value
+  return stripDiacritics(value)
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, "")
     .replace(/\s+/g, " ")
