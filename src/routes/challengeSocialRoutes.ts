@@ -4,6 +4,7 @@ import {
   createSubmission,
   createFeedPost,
   uploadFeedPhoto,
+  uploadSubmissionPhoto,
   uploadProfileAvatar,
   approveSubmissionAndPostToFeed,
   getChallengeFeed,
@@ -152,6 +153,28 @@ router.post("/feed/upload-photo", upload.single("photo"), async (req: Request, r
 
     return res.status(400).json({
       message: error?.message ?? "Unable to upload feed photo.",
+    });
+  }
+});
+
+/**
+ * POST /api/lumey/challenges/submissions/upload-photo
+ * Uploads a submission proof photo to Cloudinary and returns the CDN URL.
+ */
+router.post("/submissions/upload-photo", upload.single("photo"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No photo file provided." });
+    }
+
+    const result = await uploadSubmissionPhoto(req.file.buffer);
+
+    return res.status(201).json(result);
+  } catch (error: any) {
+    console.error("[challenges] upload submission photo:", error);
+
+    return res.status(400).json({
+      message: error?.message ?? "Unable to upload submission photo.",
     });
   }
 });

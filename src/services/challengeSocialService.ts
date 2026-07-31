@@ -98,8 +98,15 @@ export async function createSubmission(input: any) {
     linkedReadingListIDs: cleanStringArray(input.linkedReadingListIDs),
     submissionNote: cleanString(input.submissionNote),
     proofSummary: cleanString(input.proofSummary),
+    photoURL: cleanString(input.photoURL),
     validationStatus,
     validationMessage: cleanString(input.validationMessage),
+    photoValidationStatus: cleanString(input.photoValidationStatus),
+    photoValidationMessage: cleanString(input.photoValidationMessage),
+    photoValidationConfidence: normalizeConfidence(
+      input.photoValidationConfidence,
+    ),
+    photoValidationJSON: cleanString(input.photoValidationJSON),
     submittedDate: input.submittedDate
       ? new Date(input.submittedDate)
       : new Date(),
@@ -176,7 +183,7 @@ export async function approveSubmissionAndPostToFeed(input: {
       submission.submissionNote ||
       formatProofSummaryForFeed(submission.proofSummary) ||
       "Challenge submission approved.",
-    photoURL: "",
+    photoURL: cleanString(submission.photoURL),
     likeCount: 0,
     commentCount: 0,
     createdDate: submission.approvedDate,
@@ -209,6 +216,35 @@ export async function uploadFeedPhoto(fileBuffer: Buffer): Promise<{ photoURL: s
         resource_type: "image",
         transformation: [
           { width: 1200, crop: "limit" },
+          { quality: "auto", fetch_format: "auto" },
+        ],
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      },
+    );
+
+    stream.end(fileBuffer);
+  });
+
+  return {
+    photoURL: result.secure_url,
+  };
+}
+
+export async function uploadSubmissionPhoto(fileBuffer: Buffer): Promise<{ photoURL: string }> {
+  if (!fileBuffer || fileBuffer.length === 0) {
+    throw new Error("Image file is required.");
+  }
+
+  const result = await new Promise<any>((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "lumey-submission-proof",
+        resource_type: "image",
+        transformation: [
+          { width: 1400, crop: "limit" },
           { quality: "auto", fetch_format: "auto" },
         ],
       },
@@ -654,6 +690,11 @@ export async function deleteAnnouncement(announcementID: string) {
 function cleanString(value: unknown): string {
   if (typeof value !== "string") return "";
   return value.trim();
+}
+
+function normalizeConfidence(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
 }
 
 function parseOptionalDate(value: unknown): Date | undefined {

@@ -16,6 +16,11 @@ const challengeSubmissionSchema = new mongoose.Schema(
 
     submissionNote: { type: String, default: "" },
     proofSummary: { type: String, default: "" },
+    photoURL: {
+      type: String,
+      default: "",
+      trim: true,
+    },
 
     validationStatus: {
       type: String,
@@ -23,6 +28,28 @@ const challengeSubmissionSchema = new mongoose.Schema(
     },
 
     validationMessage: {
+      type: String,
+      default: "",
+    },
+
+    photoValidationStatus: {
+      type: String,
+      default: "",
+    },
+
+    photoValidationMessage: {
+      type: String,
+      default: "",
+    },
+
+    photoValidationConfidence: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 1,
+    },
+
+    photoValidationJSON: {
       type: String,
       default: "",
     },
