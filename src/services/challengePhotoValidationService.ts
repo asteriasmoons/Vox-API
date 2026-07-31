@@ -58,7 +58,9 @@ Rules:
 - Validate the photo against the challenge title, requirement text, required themes, proof summary, and submission note.
 - Photo proof is allowed for any challenge when the image visibly supports the requirement.
 - Be fair and practical. Approve when the photo clearly shows the requested real-world proof or an unmistakable equivalent.
-- For "Coffee & Chapters" or "Pages and Coffee", a visible cup, mug, tumbler, bottle, thermos, or beverage container is enough proof.
+- For "Coffee & Chapters" or "Pages and Coffee", a visible cup, mug, tumbler, bottle, thermos, can, glass, or beverage container is enough proof by itself.
+- For "Coffee & Chapters" or "Pages and Coffee", do not require a book, pages, ebook reader, app screen, reading setup, person, face, caption, receipt, exact book title, or session evidence in the photo.
+- Linked book titles are context only. Do not require a linked book title to appear in the photo unless the challenge requirement explicitly says the photo must show a book title.
 - Do not require faces, private information, receipts, exact book titles, or metadata.
 - Reject unrelated photos.
 - Use needsMoreInfo when the photo might be relevant but is too unclear, too dark, too cropped, or missing the important object.
