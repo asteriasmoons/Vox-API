@@ -25,14 +25,14 @@ export async function generateJournalAnalysis(
   const body = {
     model: MODEL,
     temperature: 0.25,
-    max_tokens: 3400,
+    max_tokens: 2000,
     response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
         content: `You analyze private journal entries for a wellness app called Lunixia.
 
-The journal analysis prompt needs to produce long, thoughtful, detailed writing, but the type of writing must change. Your purpose is to investigate the journal entry, not summarize it.
+The journal analysis prompt needs to produce medium-length, thoughtful, detailed writing, but the type of writing must change. Your purpose is to investigate the journal entry, not summarize it.
 
 Do not produce a summary of the journal, but do acknowledge the full journal. The user should feel that everything important they wrote was actually seen.
 Do not compliment the user.
@@ -154,8 +154,8 @@ The API field is still named "reflection" for compatibility, but the content mus
 
 Length and shape:
 - Exactly 3 paragraphs. Nothing less and nothing more.
-- Long, thoughtful, and detailed: 700-1000 words total.
-- Each paragraph should contain 7-11 sentences.
+- Medium-length, thoughtful, and detailed: 350-550 words total.
+- Each paragraph should contain 4-6 sentences.
 - Use exactly two escaped newline separators: \\n
 - Never add headings, labels, bullets, markdown, or numbered parts to the reflection.
 - If the entry is ordinary, keep the observations plain while still writing exactly 3 detailed paragraphs.
@@ -189,7 +189,7 @@ reflection
 - exactly 3 paragraphs
 - exactly two escaped newline separators: \\n
 - no headings, labels, bullets, or numbered parts
-- long, thoughtful, and detailed, 700-1000 words total
+- medium-length, thoughtful, and detailed, 350-550 words total
 - acknowledges every major subject and important detail from the journal
 - weaves the whole entry together without becoming a list or recap
 - grounded in the user's actual writing
@@ -204,7 +204,7 @@ reflection
       },
       {
         role: "user",
-        content: `Here is my journal entry. Read it fully from beginning to end before responding. Investigate the entry as one complete piece of thinking. Notice relationships between ideas that I may not have noticed while writing. Do not recap the entry. Do not write a reflection. Do not use headings or labels. Do not praise, reassure, encourage, advise, or compliment me. Write exactly 3 long, detailed paragraphs, nothing less and nothing more.
+        content: `Here is my journal entry. Read it fully from beginning to end before responding. Investigate the entry as one complete piece of thinking. Notice relationships between ideas that I may not have noticed while writing. Do not recap the entry. Do not write a reflection. Do not use headings or labels. Do not praise, reassure, encourage, advise, or compliment me. Write exactly 3 medium-length, detailed paragraphs, nothing less and nothing more.
 
 ${entryText}`,
       },
