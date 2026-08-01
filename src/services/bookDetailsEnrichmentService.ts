@@ -4,7 +4,7 @@ const GOOGLE_BOOKS_SEARCH_URL = "https://www.googleapis.com/books/v1/volumes";
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
 
 const CATALOG_TIMEOUT_MS = 12_000;
-const AI_MAX_TOKENS = 1200;
+const AI_MAX_TOKENS = 1600;
 
 type BookDetailsEnrichmentRequest = {
   title: string;
@@ -75,6 +75,7 @@ type OpenLibrarySearchResponse = {
 
 type AIBookDetails = {
   classification?: "fiction" | "nonfiction" | "unknown";
+  subtitle?: string;
   summary?: string;
   genres?: string[];
   moods?: string[];
@@ -86,7 +87,7 @@ type AIBookDetails = {
 };
 
 export type BookDetailsEnrichmentResponse = {
-  subtitle: string | null;
+  subtitle: string;
   seriesName: string | null;
   seriesNumber: string | null;
   publisher: string | null;
@@ -101,7 +102,7 @@ export type BookDetailsEnrichmentResponse = {
   topics: string[];
   tags: string[];
   tropes: string[];
-  classification: "fiction" | "nonfiction" | "unknown";
+  classification: "fiction" | "nonfiction";
   source: string;
 };
 
@@ -188,6 +189,67 @@ function cleanLabels(values: Array<unknown>, limit: number): string[] {
   }
 
   return results;
+}
+
+function exactLabels(
+  values: Array<unknown>,
+  fallbackValues: string[],
+  count: number,
+): string[] {
+  return cleanLabels([...values, ...fallbackValues], count);
+}
+
+function fallbackLabels(
+  classification: "fiction" | "nonfiction" | "unknown",
+): {
+  genres: string[];
+  moods: string[];
+  topics: string[];
+  tags: string[];
+  tropes: string[];
+} {
+  if (classification === "nonfiction") {
+    return {
+      genres: ["Nonfiction", "Reference", "Memoir", "History"],
+      moods: ["Thoughtful", "Grounded", "Curious", "Reflective"],
+      topics: ["Personal Growth", "Culture", "Society", "Ideas"],
+      tags: ["Insightful", "Informative", "Practical", "Readable"],
+      tropes: ["Case Studies", "Expert Insight", "Big Ideas", "Life Lessons"],
+    };
+  }
+
+  if (classification === "fiction") {
+    return {
+      genres: ["Fiction", "Literary", "Fantasy", "Mystery"],
+      moods: ["Emotional", "Tense", "Atmospheric", "Reflective"],
+      topics: ["Identity", "Power", "Belonging", "Secrets"],
+      tags: ["Character Driven", "Immersive", "Page Turner", "Book Club"],
+      tropes: ["Found Family", "Hidden Truths", "Slow Burn", "Moral Choice"],
+    };
+  }
+
+  return {
+    genres: ["Fiction", "Nonfiction", "Literary", "Contemporary"],
+    moods: ["Thoughtful", "Curious", "Reflective", "Immersive"],
+    topics: ["Identity", "Culture", "Relationships", "Ideas"],
+    tags: ["Readable", "Layered", "Compelling", "Book Club"],
+    tropes: ["Hidden Truths", "Big Ideas", "Personal Journey", "Moral Choice"],
+  };
+}
+
+function fallbackSubtitle(catalog: CatalogEvidence): string {
+  const genreHint = cleanLabels([...catalog.categories, ...catalog.subjects], 1)[0];
+  if (genreHint) return `A ${genreHint} Reading Experience`;
+  return "A Compelling Reading Experience";
+}
+
+function resolvedClassification(ai: AIBookDetails): "fiction" | "nonfiction" {
+  if (ai.classification === "nonfiction") return "nonfiction";
+  if (ai.classification === "fiction") return "fiction";
+  if ((ai.topics?.length ?? 0) > 0 && (ai.moods?.length ?? 0) === 0) {
+    return "nonfiction";
+  }
+  return "fiction";
 }
 
 function extractYear(value: unknown): number | undefined {
@@ -501,9 +563,11 @@ function parseAIResponse(raw: string): AIBookDetails {
   };
 
   const summary = cleanText(parsed.summary);
+  const subtitle = cleanText(parsed.subtitle).slice(0, 120);
   const seriesName = cleanText(parsed.seriesName).slice(0, 120);
   const seriesNumber = cleanText(parsed.seriesNumber).slice(0, 24);
 
+  if (subtitle) ai.subtitle = subtitle;
   if (summary) ai.summary = summary;
   if (seriesName) ai.seriesName = seriesName;
   if (seriesNumber) ai.seriesNumber = seriesNumber;
@@ -529,11 +593,12 @@ async function generateAIEnrichment(
     "For fiction, focus on premise, protagonist or central cast, tension, setting, stakes, emotional pull, and why the situation matters.",
     "For nonfiction, focus on the core subject, argument or promise, what the reader will understand or gain, and why the ideas matter.",
     "Do not use phrases like 'the story follows', 'the book explores', 'readers who enjoy', 'perfect for fans of', or 'this compelling novel'.",
-    "Choose classification as exactly fiction, nonfiction, or unknown.",
+    "Choose classification as exactly fiction or nonfiction. Use fiction for novels, novellas, short stories, poetry collections, plays, comics, manga, fantasy, romance, horror, mystery, thriller, sci-fi, and literary fiction. Use nonfiction for memoir, biography, self-help, history, science, essays, business, religion, spirituality, reference, and practical guides.",
+    "Return a subtitle every time. If the catalog has an official subtitle, use it exactly. If not, create a short descriptive subtitle that is accurate to the book and does not pretend to be an official publication subtitle.",
+    "Return exactly 2 genres and exactly 4 tags for every book.",
+    "If classification is fiction: return exactly 4 moods, exactly 4 tropes, and topics as an empty array.",
+    "If classification is nonfiction: return exactly 4 topics, and moods and tropes as empty arrays.",
     "Genres, moods, topics, tags, and tropes must each be one to two words only, realistic, specific, and not duplicates of each other.",
-    "If classification is fiction: return moods and tropes, and return topics as an empty array.",
-    "If classification is nonfiction: return topics, and return moods and tropes as empty arrays.",
-    "If classification is unknown: return only genres and tags, and leave moods, topics, and tropes empty.",
     "Only return seriesName and seriesNumber when the supplied metadata or reliable book knowledge clearly supports the book being in a series. Otherwise return null for both.",
     "Do not return ebookTotalPages or totalChapters. Lumey only fills those when source metadata explicitly provides them.",
     "",
@@ -547,12 +612,13 @@ async function generateAIEnrichment(
     JSON.stringify(
       {
         classification: "fiction",
+        subtitle: "short accurate subtitle",
         summary: "two concise spoiler-free polished paragraphs",
-        genres: ["Genre"],
-        moods: ["Mood"],
+        genres: ["Genre One", "Genre Two"],
+        moods: ["Mood One", "Mood Two", "Mood Three", "Mood Four"],
         topics: [],
-        tags: ["Tag"],
-        tropes: ["Trope"],
+        tags: ["Tag One", "Tag Two", "Tag Three", "Tag Four"],
+        tropes: ["Trope One", "Trope Two", "Trope Three", "Trope Four"],
         seriesName: null,
         seriesNumber: null,
       },
@@ -595,18 +661,33 @@ function buildResponse(
   catalog: CatalogEvidence,
   ai: AIBookDetails,
 ): BookDetailsEnrichmentResponse {
-  const classification = ai.classification ?? "unknown";
-  const genres = cleanLabels([...(ai.genres ?? []), ...catalog.categories], 5);
-  const tags = cleanLabels([...(ai.tags ?? []), ...catalog.subjects], 10);
+  const classification = resolvedClassification(ai);
+  const fallback = fallbackLabels(classification);
+  const genres = exactLabels(
+    [...(ai.genres ?? []), ...catalog.categories],
+    fallback.genres,
+    2,
+  );
+  const tags = exactLabels(
+    [...(ai.tags ?? []), ...catalog.subjects],
+    fallback.tags,
+    4,
+  );
   const moods =
-    classification === "fiction" ? cleanLabels(ai.moods ?? [], 6) : [];
+    classification === "fiction"
+      ? exactLabels(ai.moods ?? [], fallback.moods, 4)
+      : [];
   const topics =
-    classification === "nonfiction" ? cleanLabels(ai.topics ?? [], 8) : [];
+    classification === "nonfiction"
+      ? exactLabels(ai.topics ?? [], fallback.topics, 4)
+      : [];
   const tropes =
-    classification === "fiction" ? cleanLabels(ai.tropes ?? [], 8) : [];
+    classification === "fiction"
+      ? exactLabels(ai.tropes ?? [], fallback.tropes, 4)
+      : [];
 
   return {
-    subtitle: catalog.subtitle ?? null,
+    subtitle: catalog.subtitle ?? ai.subtitle ?? fallbackSubtitle(catalog),
     seriesName: ai.seriesName ?? null,
     seriesNumber: ai.seriesNumber ?? null,
     publisher: catalog.publisher ?? null,
