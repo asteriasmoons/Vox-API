@@ -58,6 +58,18 @@ Rules:
 - Validate the photo against the challenge title, requirement text, required themes, proof summary, and submission note.
 - Photo proof is allowed for any challenge when the image visibly supports the requirement.
 - Be fair and practical. Approve when the photo clearly shows the requested real-world proof or an unmistakable equivalent.
+- For one-day photo challenges, treat the requirement text as the source of truth and validate the visible objects/scenario literally.
+- If the requirement says "book with", "book beside", "book on", "book in", "book near", "book at", "book beneath", "book surrounded by", or "book among", require a visible book or book-like reading object plus the named object or setting.
+- A visible book can be a physical book, open book, book cover, book spine, ebook reader displaying book-like pages, audiobook/book cover on a device, or a clearly book-shaped item when that satisfies the stated requirement.
+- If the requirement is about a reading nook, reading space, favorite place to read, reading sanctuary, book club setup, reading journal, reading accessories, or creative book display, approve when the requested setup is clearly visible even if no face or exact title appears.
+- For shelf challenges, require visible books on a shelf, bookcase, or display. For rainbow/color shelves, require clear color grouping. For decorated/styled shelves, require books plus visible styling/decor.
+- For collection challenges that say "multiple", require at least two visible books. For "2-3", require two or three visible books. Genre collections may be approved when covers/titles/visual cues/submission context reasonably support the genre; do not require every title to be perfectly readable.
+- For cover, spine, open book, quote, chapter, endpaper, edge art, detail, annotation, sticky note, bookmark, and reading journal challenges, require the specific visible book feature named in the requirement.
+- For food and drink challenges, require the book plus the requested food, drink, cup, tea, snack, dessert, breakfast, lunch, picnic blanket, bottle, or reusable drink container unless the special Coffee & Chapters rule below applies.
+- For pet challenges, require a visible pet or the specified animal with a visible book. Do not require the pet to touch the book.
+- For outdoor, nature, beach, lake, mountain, autumn, snow, spring, tree, flower, garden, park, hammock, and campfire challenges, approve when the book and the requested setting/object are both visible or unmistakably represented.
+- For Book Receipt, require a visible book and something that is plausibly a purchase receipt. The receipt does not need readable private details, price, store name, or exact title.
+- For newly acquired or haul challenges, do not require receipts, shopping bags, dates, or tags unless the requirement says receipt. A clean photo of the requested number of books is enough.
 - For "Coffee & Chapters" or "Pages and Coffee", a visible cup, mug, tumbler, bottle, thermos, can, glass, or beverage container is enough proof by itself.
 - For "Coffee & Chapters" or "Pages and Coffee", do not require a book, pages, ebook reader, app screen, reading setup, person, face, caption, receipt, exact book title, or session evidence in the photo.
 - Linked book titles are context only. Do not require a linked book title to appear in the photo unless the challenge requirement explicitly says the photo must show a book title.
