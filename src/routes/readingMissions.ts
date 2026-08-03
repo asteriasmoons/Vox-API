@@ -52,7 +52,7 @@ router.post("/score", async (req, res) => {
       return res.status(400).json({ error: "Book title and author are required" });
     }
 
-    const rawPrompts = Array.isArray(req.body?.prompts) ? req.body.prompts : [];
+    const rawPrompts: unknown[] = Array.isArray(req.body?.prompts) ? req.body.prompts : [];
     const prompts = rawPrompts
       .map((item): ReadingMissionScorePromptInput | null => {
         if (!isRecord(item)) return null;
