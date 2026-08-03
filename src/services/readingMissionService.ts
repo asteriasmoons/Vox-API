@@ -1,3 +1,5 @@
+import { regularCerebrasChatJson } from "./regularRecs/regularRecsProviders";
+
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const READING_MISSION_MODEL = "openai/gpt-oss-120b";
 const READING_MISSION_TIMEOUT_MS = 60_000;
@@ -30,6 +32,34 @@ export interface ReadingMissionTaskOutput {
 
 export interface ReadingMissionOutput {
   missions: ReadingMissionTaskOutput[];
+}
+
+export interface ReadingMissionScorePromptInput {
+  title: string;
+  description: string;
+  category: string;
+  difficulty: string;
+  answer: string;
+}
+
+export interface ReadingMissionScoreInput {
+  book: ReadingMissionBookInput;
+  prompts: ReadingMissionScorePromptInput[];
+}
+
+export interface ReadingMissionPromptScoreOutput {
+  title: string;
+  score: number;
+  feedback: string;
+}
+
+export interface ReadingMissionScoreOutput {
+  overallScore: number;
+  ratingLabel: string;
+  summary: string;
+  strengths: string[];
+  nextStep: string;
+  promptScores: ReadingMissionPromptScoreOutput[];
 }
 
 const allowedCategories = [
@@ -113,6 +143,34 @@ export async function generateReadingMissions(
   return { missions };
 }
 
+export async function scoreReadingMission(
+  input: ReadingMissionScoreInput,
+): Promise<ReadingMissionScoreOutput> {
+  const prompts = normalizeScorePrompts(input.prompts);
+  if (prompts.length !== 4) {
+    throw new Error("Exactly four completed mission answers are required.");
+  }
+
+  const systemPrompt = [
+    "You score personalized reading mission answers for a premium reading app.",
+    "You are fair, encouraging, and specific. Reward genuine engagement, book-specific thinking, clear reflection, and evidence that the reader answered the actual prompt.",
+    "Do not require spoilers, do not invent book facts, and do not punish a reader for avoiding spoilers.",
+    "Return only valid JSON.",
+  ].join(" ");
+
+  const userPrompt = buildReadingMissionScorePrompt({
+    book: input.book,
+    prompts,
+  });
+
+  const raw = await regularCerebrasChatJson(systemPrompt, userPrompt, {
+    temperature: 0.22,
+    maxTokens: 1600,
+  });
+
+  return normalizeMissionScore(parseMissionJSON(raw), prompts);
+}
+
 function buildReadingMissionPrompt(book: ReadingMissionBookInput): string {
   const synopsis = cleanText(book.synopsis) || "No synopsis provided.";
   const genres = cleanArray(book.genres).join(", ") || "None provided";
@@ -142,7 +200,7 @@ Rules:
 - Every mission must encourage a different type of engagement.
 - Make the missions specific to this book's premise, genre, tone, setup, or likely reading experience.
 - Do not write generic missions that could apply to any book.
-- Keep each description practical enough that the reader can complete it in the app with a toggle and optional note.
+- Keep each description practical enough that the reader can answer it in the app, then mark it complete after writing that answer.
 - Use four different categories from this list: ${allowedCategories.join(", ")}.
 - Difficulty must be one of: Easy, Medium, Hard.
 
@@ -154,6 +212,67 @@ Return valid JSON in this exact shape:
       "description": "2-3 sentences, spoiler-free, specific to the selected book",
       "category": "one allowed category",
       "difficulty": "Easy | Medium | Hard"
+    }
+  ]
+	}`;
+}
+
+function buildReadingMissionScorePrompt(input: ReadingMissionScoreInput): string {
+  const book = input.book;
+  const synopsis = cleanText(book.synopsis) || "No synopsis provided.";
+  const genres = cleanArray(book.genres).join(", ") || "None provided";
+  const tags = cleanArray(book.tags).join(", ") || "None provided";
+  const pageCount = Number.isFinite(book.pageCount) && Number(book.pageCount) > 0 ? String(book.pageCount) : "Unknown";
+  const seriesInfo = cleanText(book.seriesName)
+    ? `${cleanText(book.seriesName)}${cleanText(book.seriesNumber) ? ` #${cleanText(book.seriesNumber)}` : ""}`
+    : "Standalone or not provided";
+
+  const promptBlocks = input.prompts
+    .map((prompt, index) => {
+      return `Prompt ${index + 1}:
+- Category: ${cleanText(prompt.category)}
+- Difficulty: ${cleanText(prompt.difficulty)}
+- Title: ${cleanText(prompt.title)}
+- Prompt: ${cleanText(prompt.description)}
+- User Answer: ${cleanText(prompt.answer)}`;
+    })
+    .join("\n\n");
+
+  return `Score the user's reading mission answers.
+
+Book Context:
+- Title: ${cleanText(book.title)}
+- Author: ${cleanText(book.author)}
+- Synopsis / Description: ${synopsis}
+- Genres: ${genres}
+- Tags: ${tags}
+- Page Count: ${pageCount}
+- Series Information: ${seriesInfo}
+
+Mission Prompts and User Answers:
+${promptBlocks}
+
+Scoring rules:
+- Score each prompt from 0 to 100.
+- Score the whole mission from 0 to 100.
+- A strong answer directly addresses the prompt, shows specific engagement with the selected book or reading experience, and includes thoughtful detail.
+- A thin answer can pass only if it is clearly relevant, but it should score lower.
+- Empty, evasive, unrelated, copied prompt text, or nonsense answers must score very low.
+- Keep feedback concise, kind, and useful.
+- Do not include spoilers.
+
+Return valid JSON in this exact shape:
+{
+  "overallScore": 0,
+  "ratingLabel": "short label",
+  "summary": "1-2 sentence score summary",
+  "strengths": ["short strength", "short strength"],
+  "nextStep": "one concrete next step",
+  "promptScores": [
+    {
+      "title": "matching prompt title",
+      "score": 0,
+      "feedback": "one sentence"
     }
   ]
 }`;
@@ -203,6 +322,60 @@ function normalizeMissions(parsed: unknown): ReadingMissionTaskOutput[] {
     .slice(0, 4);
 }
 
+function normalizeScorePrompts(value: unknown): ReadingMissionScorePromptInput[] {
+  return Array.isArray(value)
+    ? value
+        .map((item): ReadingMissionScorePromptInput | null => {
+          if (!isRecord(item)) return null;
+
+          const title = cleanText(item.title);
+          const description = cleanText(item.description);
+          const category = cleanText(item.category);
+          const difficulty = cleanText(item.difficulty);
+          const answer = cleanLongText(item.answer);
+
+          if (!title || !description || !category || !difficulty || !answer) {
+            return null;
+          }
+
+          return {
+            title,
+            description,
+            category,
+            difficulty,
+            answer,
+          };
+        })
+        .filter((item): item is ReadingMissionScorePromptInput => item !== null)
+        .slice(0, 4)
+    : [];
+}
+
+function normalizeMissionScore(
+  parsed: unknown,
+  prompts: ReadingMissionScorePromptInput[],
+): ReadingMissionScoreOutput {
+  const record = isRecord(parsed) ? parsed : {};
+  const promptScoresRaw = Array.isArray(record.promptScores) ? record.promptScores : [];
+  const promptScores = prompts.map((prompt, index) => {
+    const raw = isRecord(promptScoresRaw[index]) ? promptScoresRaw[index] : {};
+    return {
+      title: cleanText(raw.title) || prompt.title,
+      score: clampScore(raw.score),
+      feedback: cleanLongText(raw.feedback) || "Answer scored for relevance, detail, and engagement.",
+    };
+  });
+
+  return {
+    overallScore: clampScore(record.overallScore),
+    ratingLabel: cleanText(record.ratingLabel).slice(0, 36) || ratingLabelForScore(clampScore(record.overallScore)),
+    summary: cleanLongText(record.summary) || "Mission answers scored for relevance, detail, and book-specific engagement.",
+    strengths: cleanArray(record.strengths).slice(0, 3),
+    nextStep: cleanLongText(record.nextStep) || "Add one more specific detail from your reading experience next time.",
+    promptScores,
+  };
+}
+
 function normalizeCategory(value: string): string {
   const match = allowedCategories.find(
     (category) =>
@@ -225,6 +398,10 @@ function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
 }
 
+function cleanLongText(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/[ \t]+/g, " ").slice(0, 2200) : "";
+}
+
 function cleanArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.map(cleanText).filter((item) => item.length > 0).slice(0, 18)
@@ -233,4 +410,18 @@ function cleanArray(value: unknown): string[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function clampScore(value: unknown): number {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(100, Math.round(number)));
+}
+
+function ratingLabelForScore(score: number): string {
+  if (score >= 90) return "Excellent";
+  if (score >= 78) return "Strong";
+  if (score >= 65) return "Solid";
+  if (score >= 45) return "Developing";
+  return "Needs Depth";
 }
