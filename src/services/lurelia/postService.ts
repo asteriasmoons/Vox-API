@@ -16,6 +16,10 @@ import { LureliaPermissions as PermissionsRaw } from "../../models/lurelia/Permi
 
 import { eventRoomName } from "./sharedEventService";
 import { dispatchNotification } from "./notificationService";
+import {
+  normalizeHostPostBody,
+  sanitizeHostPostHTML,
+} from "./postSanitizer";
 
 const EventPost = EventPostRaw as Model<any>;
 const Announcement = AnnouncementRaw as Model<any>;
@@ -61,14 +65,19 @@ export async function createPost(io: SocketIOServer, input: CreatePostInput) {
   );
   const canPin = role === "host" || role === "coHost";
 
+  const normalized = normalizeHostPostBody({
+    bodyMarkdown: input.bodyMarkdown,
+    bodyHTML: input.bodyHTML,
+  });
+
   const created = await EventPost.create({
     localID: randomUUID(),
     sharedEventID: input.sharedEventID,
     authorUserID: input.authorUserID,
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
-    bodyMarkdown: input.bodyMarkdown.trim(),
-    bodyHTML: input.bodyHTML ?? "",
+    bodyMarkdown: normalized.bodyMarkdown,
+    bodyHTML: normalized.bodyHTML,
     isPinned: canPin && !!input.isPinned,
     notificationSentAt: new Date(),
   });
@@ -113,7 +122,9 @@ export async function editPost(
     if (!patch.bodyMarkdown.trim()) throw new Error("body_REQUIRED");
     post.bodyMarkdown = patch.bodyMarkdown.trim();
   }
-  if (patch.bodyHTML !== undefined) post.bodyHTML = patch.bodyHTML;
+  if (patch.bodyHTML !== undefined) {
+    post.bodyHTML = sanitizeHostPostHTML(patch.bodyHTML);
+  }
   if (patch.isPinned !== undefined && canModerate) post.isPinned = !!patch.isPinned;
   post.editedAt = new Date();
   await post.save();
@@ -174,14 +185,19 @@ export async function createAnnouncement(
   const canModerate = await isModerator(input.sharedEventID, input.authorUserID);
   if (!canModerate) throw new Error("FORBIDDEN");
 
+  const normalizedAnn = normalizeHostPostBody({
+    bodyMarkdown: input.bodyMarkdown,
+    bodyHTML: input.bodyHTML,
+  });
+
   const created = await Announcement.create({
     localID: randomUUID(),
     sharedEventID: input.sharedEventID,
     authorUserID: input.authorUserID,
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
-    bodyMarkdown: input.bodyMarkdown.trim(),
-    bodyHTML: input.bodyHTML ?? "",
+    bodyMarkdown: normalizedAnn.bodyMarkdown,
+    bodyHTML: normalizedAnn.bodyHTML,
     notificationSentAt: new Date(),
   });
 
@@ -220,7 +236,9 @@ export async function editAnnouncement(
     if (!patch.bodyMarkdown.trim()) throw new Error("body_REQUIRED");
     announcement.bodyMarkdown = patch.bodyMarkdown.trim();
   }
-  if (patch.bodyHTML !== undefined) announcement.bodyHTML = patch.bodyHTML;
+  if (patch.bodyHTML !== undefined) {
+    announcement.bodyHTML = sanitizeHostPostHTML(patch.bodyHTML);
+  }
   announcement.editedAt = new Date();
   await announcement.save();
   io.to(eventRoomName(announcement.sharedEventID)).emit(
