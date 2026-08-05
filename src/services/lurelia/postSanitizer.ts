@@ -35,6 +35,7 @@ const ALLOWED_TAGS = [
   "h3",
   "a",
   "img",
+  "button",
   "div",
   "span",
 ];
@@ -49,6 +50,9 @@ const CALLOUT_DATA_ATTRS = [
 // Class names we allow — everything the editor emits.
 const ALLOWED_CLASSES = [
   "callout",
+  "callout-content",
+  "callout-icon-button",
+  "callout-icon-image",
   "file-chip",
 ];
 
@@ -66,7 +70,8 @@ export function sanitizeHostPostHTML(html: string): string {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: {
       a: ["href", "target", "rel", "class"],
-      img: ["src", "alt", "class"],
+      img: ["src", "alt", "class", "data-lurelia-icon", "hidden"],
+      button: ["type", "class", "contenteditable", "data-callout-icon-button", "aria-label"],
       div: ["class", ...CALLOUT_DATA_ATTRS, "contenteditable", "role", "aria-label"],
       span: ["class", ...CALLOUT_DATA_ATTRS],
       code: ["class"],
