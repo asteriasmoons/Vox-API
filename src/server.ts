@@ -37,6 +37,7 @@ import moonRouter from "./routes/moon";
 import seeryRoutes from "./routes/seery.routes";
 import journalInsightsRoutes from "./routes/journalInsights";
 import musicLookupRoutes from "./routes/musicLookup";
+import { createLureliaRouter } from "./routes/lurelia";
 
 import path from "path";
 dotenv.config();
@@ -90,6 +91,7 @@ app.use("/api/moon", moonRouter);
 app.use("/api/seery", seeryRoutes);
 app.use("/api/journal/insights", journalInsightsRoutes);
 app.use("/api/music", musicLookupRoutes);
+app.use("/api/lurelia", createLureliaRouter(io));
 
 io.on("connection", (socket) => {
   socket.on("buddy:join_room", (groupId: string) => {
@@ -106,6 +108,21 @@ io.on("connection", (socket) => {
 
   socket.on("sprint:leave_room", () => {
     socket.leave("sprint:global");
+  });
+
+  // Lurelia shared events: one room per event. Clients emit
+  // "event:join_room" with the sharedEventID after they open an event
+  // detail view, and "event:leave_room" when they navigate away.
+  socket.on("event:join_room", (sharedEventID: string) => {
+    if (typeof sharedEventID === "string" && sharedEventID.length > 0) {
+      socket.join(`event:${sharedEventID}`);
+    }
+  });
+
+  socket.on("event:leave_room", (sharedEventID: string) => {
+    if (typeof sharedEventID === "string" && sharedEventID.length > 0) {
+      socket.leave(`event:${sharedEventID}`);
+    }
   });
 
   socket.on("disconnect", () => {});
