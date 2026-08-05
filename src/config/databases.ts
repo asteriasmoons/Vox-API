@@ -8,9 +8,9 @@ export const lunixiaDB: Connection = mongoose.connection.useDb("lunixia");
 export const voxTermDB: Connection = mongoose.connection.useDb("voxTerm")
 export const asteriumDB: Connection = mongoose.connection.useDb("asterium");
 export const octaviaDB: Connection = mongoose.connection.useDb("octavia");
+export const lureliaDB: Connection = mongoose.connection.useDb("lurelia");
 
 // Add more later as you create them:
-// export const lureliaDB = mongoose.connection.useDb("lurelia");
 // export const tallyDB = mongoose.connection.useDb("tally");
 // export const marklyDB = mongoose.connection.useDb("markly");
 // export const nestlyDB = mongoose.connection.useDb("nestly");
