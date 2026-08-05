@@ -11,6 +11,10 @@
 // contract is enforced.
 
 import sanitizeHtml from "sanitize-html";
+import {
+  countMarkdownCallouts,
+  normalizeHostPostMarkdown,
+} from "./postCalloutMarkup";
 
 // Elements the Tiptap schema on the client can emit.
 const ALLOWED_TAGS = [
@@ -105,8 +109,7 @@ export function sanitizeHostPostHTML(html: string): string {
  */
 export function countCallouts(bodyMarkdown: string, bodyHTML: string) {
   const htmlCount = (bodyHTML.match(/<div\s+class="callout"/g) || []).length;
-  const markdownCount = (bodyMarkdown.match(/<div\s+class="callout"/g) || [])
-    .length;
+  const markdownCount = countMarkdownCallouts(bodyMarkdown);
   return { htmlCount, markdownCount };
 }
 
@@ -123,12 +126,10 @@ export function normalizeHostPostBody(input: {
   bodyMarkdown: string;
   bodyHTML?: string | undefined;
 }): { bodyMarkdown: string; bodyHTML: string } {
-  const rawMd = String(input.bodyMarkdown || "").trim();
+  const rawMd = normalizeHostPostMarkdown(input.bodyMarkdown);
   const rawHtml = String(input.bodyHTML || "").trim();
 
-  const html = rawHtml.length > 0
-    ? sanitizeHostPostHTML(rawHtml)
-    : sanitizeHostPostHTML(rawMd);
+  const html = rawHtml.length > 0 ? sanitizeHostPostHTML(rawHtml) : "";
 
   return { bodyMarkdown: rawMd, bodyHTML: html };
 }

@@ -16,10 +16,7 @@ import { LureliaPermissions as PermissionsRaw } from "../../models/lurelia/Permi
 
 import { eventRoomName } from "./sharedEventService";
 import { dispatchNotification } from "./notificationService";
-import {
-  normalizeHostPostBody,
-  sanitizeHostPostHTML,
-} from "./postSanitizer";
+import { normalizeHostPostBody } from "./postSanitizer";
 
 const EventPost = EventPostRaw as Model<any>;
 const Announcement = AnnouncementRaw as Model<any>;
@@ -118,12 +115,14 @@ export async function editPost(
   if (post.authorUserID !== actorUserID && !canModerate) {
     throw new Error("FORBIDDEN");
   }
-  if (patch.bodyMarkdown !== undefined) {
-    if (!patch.bodyMarkdown.trim()) throw new Error("body_REQUIRED");
-    post.bodyMarkdown = patch.bodyMarkdown.trim();
-  }
-  if (patch.bodyHTML !== undefined) {
-    post.bodyHTML = sanitizeHostPostHTML(patch.bodyHTML);
+  if (patch.bodyMarkdown !== undefined || patch.bodyHTML !== undefined) {
+    const normalized = normalizeHostPostBody({
+      bodyMarkdown: patch.bodyMarkdown ?? post.bodyMarkdown,
+      bodyHTML: patch.bodyHTML ?? post.bodyHTML,
+    });
+    if (!normalized.bodyMarkdown.trim()) throw new Error("body_REQUIRED");
+    post.bodyMarkdown = normalized.bodyMarkdown;
+    post.bodyHTML = normalized.bodyHTML;
   }
   if (patch.isPinned !== undefined && canModerate) post.isPinned = !!patch.isPinned;
   post.editedAt = new Date();
@@ -232,12 +231,14 @@ export async function editAnnouncement(
   if (!(await isModerator(announcement.sharedEventID, actorUserID))) {
     throw new Error("FORBIDDEN");
   }
-  if (patch.bodyMarkdown !== undefined) {
-    if (!patch.bodyMarkdown.trim()) throw new Error("body_REQUIRED");
-    announcement.bodyMarkdown = patch.bodyMarkdown.trim();
-  }
-  if (patch.bodyHTML !== undefined) {
-    announcement.bodyHTML = sanitizeHostPostHTML(patch.bodyHTML);
+  if (patch.bodyMarkdown !== undefined || patch.bodyHTML !== undefined) {
+    const normalizedAnn = normalizeHostPostBody({
+      bodyMarkdown: patch.bodyMarkdown ?? announcement.bodyMarkdown,
+      bodyHTML: patch.bodyHTML ?? announcement.bodyHTML,
+    });
+    if (!normalizedAnn.bodyMarkdown.trim()) throw new Error("body_REQUIRED");
+    announcement.bodyMarkdown = normalizedAnn.bodyMarkdown;
+    announcement.bodyHTML = normalizedAnn.bodyHTML;
   }
   announcement.editedAt = new Date();
   await announcement.save();
