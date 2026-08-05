@@ -121,7 +121,7 @@ export function countCallouts(bodyMarkdown: string, bodyHTML: string) {
  */
 export function normalizeHostPostBody(input: {
   bodyMarkdown: string;
-  bodyHTML?: string;
+  bodyHTML?: string | undefined;
 }): { bodyMarkdown: string; bodyHTML: string } {
   const rawMd = String(input.bodyMarkdown || "").trim();
   const rawHtml = String(input.bodyHTML || "").trim();
