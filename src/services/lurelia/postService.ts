@@ -49,6 +49,7 @@ export type CreatePostInput = {
   authorUserID: string;
   authorDisplayName: string;
   authorAvatarURL?: string;
+  title?: string;
   bodyMarkdown: string;
   bodyHTML?: string;
   isPinned?: boolean;
@@ -66,6 +67,7 @@ export async function createPost(io: SocketIOServer, input: CreatePostInput) {
     bodyMarkdown: input.bodyMarkdown,
     bodyHTML: input.bodyHTML,
   });
+  const title = normalizePostTitle(input.title, normalized.bodyMarkdown);
 
   const created = await EventPost.create({
     localID: randomUUID(),
@@ -73,6 +75,7 @@ export async function createPost(io: SocketIOServer, input: CreatePostInput) {
     authorUserID: input.authorUserID,
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
+    title,
     bodyMarkdown: normalized.bodyMarkdown,
     bodyHTML: normalized.bodyHTML,
     isPinned: canPin && !!input.isPinned,
@@ -91,7 +94,7 @@ export async function createPost(io: SocketIOServer, input: CreatePostInput) {
   await dispatchNotification({
     sharedEventID: input.sharedEventID,
     kind: "hostPost",
-    payload: { postID: String(created._id), title: input.authorDisplayName },
+    payload: { postID: String(created._id), title },
   });
 
   return created.toObject();
@@ -107,7 +110,12 @@ export async function editPost(
   io: SocketIOServer,
   postID: string,
   actorUserID: string,
-  patch: { bodyMarkdown?: string; bodyHTML?: string; isPinned?: boolean },
+  patch: {
+    title?: string;
+    bodyMarkdown?: string;
+    bodyHTML?: string;
+    isPinned?: boolean;
+  },
 ) {
   const post = await EventPost.findById(postID);
   if (!post) throw new Error("POST_NOT_FOUND");
@@ -123,6 +131,9 @@ export async function editPost(
     if (!normalized.bodyMarkdown.trim()) throw new Error("body_REQUIRED");
     post.bodyMarkdown = normalized.bodyMarkdown;
     post.bodyHTML = normalized.bodyHTML;
+  }
+  if (patch.title !== undefined) {
+    post.title = normalizePostTitle(patch.title, post.bodyMarkdown);
   }
   if (patch.isPinned !== undefined && canModerate) post.isPinned = !!patch.isPinned;
   post.editedAt = new Date();
@@ -172,6 +183,7 @@ export type CreateAnnouncementInput = {
   authorUserID: string;
   authorDisplayName: string;
   authorAvatarURL?: string;
+  title?: string;
   bodyMarkdown: string;
   bodyHTML?: string;
 };
@@ -188,6 +200,7 @@ export async function createAnnouncement(
     bodyMarkdown: input.bodyMarkdown,
     bodyHTML: input.bodyHTML,
   });
+  const title = normalizePostTitle(input.title, normalizedAnn.bodyMarkdown);
 
   const created = await Announcement.create({
     localID: randomUUID(),
@@ -195,6 +208,7 @@ export async function createAnnouncement(
     authorUserID: input.authorUserID,
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
+    title,
     bodyMarkdown: normalizedAnn.bodyMarkdown,
     bodyHTML: normalizedAnn.bodyHTML,
     notificationSentAt: new Date(),
@@ -208,7 +222,7 @@ export async function createAnnouncement(
   await dispatchNotification({
     sharedEventID: input.sharedEventID,
     kind: "announcement",
-    payload: { announcementID: String(created._id) },
+    payload: { announcementID: String(created._id), title },
   });
 
   return created.toObject();
@@ -224,7 +238,7 @@ export async function editAnnouncement(
   io: SocketIOServer,
   announcementID: string,
   actorUserID: string,
-  patch: { bodyMarkdown?: string; bodyHTML?: string },
+  patch: { title?: string; bodyMarkdown?: string; bodyHTML?: string },
 ) {
   const announcement = await Announcement.findById(announcementID);
   if (!announcement) throw new Error("ANNOUNCEMENT_NOT_FOUND");
@@ -239,6 +253,9 @@ export async function editAnnouncement(
     if (!normalizedAnn.bodyMarkdown.trim()) throw new Error("body_REQUIRED");
     announcement.bodyMarkdown = normalizedAnn.bodyMarkdown;
     announcement.bodyHTML = normalizedAnn.bodyHTML;
+  }
+  if (patch.title !== undefined) {
+    announcement.title = normalizePostTitle(patch.title, announcement.bodyMarkdown);
   }
   announcement.editedAt = new Date();
   await announcement.save();
@@ -279,4 +296,26 @@ async function isModerator(sharedEventID: string, userID: string) {
     removedAt: null,
   }).lean<any>();
   return !!attendee;
+}
+
+function normalizePostTitle(inputTitle: unknown, bodyMarkdown: string): string {
+  const explicit = String(inputTitle ?? "").trim();
+  if (explicit) return stripInlineMarkdown(explicit).slice(0, 180);
+
+  const lines = String(bodyMarkdown || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith(":::"));
+
+  const heading = lines.find((line) => /^#{1,3}\s+/.test(line));
+  const fallback = heading?.replace(/^#{1,3}\s+/, "") ?? lines[0] ?? "Untitled post";
+  return stripInlineMarkdown(fallback).slice(0, 180) || "Untitled post";
+}
+
+function stripInlineMarkdown(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_`~#>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }

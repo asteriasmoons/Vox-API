@@ -41,18 +41,14 @@ const ALLOWED_TAGS = [
 
 // Data attributes required to reconstitute the callout on the client.
 const CALLOUT_DATA_ATTRS = [
+  "data-type",
   "data-icon",
   "data-callout-id",
-  "data-icon-name",
 ];
 
 // Class names we allow — everything the editor emits.
 const ALLOWED_CLASSES = [
   "callout",
-  "callout-icon-slot",
-  "callout-icon-glyph",
-  "callout-icon-label",
-  "callout-body",
   "file-chip",
 ];
 
@@ -108,7 +104,10 @@ export function sanitizeHostPostHTML(html: string): string {
  * the service layer can log divergences without rejecting content.
  */
 export function countCallouts(bodyMarkdown: string, bodyHTML: string) {
-  const htmlCount = (bodyHTML.match(/<div\s+class="callout"/g) || []).length;
+  const htmlCount = (
+    bodyHTML.match(/<div\b[^>]*(?:data-type=["']lurelia-callout["']|class=["'][^"']*\bcallout\b[^"']*["'])/g)
+    || []
+  ).length;
   const markdownCount = countMarkdownCallouts(bodyMarkdown);
   return { htmlCount, markdownCount };
 }
