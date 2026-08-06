@@ -47,7 +47,14 @@ export function createDiscussionRouter(io: SocketIOServer): Router {
       const eventPostID = req.query.eventPostID
         ? String(req.query.eventPostID)
         : undefined;
-      const comments = await listComments(String(req.params.id), eventPostID);
+      const viewerUserID = req.query.viewerUserID
+        ? String(req.query.viewerUserID)
+        : undefined;
+      const comments = await listComments(
+        String(req.params.id),
+        eventPostID,
+        viewerUserID,
+      );
       return res.json({ success: true, comments });
     } catch (error) {
       return handleError(res, error);
@@ -119,7 +126,13 @@ export function createDiscussionRouter(io: SocketIOServer): Router {
     "/comments/:commentID/replies",
     async (req: Request, res: Response) => {
       try {
-        const replies = await listReplies(String(req.params.commentID));
+        const viewerUserID = req.query.viewerUserID
+          ? String(req.query.viewerUserID)
+          : undefined;
+        const replies = await listReplies(
+          String(req.params.commentID),
+          viewerUserID,
+        );
         return res.json({ success: true, replies });
       } catch (error) {
         return handleError(res, error);

@@ -23,6 +23,7 @@ export function mapErrorStatus(message: string): number {
     case "EVENT_NOT_FOUND":
     case "COMMENT_NOT_FOUND":
     case "REPLY_NOT_FOUND":
+    case "PARENT_REPLY_NOT_FOUND":
     case "POST_NOT_FOUND":
     case "ANNOUNCEMENT_NOT_FOUND":
     case "ATTENDEE_NOT_FOUND":
@@ -45,6 +46,7 @@ export function mapErrorStatus(message: string): number {
     case "INVITATION_EXPIRED":
     case "INVITATION_MISMATCH":
     case "NEW_HOST_NOT_ATTENDEE":
+    case "PARENT_REPLY_MISMATCH":
       return 409;
     default:
       return 400;

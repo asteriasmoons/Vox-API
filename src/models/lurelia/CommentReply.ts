@@ -5,6 +5,7 @@ const commentReplySchema = new mongoose.Schema(
   {
     localID: { type: String, required: true, unique: true, index: true },
     parentCommentID: { type: String, required: true, index: true },
+    parentReplyID: { type: String, default: "", index: true },
     sharedEventID: { type: String, required: true, index: true },
 
     authorUserID: { type: String, required: true, index: true },
@@ -22,6 +23,7 @@ const commentReplySchema = new mongoose.Schema(
 );
 
 commentReplySchema.index({ parentCommentID: 1, createdAt: 1 });
+commentReplySchema.index({ parentReplyID: 1, createdAt: 1 });
 
 commentReplySchema.pre("validate", function (next) {
   if (!this.body || this.body.trim().length === 0) {

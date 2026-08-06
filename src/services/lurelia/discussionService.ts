@@ -24,9 +24,36 @@ const Permissions = PermissionsRaw as Model<any>;
 
 const MENTION_REGEX = /@([A-Za-z0-9_]+)/g;
 
-function extractMentions(body: string): string[] {
+function mentionToken(value: string): string {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Za-z0-9_]/g, "")
+    .toLowerCase();
+}
+
+async function resolveMentionedUserIDs(
+  sharedEventID: string,
+  body: string,
+): Promise<string[]> {
   const matches = body.match(MENTION_REGEX) || [];
-  return Array.from(new Set(matches.map((m) => m.slice(1))));
+  const tokens = new Set(matches.map((m) => m.slice(1).toLowerCase()));
+  if (tokens.size === 0) return [];
+
+  const attendees = await Attendee.find({
+    sharedEventID,
+    removedAt: null,
+  }).lean<any[]>();
+
+  const mentioned = attendees
+    .filter((attendee) => {
+      const displayToken = mentionToken(attendee.displayName);
+      const userToken = mentionToken(attendee.userID);
+      return tokens.has(displayToken) || tokens.has(userToken);
+    })
+    .map((attendee) => String(attendee.userID));
+
+  return Array.from(new Set(mentioned));
 }
 
 async function assertCanComment(sharedEventID: string, userID: string) {
@@ -69,7 +96,7 @@ export async function createComment(
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
     body: input.body.trim(),
-    mentionedUserIDs: extractMentions(input.body),
+    mentionedUserIDs: await resolveMentionedUserIDs(input.sharedEventID, input.body),
   });
 
   await SharedEvent.findByIdAndUpdate(input.sharedEventID, {
@@ -83,12 +110,118 @@ export async function createComment(
   return created.toObject();
 }
 
-export async function listComments(sharedEventID: string, eventPostID?: string) {
+function asObjectID(value: unknown): string {
+  if (!value) return "";
+  return String(value);
+}
+
+function attachLikedState<T extends Record<string, any>>(
+  item: T,
+  likedIDs: Set<string>,
+): T & { isLiked: boolean } {
+  return {
+    ...item,
+    isLiked: likedIDs.has(asObjectID(item._id)),
+  };
+}
+
+function buildReplyTree(
+  replies: any[],
+  likedReplyIDs: Set<string>,
+  parentReplyID = "",
+): any[] {
+  return replies
+    .filter((reply) => String(reply.parentReplyID || "") === parentReplyID)
+    .map((reply) => ({
+      ...attachLikedState(reply, likedReplyIDs),
+      replies: buildReplyTree(replies, likedReplyIDs, String(reply._id)),
+    }));
+}
+
+async function collectReplyThreadIDs(
+  parentCommentID: string,
+  rootReplyID: string,
+): Promise<string[]> {
+  const replies = await CommentReply.find({
+    parentCommentID,
+    deletedAt: null,
+  })
+    .select("_id parentReplyID")
+    .lean<any[]>();
+  const childrenByParent = new Map<string, string[]>();
+
+  for (const reply of replies) {
+    const parentID = String(reply.parentReplyID || "");
+    const childIDs = childrenByParent.get(parentID) || [];
+    childIDs.push(String(reply._id));
+    childrenByParent.set(parentID, childIDs);
+  }
+
+  const ids: string[] = [];
+  const stack = [rootReplyID];
+  while (stack.length > 0) {
+    const currentID = stack.pop();
+    if (!currentID || ids.includes(currentID)) continue;
+    ids.push(currentID);
+    stack.push(...(childrenByParent.get(currentID) || []));
+  }
+
+  return ids;
+}
+
+export async function listComments(
+  sharedEventID: string,
+  eventPostID?: string,
+  viewerUserID?: string,
+) {
   const filter: Record<string, unknown> = { sharedEventID, deletedAt: null };
   if (eventPostID !== undefined) filter.eventPostID = eventPostID;
-  return await Comment.find(filter)
+
+  const comments = await Comment.find(filter)
     .sort({ isPinned: -1, createdAt: -1 })
     .lean();
+  const commentIDs = comments.map((comment: any) => String(comment._id));
+  const replies = commentIDs.length > 0
+    ? await CommentReply.find({
+        parentCommentID: { $in: commentIDs },
+        deletedAt: null,
+      })
+        .sort({ createdAt: 1 })
+        .lean()
+    : [];
+
+  let likedCommentIDs = new Set<string>();
+  let likedReplyIDs = new Set<string>();
+  if (viewerUserID) {
+    const replyIDs = replies.map((reply: any) => String(reply._id));
+    const reactions = await CommentReaction.find({
+      userID: viewerUserID,
+      kind: "like",
+      $or: [
+        { commentID: { $in: commentIDs } },
+        { replyID: { $in: replyIDs } },
+      ],
+    }).lean<any[]>();
+
+    likedCommentIDs = new Set(
+      reactions
+        .map((reaction) => String(reaction.commentID || ""))
+        .filter(Boolean),
+    );
+    likedReplyIDs = new Set(
+      reactions
+        .map((reaction) => String(reaction.replyID || ""))
+        .filter(Boolean),
+    );
+  }
+
+  return comments.map((comment: any) => ({
+    ...attachLikedState(comment, likedCommentIDs),
+    replies: buildReplyTree(
+      replies.filter((reply: any) => String(reply.parentCommentID) === String(comment._id)),
+      likedReplyIDs,
+    ),
+  }));
 }
 
 export async function editComment(
@@ -102,7 +235,7 @@ export async function editComment(
   if (comment.authorUserID !== actorUserID) throw new Error("FORBIDDEN");
   if (!body?.trim()) throw new Error("body_REQUIRED");
   comment.body = body.trim();
-  comment.mentionedUserIDs = extractMentions(body);
+  comment.mentionedUserIDs = await resolveMentionedUserIDs(comment.sharedEventID, body);
   comment.editedAt = new Date();
   await comment.save();
   io.to(eventRoomName(comment.sharedEventID)).emit(
@@ -118,13 +251,17 @@ export async function deleteComment(
   actorUserID: string,
 ) {
   const comment = await Comment.findById(commentID);
-  if (!comment) throw new Error("COMMENT_NOT_FOUND");
+  if (!comment || comment.deletedAt) throw new Error("COMMENT_NOT_FOUND");
   const canModerate = await isModerator(comment.sharedEventID, actorUserID);
   if (comment.authorUserID !== actorUserID && !canModerate) {
     throw new Error("FORBIDDEN");
   }
   comment.deletedAt = new Date();
   await comment.save();
+  await CommentReply.updateMany(
+    { parentCommentID: String(comment._id), deletedAt: null },
+    { $set: { deletedAt: comment.deletedAt } },
+  );
   await SharedEvent.findByIdAndUpdate(comment.sharedEventID, {
     $inc: { "counts.comments": -1 },
   });
@@ -159,6 +296,7 @@ export async function pinComment(
 
 export type CreateReplyInput = {
   parentCommentID: string;
+  parentReplyID?: string;
   authorUserID: string;
   authorDisplayName: string;
   authorAvatarURL?: string;
@@ -171,15 +309,29 @@ export async function createReply(io: SocketIOServer, input: CreateReplyInput) {
   if (!parent) throw new Error("PARENT_NOT_FOUND");
   await assertCanComment(parent.sharedEventID, input.authorUserID);
 
+  let parentReplyID = "";
+  if (input.parentReplyID) {
+    const parentReply = await CommentReply.findById(input.parentReplyID).lean<any>();
+    if (!parentReply || parentReply.deletedAt) throw new Error("PARENT_REPLY_NOT_FOUND");
+    if (
+      String(parentReply.parentCommentID) !== String(parent._id)
+      || parentReply.sharedEventID !== parent.sharedEventID
+    ) {
+      throw new Error("PARENT_REPLY_MISMATCH");
+    }
+    parentReplyID = String(parentReply._id);
+  }
+
   const reply = await CommentReply.create({
     localID: randomUUID(),
     parentCommentID: input.parentCommentID,
+    parentReplyID,
     sharedEventID: parent.sharedEventID,
     authorUserID: input.authorUserID,
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
     body: input.body.trim(),
-    mentionedUserIDs: extractMentions(input.body),
+    mentionedUserIDs: await resolveMentionedUserIDs(parent.sharedEventID, input.body),
   });
   parent.replyCount = (parent.replyCount || 0) + 1;
   await parent.save();
@@ -191,10 +343,23 @@ export async function createReply(io: SocketIOServer, input: CreateReplyInput) {
   return reply.toObject();
 }
 
-export async function listReplies(parentCommentID: string) {
-  return await CommentReply.find({ parentCommentID, deletedAt: null })
+export async function listReplies(parentCommentID: string, viewerUserID?: string) {
+  const replies = await CommentReply.find({ parentCommentID, deletedAt: null })
     .sort({ createdAt: 1 })
     .lean();
+
+  let likedReplyIDs = new Set<string>();
+  if (viewerUserID) {
+    const replyIDs = replies.map((reply: any) => String(reply._id));
+    const reactions = await CommentReaction.find({
+      userID: viewerUserID,
+      kind: "like",
+      replyID: { $in: replyIDs },
+    }).lean<any[]>();
+    likedReplyIDs = new Set(reactions.map((reaction) => String(reaction.replyID)));
+  }
+
+  return buildReplyTree(replies, likedReplyIDs);
 }
 
 export async function editReply(
@@ -208,7 +373,7 @@ export async function editReply(
   if (reply.authorUserID !== actorUserID) throw new Error("FORBIDDEN");
   if (!body?.trim()) throw new Error("body_REQUIRED");
   reply.body = body.trim();
-  reply.mentionedUserIDs = extractMentions(body);
+  reply.mentionedUserIDs = await resolveMentionedUserIDs(reply.sharedEventID, body);
   reply.editedAt = new Date();
   await reply.save();
   io.to(eventRoomName(reply.sharedEventID)).emit(
@@ -224,18 +389,23 @@ export async function deleteReply(
   actorUserID: string,
 ) {
   const reply = await CommentReply.findById(replyID);
-  if (!reply) throw new Error("REPLY_NOT_FOUND");
+  if (!reply || reply.deletedAt) throw new Error("REPLY_NOT_FOUND");
   const canModerate = await isModerator(reply.sharedEventID, actorUserID);
   if (reply.authorUserID !== actorUserID && !canModerate) {
     throw new Error("FORBIDDEN");
   }
-  reply.deletedAt = new Date();
-  await reply.save();
+  const deletedAt = new Date();
+  const replyIDs = await collectReplyThreadIDs(reply.parentCommentID, String(reply._id));
+  await CommentReply.updateMany(
+    { _id: { $in: replyIDs } },
+    { $set: { deletedAt } },
+  );
   await Comment.findByIdAndUpdate(reply.parentCommentID, {
-    $inc: { replyCount: -1 },
+    $inc: { replyCount: -replyIDs.length },
   });
   io.to(eventRoomName(reply.sharedEventID)).emit("event:reply_deleted", {
     replyID: String(reply._id),
+    replyIDs,
     parentCommentID: reply.parentCommentID,
   });
   return { ok: true };
