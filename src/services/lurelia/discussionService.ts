@@ -24,6 +24,11 @@ const Permissions = PermissionsRaw as Model<any>;
 
 const MENTION_REGEX = /@([A-Za-z0-9_]+)/g;
 
+type MentionCandidate = {
+  userID: string;
+  displayName: string;
+};
+
 function mentionToken(value: string): string {
   return String(value || "")
     .trim()
@@ -35,6 +40,7 @@ function mentionToken(value: string): string {
 async function resolveMentionedUserIDs(
   sharedEventID: string,
   body: string,
+  extraCandidates: MentionCandidate[] = [],
 ): Promise<string[]> {
   const matches = body.match(MENTION_REGEX) || [];
   const tokens = new Set(matches.map((m) => m.slice(1).toLowerCase()));
@@ -45,7 +51,15 @@ async function resolveMentionedUserIDs(
     removedAt: null,
   }).lean<any[]>();
 
-  const mentioned = attendees
+  const candidates = [
+    ...attendees.map((attendee) => ({
+      userID: String(attendee.userID),
+      displayName: String(attendee.displayName || ""),
+    })),
+    ...extraCandidates,
+  ];
+
+  const mentioned = candidates
     .filter((attendee) => {
       const displayToken = mentionToken(attendee.displayName);
       const userToken = mentionToken(attendee.userID);
@@ -96,7 +110,9 @@ export async function createComment(
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
     body: input.body.trim(),
-    mentionedUserIDs: await resolveMentionedUserIDs(input.sharedEventID, input.body),
+    mentionedUserIDs: await resolveMentionedUserIDs(input.sharedEventID, input.body, [
+      { userID: input.authorUserID, displayName: input.authorDisplayName },
+    ]),
   });
 
   await SharedEvent.findByIdAndUpdate(input.sharedEventID, {
@@ -235,7 +251,9 @@ export async function editComment(
   if (comment.authorUserID !== actorUserID) throw new Error("FORBIDDEN");
   if (!body?.trim()) throw new Error("body_REQUIRED");
   comment.body = body.trim();
-  comment.mentionedUserIDs = await resolveMentionedUserIDs(comment.sharedEventID, body);
+  comment.mentionedUserIDs = await resolveMentionedUserIDs(comment.sharedEventID, body, [
+    { userID: comment.authorUserID, displayName: comment.authorDisplayName },
+  ]);
   comment.editedAt = new Date();
   await comment.save();
   io.to(eventRoomName(comment.sharedEventID)).emit(
@@ -331,7 +349,9 @@ export async function createReply(io: SocketIOServer, input: CreateReplyInput) {
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
     body: input.body.trim(),
-    mentionedUserIDs: await resolveMentionedUserIDs(parent.sharedEventID, input.body),
+    mentionedUserIDs: await resolveMentionedUserIDs(parent.sharedEventID, input.body, [
+      { userID: input.authorUserID, displayName: input.authorDisplayName },
+    ]),
   });
   parent.replyCount = (parent.replyCount || 0) + 1;
   await parent.save();
@@ -373,7 +393,9 @@ export async function editReply(
   if (reply.authorUserID !== actorUserID) throw new Error("FORBIDDEN");
   if (!body?.trim()) throw new Error("body_REQUIRED");
   reply.body = body.trim();
-  reply.mentionedUserIDs = await resolveMentionedUserIDs(reply.sharedEventID, body);
+  reply.mentionedUserIDs = await resolveMentionedUserIDs(reply.sharedEventID, body, [
+    { userID: reply.authorUserID, displayName: reply.authorDisplayName },
+  ]);
   reply.editedAt = new Date();
   await reply.save();
   io.to(eventRoomName(reply.sharedEventID)).emit(
