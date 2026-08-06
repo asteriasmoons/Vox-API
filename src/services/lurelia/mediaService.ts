@@ -120,6 +120,25 @@ export async function uploadImage(
   return attachment.toObject();
 }
 
+export async function uploadProfileAvatar(buffer: Buffer, uploaderUserID: string) {
+  if (!uploaderUserID) throw new Error("uploaderUserID_REQUIRED");
+  const asset = await uploadToCloudinary(
+    buffer,
+    "lurelia/profile_avatars",
+    "image",
+  );
+
+  return {
+    avatarURL: asset.url,
+    thumbnailURL: asset.thumbnailURL,
+    publicId: asset.publicId,
+    width: asset.width,
+    height: asset.height,
+    mimeType: asset.mimeType,
+    sizeBytes: asset.bytes,
+  };
+}
+
 export async function uploadFile(
   buffer: Buffer,
   target: UploadTarget,

@@ -4,7 +4,11 @@ import { Router, Request, Response } from "express";
 import { Server as SocketIOServer } from "socket.io";
 import multer from "multer";
 
-import { uploadImage, uploadFile } from "../../services/lurelia/mediaService";
+import {
+  uploadImage,
+  uploadFile,
+  uploadProfileAvatar,
+} from "../../services/lurelia/mediaService";
 
 import { mapErrorStatus } from "./index";
 
@@ -40,6 +44,19 @@ export function createMediaRouter(_io: SocketIOServer): Router {
         isInline,
       );
       return res.status(201).json({ success: true, asset });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  });
+
+  // POST /api/lurelia/media/profile-avatar
+  // form-data: avatar (file), uploaderUserID
+  router.post("/profile-avatar", upload.single("avatar"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) throw new Error("no_avatar");
+      const uploaderUserID = String(req.body.uploaderUserID || "");
+      const asset = await uploadProfileAvatar(req.file.buffer, uploaderUserID);
+      return res.status(201).json({ success: true, avatarURL: asset.avatarURL, asset });
     } catch (error) {
       return handleError(res, error);
     }
