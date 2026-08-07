@@ -146,7 +146,21 @@ async function deliver(
   kind: NotificationKind,
   payload: Record<string, unknown>,
 ) {
-  // Seam. APNs / FCM adapter is wired in Phase 1A.7.
+  if (platform === "ios") {
+    // Lazy import so the module load doesn't crash environments where
+    // APNS env vars aren't set (dev machines, tests).
+    const { sendAPNs, alertForKind } = await import("./apnsAdapter.js");
+    const alert = alertForKind(kind, payload);
+    const result = await sendAPNs(deviceToken, alert, { kind, payload });
+    if (result.status >= 400 || result.status === 0) {
+      console.warn(
+        `[lurelia] APNs deliver failed for ${deviceToken.slice(0, 8)}… `,
+        `status=${result.status} reason=${result.reason ?? "unknown"}`,
+      );
+    }
+    return;
+  }
+  // Android / web will slot in additional adapters here.
   console.log(
     `[lurelia] notify ${platform} ${deviceToken.slice(0, 8)}… ${kind}`,
     payload,
