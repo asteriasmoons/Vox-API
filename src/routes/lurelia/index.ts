@@ -16,6 +16,7 @@ import { createPostRouter } from "./postRoutes";
 import { createMediaRouter } from "./mediaRoutes";
 import { createNotificationRouter } from "./notificationRoutes";
 import { createSyncRouter } from "./syncRoutes";
+import { createDebugRouter } from "./debugRoutes";
 
 /** Status codes we map service-layer error strings to. Mirrors buddy-routes. */
 export function mapErrorStatus(message: string): number {
@@ -65,6 +66,11 @@ export function createLureliaRouter(io: SocketIOServer): Router {
   router.use("/media", createMediaRouter(io));
   router.use("/notifications", createNotificationRouter(io));
   router.use("/sync", createSyncRouter(io));
+
+  // DEBUG-only: sim endpoints for single-device verification. Router
+  // itself 404s unless LURELIA_DEBUG_ENABLED=true, so mounting is safe
+  // in prod.
+  router.use("/events", createDebugRouter(io));
 
   return router;
 }
