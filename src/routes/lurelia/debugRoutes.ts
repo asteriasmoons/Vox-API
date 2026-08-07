@@ -69,7 +69,7 @@ export function createDebugRouter(io: SocketIOServer): Router {
    *   hostDisplayName?: string,  // for hostPost / announcement
    * }
    */
-  router.post("/:id/simulate", async (req: Request, res: Response) => {
+  router.post("/:id/debug/simulate", async (req: Request, res: Response) => {
     try {
       const eventID = String(req.params.id || "");
       const body = req.body ?? {};
