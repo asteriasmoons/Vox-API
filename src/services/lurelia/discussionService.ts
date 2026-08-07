@@ -14,6 +14,7 @@ import { LureliaSharedEvent as SharedEventRaw } from "../../models/lurelia/Share
 import { LureliaPermissions as PermissionsRaw } from "../../models/lurelia/Permissions";
 
 import { eventRoomName } from "./sharedEventService";
+import { dispatchNotification } from "./notificationService";
 
 const Comment = CommentRaw as Model<any>;
 const CommentReply = CommentReplyRaw as Model<any>;
@@ -123,6 +124,16 @@ export async function createComment(
     "event:comment_added",
     created.toObject(),
   );
+
+  await dispatchNotification({
+    sharedEventID: input.sharedEventID,
+    kind: "comment",
+    payload: {
+      commentID: String(created._id),
+      actorName: input.authorDisplayName,
+    },
+  });
+
   return created.toObject();
 }
 
@@ -360,6 +371,17 @@ export async function createReply(io: SocketIOServer, input: CreateReplyInput) {
     "event:reply_added",
     reply.toObject(),
   );
+
+  await dispatchNotification({
+    sharedEventID: parent.sharedEventID,
+    kind: "reply",
+    payload: {
+      replyID: String(reply._id),
+      parentCommentID: input.parentCommentID,
+      actorName: input.authorDisplayName,
+    },
+  });
+
   return reply.toObject();
 }
 

@@ -94,7 +94,11 @@ export async function createPost(io: SocketIOServer, input: CreatePostInput) {
   await dispatchNotification({
     sharedEventID: input.sharedEventID,
     kind: "hostPost",
-    payload: { postID: String(created._id), title },
+    payload: {
+      postID: String(created._id),
+      title,
+      actorName: input.authorDisplayName,
+    },
   });
 
   return created.toObject();
@@ -222,7 +226,11 @@ export async function createAnnouncement(
   await dispatchNotification({
     sharedEventID: input.sharedEventID,
     kind: "announcement",
-    payload: { announcementID: String(created._id), title },
+    payload: {
+      announcementID: String(created._id),
+      title,
+      actorName: input.authorDisplayName,
+    },
   });
 
   return created.toObject();

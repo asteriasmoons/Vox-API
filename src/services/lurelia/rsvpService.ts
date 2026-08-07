@@ -9,6 +9,7 @@ import { LureliaSharedEvent as SharedEventRaw } from "../../models/lurelia/Share
 import { LureliaPermissions as PermissionsRaw } from "../../models/lurelia/Permissions";
 
 import { eventRoomName } from "./sharedEventService";
+import { dispatchNotification } from "./notificationService";
 
 const RSVP = RSVPRaw as Model<any>;
 const SharedEvent = SharedEventRaw as Model<any>;
@@ -74,6 +75,17 @@ export async function setRSVP(io: SocketIOServer, input: SetRSVPInput) {
     "event:rsvp_changed",
     upsert.toObject(),
   );
+
+  await dispatchNotification({
+    sharedEventID: input.sharedEventID,
+    kind: "rsvpChanged",
+    payload: {
+      rsvpUserID: input.userID,
+      actorName: input.displayName,
+      status: input.status,
+    },
+  });
+
   return upsert.toObject();
 }
 

@@ -10,6 +10,7 @@ import { LureliaSharedEvent as SharedEventRaw } from "../../models/lurelia/Share
 import { LureliaPermissions as PermissionsRaw } from "../../models/lurelia/Permissions";
 
 import { eventRoomName } from "./sharedEventService";
+import { dispatchNotification } from "./notificationService";
 
 const Attendee = AttendeeRaw as Model<any>;
 const Host = HostRaw as Model<any>;
@@ -77,6 +78,16 @@ export async function joinEvent(
     "event:attendee_joined",
     created.toObject(),
   );
+
+  await dispatchNotification({
+    sharedEventID,
+    kind: "join",
+    payload: {
+      attendeeUserID: userID,
+      actorName: displayName,
+    },
+  });
+
   return created.toObject();
 }
 

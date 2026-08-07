@@ -8,8 +8,10 @@ import type { Model } from "mongoose";
 import { randomUUID } from "crypto";
 
 import { LureliaNotificationSubscription as SubscriptionRaw } from "../../models/lurelia/NotificationSubscription";
+import { LureliaSharedEvent as SharedEventRaw } from "../../models/lurelia/SharedEvent";
 
 const Subscription = SubscriptionRaw as Model<any>;
+const SharedEvent = SharedEventRaw as Model<any>;
 
 export type NotificationKind =
   | "invitation"
@@ -119,15 +121,30 @@ export type DispatchInput = {
  * seam logs and returns — Phase 1A.7 wires the real APNs adapter.
  */
 export async function dispatchNotification(input: DispatchInput) {
+  // Enrich payload once so every deliver call has the event title (used
+  // by alertForKind on the client-facing alert text).
+  const evt = await SharedEvent.findById(input.sharedEventID)
+    .select({ title: 1 })
+    .lean<any>();
+  const enrichedPayload = {
+    ...input.payload,
+    eventTitle: evt?.title || (input.payload.eventTitle as string) || "Shared event",
+    sharedEventID: input.sharedEventID,
+  };
+
   const subscriptions = await Subscription.find({
     sharedEventID: input.sharedEventID,
     unsubscribedAt: null,
     enabledKinds: input.kind,
   }).lean();
 
+  console.log(
+    `[lurelia] dispatch ${input.kind} for ${input.sharedEventID}: ${subscriptions.length} subs`,
+  );
+
   await Promise.all(
     subscriptions.map((sub) =>
-      deliver(sub.deviceToken, sub.platform, input.kind, input.payload).catch(
+      deliver(sub.deviceToken, sub.platform, input.kind, enrichedPayload).catch(
         (err) => {
           console.error(
             `[lurelia] notification deliver failed for ${sub.deviceToken}:`,
