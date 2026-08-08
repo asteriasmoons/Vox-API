@@ -11,6 +11,7 @@ import {
 } from "../../services/lurelia/mediaService";
 
 import { mapErrorStatus } from "./index";
+import { LureliaAttachment } from "../../models/lurelia/Attachment";
 
 function handleError(res: Response, error: unknown) {
   const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
@@ -93,7 +94,7 @@ export function createMediaRouter(_io: SocketIOServer): Router {
       if (!raw) return res.json({ success: true, attachments: [] });
       const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
       if (ids.length === 0) return res.json({ success: true, attachments: [] });
-      const attachments = await Attachment.find({ _id: { $in: ids } }).lean();
+      const attachments = await LureliaAttachment.find({ _id: { $in: ids } }).lean();
       return res.json({ success: true, attachments });
     } catch (error) {
       return handleError(res, error);

@@ -34,5 +34,5 @@ const attachmentSchema = new mongoose.Schema(
 attachmentSchema.index({ sharedEventID: 1, createdAt: -1 });
 
 export const LureliaAttachment =
-  lureliaDB.models.LureliaAttachment ||
+  (lureliaDB.models.LureliaAttachment as mongoose.Model<any>) ||
   lureliaDB.model("LureliaAttachment", attachmentSchema, "attachments");
