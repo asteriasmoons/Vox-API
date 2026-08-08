@@ -18,6 +18,7 @@ import { createNotificationRouter } from "./notificationRoutes";
 import { createSyncRouter } from "./syncRoutes";
 import { createDebugRouter } from "./debugRoutes";
 import { createHostRouter } from "./hostRoutes";
+import { createPublicEventRouter } from "./publicEventRoutes";
 
 /** Status codes we map service-layer error strings to. Mirrors buddy-routes. */
 export function mapErrorStatus(message: string): number {
@@ -62,6 +63,8 @@ export function mapErrorStatus(message: string): number {
 
 export function createLureliaRouter(io: SocketIOServer): Router {
   const router = Router();
+
+  router.use("/public/events", createPublicEventRouter());
 
   router.use("/events", createSharedEventRouter(io));
   router.use("/events", createAttendeeRouter(io));
