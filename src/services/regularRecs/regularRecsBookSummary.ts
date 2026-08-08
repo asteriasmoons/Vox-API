@@ -56,20 +56,21 @@ async function lookupBook(input: RegularRecSummaryInput): Promise<BookSearchResu
 
 function buildUserPrompt(input: RegularRecSummaryInput, lookup?: BookSearchResult): string {
   return [
-    "Write a clear, accurate, and genuinely compelling description of this specific real book — one that actually tells the reader what the book is about AND makes them want to read it.",
-    "The reader should finish your description understanding the book's premise, hooked, and able to decide whether they want to read it.",
+    "Write a clear, accurate, and genuinely compelling summary of this specific real book that makes someone want to read it.",
+    "Present the premise directly and confidently; do not comment on the act of reading or on the work as an object.",
     "In flowing prose, cover: who the main character or subject is; the setup and premise; the central conflict or question the book revolves around; the setting or world; and what is at stake (for fiction) or what the reader will learn or gain (for nonfiction).",
-    "Write exactly two paragraphs. Each paragraph must be at least four complete sentences. Keep it substantial and worth reading.",
-    "Write like the best book-jacket copy: vivid, confident, and compelling enough to pull the reader in — but ALWAYS grounded in what actually happens and what the book is truly about. Clarity and pull matter equally; deliver both.",
-    "Open with a real hook — a concrete, intriguing detail about the character, premise, or stakes that grabs attention — never vague mood or scenery.",
-    "Do not sound like an encyclopedia, plot summary, or book report. Never use flat, distancing phrases like 'the central conflict revolves around', 'the narrative follows', 'the story follows', 'readers gain', 'this book tells the story of', or 'the book is about'.",
+    "Write exactly two paragraphs with exactly six complete sentences total: three sentences in the first paragraph and three sentences in the second. Keep every sentence purposeful and compelling.",
+    "Write like excellent jacket copy: vivid, confident, specific, and immediately readable, while staying grounded in what actually happens and what is truly at stake.",
+    "Open with a concrete hook about the protagonist, premise, conflict, or stakes — never with generic commentary about the work itself.",
+    "Do not refer to the work from the outside. Never write phrases like 'this book', 'the book', 'this novel', 'the novel', 'the story', 'the author', 'the narrative', or 'readers'. Write the summary directly as if presenting the premise itself.",
+    "Do not sound like an encyclopedia, plot report, review, or analysis. Avoid flat, distancing phrases like 'the central conflict revolves around', 'the narrative follows', 'the story follows', 'readers gain', 'this book tells the story of', or 'the book is about'.",
     "ABSOLUTELY DO NOT be poetic, flowery, abstract, atmospheric-for-its-own-sake, cryptic, or vague. DO NOT write a riddle. DO NOT tease the reader or 'leave the interesting questions unanswered.' DO NOT withhold the premise to create mystery. If you are describing mood without stating what actually happens or what the book is about, you are doing it wrong.",
     "Avoid generic filler phrases such as 'this book explores', 'the author examines', 'perfect for fans of', 'readers who enjoy', 'a journey of', 'a tale of', 'this compelling novel', 'this insightful guide'.",
     "Adapt to the book type: for fiction, describe the protagonist, their situation, the central conflict, and the stakes; for nonfiction, describe the core subject, the main ideas or argument, and what the reader takes away; for memoir or biography, describe whose life it is and the defining experiences it covers; for practical nonfiction, describe the actual problem it addresses and what it teaches.",
     "Do not reveal major twists, spoilers, or the ending — but DO clearly describe the premise, setup, and what the book is actually about.",
     "Use the supplied metadata, verified lookup information, and your knowledge of this specific real book as the source of truth. The lookup information was fetched before generation specifically to ground your answer. Never paraphrase or lightly rewrite a provided description; synthesize the verified facts into your own description.",
     "Do not refuse merely because your own knowledge is incomplete. When verified lookup information is present, use it as factual grounding and write the requested description without inventing unsupported details.",
-    "Return strict JSON only. The summary field is required and must be exactly two clear, informative paragraphs.",
+    "Return strict JSON only. The summary field is required and must be exactly two paragraphs with exactly six complete sentences total, three sentences per paragraph.",
     "",
     "Book:",
     JSON.stringify(
