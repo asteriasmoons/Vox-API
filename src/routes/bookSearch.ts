@@ -6,7 +6,7 @@ const router = Router();
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
 const GOOGLE_BOOKS_SEARCH_URL = "https://www.googleapis.com/books/v1/volumes";
 
-type BookSearchResult = {
+export type BookSearchResult = {
   title: string;
   author: string;
   summary: string;
@@ -117,7 +117,7 @@ async function fetchJson<T>(url: URL): Promise<T> {
   return json as T;
 }
 
-async function searchOpenLibrary(query: string): Promise<BookSearchResult[]> {
+export async function searchOpenLibrary(query: string): Promise<BookSearchResult[]> {
   const url = new URL(OPEN_LIBRARY_SEARCH_URL);
 
   url.searchParams.set("q", query);
@@ -158,7 +158,7 @@ async function searchOpenLibrary(query: string): Promise<BookSearchResult[]> {
     });
 }
 
-async function searchGoogleBooks(query: string): Promise<BookSearchResult[]> {
+export async function searchGoogleBooks(query: string): Promise<BookSearchResult[]> {
   const url = new URL(GOOGLE_BOOKS_SEARCH_URL);
   const apiKey = process.env.GOOGLE_BOOKS_API_KEY || "";
 

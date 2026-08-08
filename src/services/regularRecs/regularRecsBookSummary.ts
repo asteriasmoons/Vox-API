@@ -8,6 +8,7 @@
 import { regularCerebrasChatJson } from "./regularRecsProviders";
 import { regularRecsCache } from "./regularRecsCache";
 import { cleanText, normalizeKey, parseJsonLoose } from "./regularRecsUtils";
+import { searchGoogleBooks, searchOpenLibrary, type BookSearchResult } from "../../routes/bookSearch";
 
 const SUMMARY_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -37,7 +38,23 @@ const SYSTEM_PROMPT = [
   "Never be poetic, flowery, cryptic, vague, or riddling, and never withhold the premise to build mystery.",
 ].join(" ");
 
-function buildUserPrompt(input: RegularRecSummaryInput): string {
+async function lookupBook(input: RegularRecSummaryInput): Promise<BookSearchResult | undefined> {
+  const query = `${cleanText(input.title)} ${cleanText(input.author)}`.trim();
+  const [google, openLibrary] = await Promise.all([
+    searchGoogleBooks(query).catch(() => [] as BookSearchResult[]),
+    searchOpenLibrary(query).catch(() => [] as BookSearchResult[]),
+  ]);
+  const wantedTitle = normalizeKey(input.title, "").split("|")[0];
+  const wantedAuthor = normalizeKey("", input.author).split("|")[1];
+  const candidates = [...google, ...openLibrary];
+  return candidates.find((book) => {
+    const key = normalizeKey(book.title, book.author);
+    const [titleKey, authorKey] = key.split("|");
+    return titleKey === wantedTitle && (!wantedAuthor || authorKey?.includes(wantedAuthor));
+  }) ?? candidates.find((book) => normalizeKey(book.title, "").split("|")[0] === wantedTitle) ?? candidates[0];
+}
+
+function buildUserPrompt(input: RegularRecSummaryInput, lookup?: BookSearchResult): string {
   return [
     "Write a clear, accurate, and genuinely compelling description of this specific real book — one that actually tells the reader what the book is about AND makes them want to read it.",
     "The reader should finish your description understanding the book's premise, hooked, and able to decide whether they want to read it.",
@@ -50,7 +67,8 @@ function buildUserPrompt(input: RegularRecSummaryInput): string {
     "Avoid generic filler phrases such as 'this book explores', 'the author examines', 'perfect for fans of', 'readers who enjoy', 'a journey of', 'a tale of', 'this compelling novel', 'this insightful guide'.",
     "Adapt to the book type: for fiction, describe the protagonist, their situation, the central conflict, and the stakes; for nonfiction, describe the core subject, the main ideas or argument, and what the reader takes away; for memoir or biography, describe whose life it is and the defining experiences it covers; for practical nonfiction, describe the actual problem it addresses and what it teaches.",
     "Do not reveal major twists, spoilers, or the ending — but DO clearly describe the premise, setup, and what the book is actually about.",
-    "Use the supplied metadata and your knowledge of this specific real book as the source of truth. Never paraphrase or lightly rewrite any provided description; write your own.",
+    "Use the supplied metadata, verified lookup information, and your knowledge of this specific real book as the source of truth. The lookup information was fetched before generation specifically to ground your answer. Never paraphrase or lightly rewrite a provided description; synthesize the verified facts into your own description.",
+    "Do not refuse merely because your own knowledge is incomplete. When verified lookup information is present, use it as factual grounding and write the requested description without inventing unsupported details.",
     "Return strict JSON only. The summary field is required and must be exactly two clear, informative paragraphs.",
     "",
     "Book:",
@@ -73,6 +91,20 @@ function buildUserPrompt(input: RegularRecSummaryInput): string {
       2,
     ),
     "",
+    "Verified book lookup:",
+    JSON.stringify(lookup ? {
+      title: lookup.title,
+      author: lookup.author,
+      description: cleanText(lookup.summary) || undefined,
+      publisher: lookup.publisher,
+      isbn: lookup.isbn,
+      releaseYear: lookup.releaseYear,
+      pages: lookup.pages,
+      rating: lookup.rating,
+      subjects: lookup.tags ?? [],
+      source: lookup.source,
+    } : { found: false }, null, 2),
+    "",
     "Return this exact shape:",
     '{"summary":"two clear, informative paragraphs that actually explain what the book is about"}',
   ].join("\n");
@@ -91,7 +123,11 @@ export async function buildRegularRecBookSummary(
   const cached = regularRecsCache.get<string>(cacheKey);
   if (cached) return { summary: cached };
 
-  const content = await regularCerebrasChatJson(SYSTEM_PROMPT, buildUserPrompt(input), {
+  // Ground the AI with current catalog information before asking it to write.
+  const lookup = await lookupBook(input);
+  console.log(`[RegularRecsSummary] lookup ${lookup ? "found" : "not found"}: ${title} — ${author}${lookup ? ` via ${lookup.source}` : ""}`);
+
+  const content = await regularCerebrasChatJson(SYSTEM_PROMPT, buildUserPrompt(input, lookup), {
     temperature: 0.35,
     maxTokens: 1400,
   });
