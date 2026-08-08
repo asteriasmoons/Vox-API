@@ -94,6 +94,7 @@ export type CreateCommentInput = {
   authorDisplayName: string;
   authorAvatarURL?: string;
   body: string;
+  attachmentIDs?: string[];
 };
 
 export async function createComment(
@@ -114,6 +115,7 @@ export async function createComment(
     mentionedUserIDs: await resolveMentionedUserIDs(input.sharedEventID, input.body, [
       { userID: input.authorUserID, displayName: input.authorDisplayName },
     ]),
+    attachmentIDs: Array.isArray(input.attachmentIDs) ? input.attachmentIDs : [],
   });
 
   await SharedEvent.findByIdAndUpdate(input.sharedEventID, {

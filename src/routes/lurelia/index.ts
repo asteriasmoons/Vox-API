@@ -17,6 +17,7 @@ import { createMediaRouter } from "./mediaRoutes";
 import { createNotificationRouter } from "./notificationRoutes";
 import { createSyncRouter } from "./syncRoutes";
 import { createDebugRouter } from "./debugRoutes";
+import { createHostRouter } from "./hostRoutes";
 
 /** Status codes we map service-layer error strings to. Mirrors buddy-routes. */
 export function mapErrorStatus(message: string): number {
@@ -42,6 +43,11 @@ export function mapErrorStatus(message: string): number {
     case "HOST_CANNOT_LEAVE_TRANSFER_FIRST":
     case "CANNOT_REMOVE_HOST":
     case "CANNOT_REMOVE_SELF":
+    case "CANNOT_BAN_SELF":
+    case "CANNOT_BAN_HOST":
+    case "USER_BANNED":
+    case "REGISTRATION_CLOSED":
+    case "ALREADY_HOST":
       return 403;
     case "INVITATION_NOT_PENDING":
     case "INVITATION_EXPIRED":
@@ -66,6 +72,11 @@ export function createLureliaRouter(io: SocketIOServer): Router {
   router.use("/media", createMediaRouter(io));
   router.use("/notifications", createNotificationRouter(io));
   router.use("/sync", createSyncRouter(io));
+
+  // Host-only management endpoints (ban, promote, close registration,
+  // permissions patch, duplicate). Server-side moderation checks live
+  // inside each service.
+  router.use("/events", createHostRouter(io));
 
   // DEBUG-only: sim endpoints for single-device verification. Router
   // itself 404s unless LURELIA_DEBUG_ENABLED=true, so mounting is safe

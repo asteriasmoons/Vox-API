@@ -39,6 +39,11 @@ const sharedEventSchema = new mongoose.Schema(
     cancelledAt: { type: Date, default: null },
     cancellationReason: { type: String, default: "" },
 
+    // Host can close registrations without cancelling the event. When true
+    // joinEvent rejects new joins (existing attendees are unaffected).
+    registrationClosed: { type: Boolean, default: false },
+    registrationClosedAt: { type: Date, default: null },
+
     // Aggregate counters kept in sync by service layer.
     counts: {
       going: { type: Number, default: 0 },

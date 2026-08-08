@@ -42,10 +42,19 @@ export async function joinEvent(
   displayName: string,
   avatarURL: string = "",
 ) {
+  // Registration closed → block unless the host is manually adding.
+  const event = await SharedEvent.findById(sharedEventID).lean<any>();
+  if (event?.registrationClosed === true) {
+    throw new Error("REGISTRATION_CLOSED");
+  }
+
   const perms = await Permissions.findOne({ sharedEventID }).lean<any>();
   const requiresApproval = perms?.requireApprovalToJoin === true;
 
   const existing = await Attendee.findOne({ sharedEventID, userID });
+  if (existing?.role === "banned") {
+    throw new Error("USER_BANNED");
+  }
   if (existing) {
     if (existing.removedAt) {
       existing.removedAt = null;
@@ -238,4 +247,118 @@ async function assertActorCanModerate(
     removedAt: null,
   }).lean<any>();
   if (!attendee) throw new Error("FORBIDDEN");
+}
+
+// ── Ban / unban ─────────────────────────────────────────────────────────
+
+export async function banAttendee(
+  io: SocketIOServer,
+  sharedEventID: string,
+  actorUserID: string,
+  targetUserID: string,
+  reason: string = "",
+) {
+  await assertActorCanModerate(sharedEventID, actorUserID);
+  if (actorUserID === targetUserID) throw new Error("CANNOT_BAN_SELF");
+  const attendee = await Attendee.findOne({
+    sharedEventID,
+    userID: targetUserID,
+  });
+  if (!attendee) throw new Error("ATTENDEE_NOT_FOUND");
+  if (attendee.role === "host") throw new Error("CANNOT_BAN_HOST");
+  const wasActive = !attendee.removedAt && attendee.role !== "banned";
+  attendee.role = "banned";
+  attendee.bannedAt = new Date();
+  attendee.bannedReason = reason || "";
+  attendee.removedAt = new Date();
+  await attendee.save();
+  if (wasActive) {
+    await SharedEvent.findByIdAndUpdate(sharedEventID, {
+      $inc: { "counts.attendees": -1 },
+    });
+  }
+  io.to(eventRoomName(sharedEventID)).emit(
+    "event:attendee_banned",
+    attendee.toObject(),
+  );
+  return attendee.toObject();
+}
+
+export async function unbanAttendee(
+  io: SocketIOServer,
+  sharedEventID: string,
+  actorUserID: string,
+  targetUserID: string,
+) {
+  await assertActorCanModerate(sharedEventID, actorUserID);
+  const attendee = await Attendee.findOne({
+    sharedEventID,
+    userID: targetUserID,
+    role: "banned",
+  });
+  if (!attendee) throw new Error("ATTENDEE_NOT_FOUND");
+  attendee.role = "invited";
+  attendee.bannedAt = null;
+  attendee.bannedReason = "";
+  attendee.removedAt = null;
+  await attendee.save();
+  io.to(eventRoomName(sharedEventID)).emit(
+    "event:attendee_unbanned",
+    attendee.toObject(),
+  );
+  return attendee.toObject();
+}
+
+export async function listBannedAttendees(sharedEventID: string) {
+  return await Attendee.find({ sharedEventID, role: "banned" })
+    .sort({ bannedAt: -1 })
+    .lean();
+}
+
+// ── Co-host promote / demote ────────────────────────────────────────────
+
+export async function promoteToCoHost(
+  io: SocketIOServer,
+  sharedEventID: string,
+  actorUserID: string,
+  targetUserID: string,
+) {
+  await assertActorCanModerate(sharedEventID, actorUserID);
+  const attendee = await Attendee.findOne({
+    sharedEventID,
+    userID: targetUserID,
+    removedAt: null,
+  });
+  if (!attendee) throw new Error("ATTENDEE_NOT_FOUND");
+  if (attendee.role === "host") throw new Error("ALREADY_HOST");
+  attendee.role = "coHost";
+  await attendee.save();
+  io.to(eventRoomName(sharedEventID)).emit(
+    "event:attendee_role_changed",
+    attendee.toObject(),
+  );
+  return attendee.toObject();
+}
+
+export async function demoteCoHost(
+  io: SocketIOServer,
+  sharedEventID: string,
+  actorUserID: string,
+  targetUserID: string,
+) {
+  await assertActorCanModerate(sharedEventID, actorUserID);
+  const attendee = await Attendee.findOne({
+    sharedEventID,
+    userID: targetUserID,
+    role: "coHost",
+    removedAt: null,
+  });
+  if (!attendee) throw new Error("ATTENDEE_NOT_FOUND");
+  attendee.role = "member";
+  await attendee.save();
+  io.to(eventRoomName(sharedEventID)).emit(
+    "event:attendee_role_changed",
+    attendee.toObject(),
+  );
+  return attendee.toObject();
 }

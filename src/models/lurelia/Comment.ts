@@ -14,6 +14,10 @@ const commentSchema = new mongoose.Schema(
     body: { type: String, required: true, trim: true, maxlength: 3000 },
     mentionedUserIDs: [{ type: String, index: true }],
 
+    // Ordered list of `LureliaAttachment._id` strings. Comments reference
+    // attachments — attachments are the source of truth for URL/mime.
+    attachmentIDs: [{ type: String, index: true }],
+
     isPinned: { type: Boolean, default: false },
     likesCount: { type: Number, default: 0 },
     replyCount: { type: Number, default: 0 },

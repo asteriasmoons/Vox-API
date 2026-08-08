@@ -12,13 +12,15 @@ const attendeeSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["host", "coHost", "member", "invited", "pending"],
+      enum: ["host", "coHost", "member", "invited", "pending", "banned"],
       default: "member",
       index: true,
     },
 
     joinedAt: { type: Date, default: null },
     removedAt: { type: Date, default: null },
+    bannedAt: { type: Date, default: null },
+    bannedReason: { type: String, default: "" },
     lastSeenAt: { type: Date, default: null },
 
     moderatorNote: { type: String, default: "" },

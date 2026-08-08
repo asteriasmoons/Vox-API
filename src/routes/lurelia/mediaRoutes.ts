@@ -83,5 +83,22 @@ export function createMediaRouter(_io: SocketIOServer): Router {
     }
   });
 
+  // GET /api/lurelia/media/batch?ids=<comma-separated attachment IDs>
+  // Cheap lookup used by client to hydrate attachment metadata when
+  // rendering comments loaded from the server. No auth beyond the
+  // parent router — attachments are event-scoped and IDs are opaque.
+  router.get("/batch", async (req: Request, res: Response) => {
+    try {
+      const raw = String(req.query.ids || "").trim();
+      if (!raw) return res.json({ success: true, attachments: [] });
+      const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      if (ids.length === 0) return res.json({ success: true, attachments: [] });
+      const attachments = await Attachment.find({ _id: { $in: ids } }).lean();
+      return res.json({ success: true, attachments });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  });
+
   return router;
 }

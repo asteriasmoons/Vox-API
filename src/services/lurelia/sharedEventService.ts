@@ -184,6 +184,96 @@ export async function cancelSharedEvent(
   return updated;
 }
 
+// ── Registration open/close ─────────────────────────────────────────────
+
+export async function setRegistrationClosed(
+  io: SocketIOServer,
+  sharedEventID: string,
+  actorUserID: string,
+  closed: boolean,
+) {
+  await assertActorIsHostOrCoHost(sharedEventID, actorUserID);
+  const updated = await SharedEvent.findByIdAndUpdate(
+    sharedEventID,
+    {
+      registrationClosed: !!closed,
+      registrationClosedAt: closed ? new Date() : null,
+    },
+    { new: true },
+  ).lean();
+  if (!updated) throw new Error("EVENT_NOT_FOUND");
+  io.to(eventRoomName(sharedEventID)).emit("event:registration_toggled", {
+    sharedEventID,
+    registrationClosed: !!closed,
+  });
+  return updated;
+}
+
+// ── Duplicate ───────────────────────────────────────────────────────────
+
+export async function duplicateSharedEvent(
+  io: SocketIOServer,
+  sourceEventID: string,
+  actorUserID: string,
+) {
+  const source = await SharedEvent.findById(sourceEventID).lean<any>();
+  if (!source) throw new Error("EVENT_NOT_FOUND");
+  await assertActorIsHostOrCoHost(sourceEventID, actorUserID);
+
+  const inviteToken = randomUUID();
+  const shareCode = randomUUID().slice(0, 8).toUpperCase();
+
+  const copy = await SharedEvent.create({
+    localID: randomUUID(),
+    title: `${source.title} (copy)`,
+    description: source.description ?? "",
+    iconName: source.iconName ?? "",
+    colorHex: source.colorHex ?? "#03dbfc",
+    timezoneIdentifier: source.timezoneIdentifier ?? "UTC",
+    startDate: source.startDate ?? new Date(),
+    endDate: source.endDate ?? null,
+    isAllDay: !!source.isAllDay,
+    locationName: source.locationName ?? "",
+    address: source.address ?? "",
+    latitude: source.latitude ?? null,
+    longitude: source.longitude ?? null,
+    visibility: source.visibility ?? "private",
+    inviteToken,
+    shareCode,
+    hostUserID: source.hostUserID,
+    hostDisplayName: source.hostDisplayName,
+    hostAvatarURL: source.hostAvatarURL ?? "",
+    calendarIDs: source.calendarIDs ?? [],
+  });
+
+  // Bootstrap the same host / permissions / attendee scaffolding.
+  await Host.create({
+    localID: randomUUID(),
+    sharedEventID: String(copy._id),
+    userID: source.hostUserID,
+    displayName: source.hostDisplayName,
+    avatarURL: source.hostAvatarURL ?? "",
+    isPrimary: true,
+    isFormer: false,
+  });
+  await Permissions.create({
+    localID: randomUUID(),
+    sharedEventID: String(copy._id),
+  });
+  await Attendee.create({
+    localID: randomUUID(),
+    sharedEventID: String(copy._id),
+    userID: source.hostUserID,
+    displayName: source.hostDisplayName,
+    avatarURL: source.hostAvatarURL ?? "",
+    role: "host",
+    joinedAt: new Date(),
+  });
+
+  io.to(eventRoomName(String(copy._id))).emit("event:created", copy);
+  return copy.toObject();
+}
+
 export async function listEventsForUser(userID: string) {
   const asHost = await SharedEvent.find({ hostUserID: userID })
     .sort({ startDate: -1 })
