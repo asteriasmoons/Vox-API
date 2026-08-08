@@ -60,6 +60,23 @@ app.get("/", (_req, res) => {
   res.json({ status: "Vox Apps API running" });
 });
 
+app.get("/lurelia/events/:id", (req, res) => {
+  const eventBaseURL = (
+    process.env.LURELIA_PUBLIC_EVENT_BASE_URL || "https://docs.voxiverse.ink/events"
+  ).replace(/\/$/, "");
+  const target = new URL(`${eventBaseURL}/${encodeURIComponent(String(req.params.id))}`);
+
+  for (const [key, value] of Object.entries(req.query)) {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => target.searchParams.append(key, String(entry)));
+    } else if (value !== undefined) {
+      target.searchParams.set(key, String(value));
+    }
+  }
+
+  res.redirect(302, target.toString());
+});
+
 app.use("/api/books/summary", summaryRoute);
 app.use("/api/books/recs", recsRoute);
 app.use("/api/books/recs-book-summary", recsBookSummaryRoute);
