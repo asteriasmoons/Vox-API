@@ -73,8 +73,26 @@ async function providerToken(): Promise<string> {
     .setIssuer(teamId)
     .sign(key);
 
+  // Diagnostic: log the JWT's decoded header + claims plus the env
+  // values so we can visually confirm what Apple is receiving. Safe to
+  // log — the JWT is signed but the header + claims are already visible
+  // to anyone with the token, and the signature isn't logged.
+  const [headerB64, payloadB64] = jwt.split(".");
+  const decodedHeader = JSON.parse(Buffer.from(headerB64, "base64url").toString());
+  const decodedPayload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
+  console.log("[apns] JWT header:", decodedHeader);
+  console.log("[apns] JWT payload:", decodedPayload);
+  console.log("[apns] env: bundleId=" + process.env.APNS_BUNDLE_ID);
+  console.log("[apns] host=" + apnsHost());
+
   cachedToken = { jwt, expiresAt: now + TOKEN_TTL_MS };
   return jwt;
+}
+
+/** Force the next call to re-sign a fresh JWT. Call after changing env vars. */
+export function resetTokenCache() {
+  cachedToken = null;
+  cachedKey = null;
 }
 
 function getClient(): http2.ClientHttp2Session {
