@@ -32,6 +32,14 @@ interface EntryInput {
   body: string;
 }
 
+interface GroqRequestBody {
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  response_format?: unknown;
+  messages: { role: "system" | "user"; content: string }[];
+}
+
 function parseJsonObject(raw: string): Record<string, unknown> | null {
   const content = raw
     .trim()
@@ -60,6 +68,54 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
+function isJsonValidationFailure(status: number, body: string): boolean {
+  return status === 400 && body.includes("json_validate_failed");
+}
+
+async function postGroq(
+  apiKey: string,
+  body: GroqRequestBody,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      throw new Error(`Groq request timed out after ${timeoutMs / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function journalAnalysisFromParsed(parsed: Record<string, unknown>): JournalAnalysisResult {
+  const themes = Array.isArray(parsed.themes)
+    ? parsed.themes.map((t: any) => String(t).trim()).filter(Boolean)
+    : [];
+  const mood = String(parsed.mood || "").trim();
+  const reflection = String(parsed.reflection || "").trim();
+
+  console.log("[analyze] themes:", themes, "mood:", mood, "reflection length:", reflection.length);
+
+  if (!mood || !reflection || themes.length === 0) {
+    throw new Error("Groq returned incomplete analysis fields");
+  }
+
+  return { themes, mood, reflection };
+}
+
 export async function generateJournalAnalysis(
   entries: EntryInput[],
 ): Promise<JournalAnalysisResult> {
@@ -70,7 +126,7 @@ export async function generateJournalAnalysis(
     .map((e) => `Entry: "${e.title}"\n${e.body.trim()}`)
     .join("\n\n---\n\n");
 
-  const body = {
+  const body: GroqRequestBody = {
     model: MODEL,
     temperature: 0.25,
     max_tokens: 2000,
@@ -261,33 +317,38 @@ ${entryText}`,
 
   console.log("[analyze] Sending request to Groq...");
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60_000);
-
-  let resp: Response;
-  try {
-    resp = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err: any) {
-    clearTimeout(timeout);
-    if (err?.name === "AbortError") throw new Error("Groq request timed out after 60s");
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
+  let resp = await postGroq(apiKey, body, 60_000);
 
   console.log("[analyze] Groq status:", resp.status);
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     console.error("[analyze] Groq error body:", text);
+    if (isJsonValidationFailure(resp.status, text)) {
+      console.warn("[analyze] Retrying Groq without response_format after JSON validation failure");
+      const retryBody: GroqRequestBody = { ...body };
+      delete retryBody.response_format;
+      resp = await postGroq(apiKey, retryBody, 60_000);
+
+      if (resp.ok) {
+        const json: any = await resp.json();
+        const raw = String(json?.choices?.[0]?.message?.content || "").trim();
+        console.log("[analyze] Groq raw response:", raw);
+
+        const parsed = parseJsonObject(raw);
+        if (!parsed) {
+          console.error("[analyze] JSON parse error: unable to extract JSON object");
+          throw new Error(`Failed to parse Groq JSON response: ${raw}`);
+        }
+
+        console.log("[analyze] Parsed:", JSON.stringify(parsed));
+        return journalAnalysisFromParsed(parsed);
+      }
+
+      const retryText = await resp.text().catch(() => "");
+      console.error("[analyze] Groq retry error body:", retryText);
+      throw new Error(`Groq error ${resp.status}: ${retryText}`);
+    }
     throw new Error(`Groq error ${resp.status}: ${text}`);
   }
 
@@ -303,17 +364,5 @@ ${entryText}`,
 
   console.log("[analyze] Parsed:", JSON.stringify(parsed));
 
-  const themes = Array.isArray(parsed.themes)
-    ? parsed.themes.map((t: any) => String(t).trim()).filter(Boolean)
-    : [];
-  const mood = String(parsed.mood || "").trim();
-  const reflection = String(parsed.reflection || "").trim();
-
-  console.log("[analyze] themes:", themes, "mood:", mood, "reflection length:", reflection.length);
-
-  if (!mood || !reflection || themes.length === 0) {
-    throw new Error("Groq returned incomplete analysis fields");
-  }
-
-  return { themes, mood, reflection };
+  return journalAnalysisFromParsed(parsed);
 }

@@ -49,6 +49,14 @@ export interface MoodAnalysisResult {
   themes: string[];
 }
 
+interface GroqRequestBody {
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  response_format?: unknown;
+  messages: { role: "system" | "user"; content: string }[];
+}
+
 function parseJsonObject(raw: string): Record<string, unknown> | null {
   const content = raw
     .trim()
@@ -75,6 +83,50 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
       return null;
     }
   }
+}
+
+function isJsonValidationFailure(status: number, body: string): boolean {
+  return status === 400 && body.includes("json_validate_failed");
+}
+
+async function postGroq(
+  apiKey: string,
+  body: GroqRequestBody,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      throw new Error(`Groq request timed out after ${timeoutMs / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function moodAnalysisFromParsed(parsed: Record<string, unknown>): MoodAnalysisResult {
+  return {
+    mindset: String(parsed.mindset || "").trim(),
+    emotionalBalance: String(parsed.emotionalBalance || "").trim(),
+    influences: String(parsed.influences || "").trim(),
+    reflection: String(parsed.reflection || "").trim(),
+    themes: Array.isArray(parsed.themes)
+      ? parsed.themes.map((t: any) => String(t).trim()).filter(Boolean)
+      : [],
+  };
 }
 
 export async function analyzeMood(
@@ -130,7 +182,7 @@ ${lifestyleLines.length > 0 ? lifestyleLines.join("\n") : "No lifestyle data rec
 
 ${input.note ? `User note: "${input.note}"` : "No note provided"}`;
 
-  const body = {
+  const body: GroqRequestBody = {
     model: MODEL,
     temperature: 0.25,
     max_tokens: 3000,
@@ -174,31 +226,29 @@ Rules:
     ],
   };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
-
-  let resp: Response;
-  try {
-    resp = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err: any) {
-    clearTimeout(timeout);
-    if (err?.name === "AbortError")
-      throw new Error("Groq request timed out after 30s");
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
+  let resp = await postGroq(apiKey, body, 30_000);
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
+    if (isJsonValidationFailure(resp.status, text)) {
+      const retryBody: GroqRequestBody = { ...body };
+      delete retryBody.response_format;
+      resp = await postGroq(apiKey, retryBody, 30_000);
+
+      if (resp.ok) {
+        const json: any = await resp.json();
+        const raw = String(json?.choices?.[0]?.message?.content || "").trim();
+        const parsed = parseJsonObject(raw);
+        if (!parsed) {
+          throw new Error(`Failed to parse Groq JSON response: ${raw}`);
+        }
+
+        return moodAnalysisFromParsed(parsed);
+      }
+
+      const retryText = await resp.text().catch(() => "");
+      throw new Error(`Groq error ${resp.status}: ${retryText}`);
+    }
     throw new Error(`Groq error ${resp.status}: ${text}`);
   }
 
@@ -210,13 +260,5 @@ Rules:
     throw new Error(`Failed to parse Groq JSON response: ${raw}`);
   }
 
-  return {
-    mindset: String(parsed.mindset || "").trim(),
-    emotionalBalance: String(parsed.emotionalBalance || "").trim(),
-    influences: String(parsed.influences || "").trim(),
-    reflection: String(parsed.reflection || "").trim(),
-    themes: Array.isArray(parsed.themes)
-      ? parsed.themes.map((t: any) => String(t).trim()).filter(Boolean)
-      : [],
-  };
+  return moodAnalysisFromParsed(parsed);
 }
