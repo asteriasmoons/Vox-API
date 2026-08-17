@@ -1,5 +1,33 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = "openai/gpt-oss-120b";
+const RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "mood_analysis",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        mindset: { type: "string" },
+        emotionalBalance: { type: "string" },
+        influences: { type: "string" },
+        reflection: { type: "string" },
+        themes: {
+          type: "array",
+          items: { type: "string" },
+        },
+      },
+      required: [
+        "mindset",
+        "emotionalBalance",
+        "influences",
+        "reflection",
+        "themes",
+      ],
+      additionalProperties: false,
+    },
+  },
+};
 
 export interface MoodAnalysisInput {
   emotions: { name: string; category: "positive" | "neutral" | "negative" }[];
@@ -106,7 +134,7 @@ ${input.note ? `User note: "${input.note}"` : "No note provided"}`;
     model: MODEL,
     temperature: 0.25,
     max_tokens: 3000,
-    response_format: { type: "json_object" },
+    response_format: RESPONSE_FORMAT,
     messages: [
       {
         role: "system",

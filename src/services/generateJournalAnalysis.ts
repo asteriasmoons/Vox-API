@@ -1,5 +1,25 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = "openai/gpt-oss-120b";
+const RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "journal_analysis",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        themes: {
+          type: "array",
+          items: { type: "string" },
+        },
+        mood: { type: "string" },
+        reflection: { type: "string" },
+      },
+      required: ["themes", "mood", "reflection"],
+      additionalProperties: false,
+    },
+  },
+};
 
 export interface JournalAnalysisResult {
   themes: string[];
@@ -54,7 +74,7 @@ export async function generateJournalAnalysis(
     model: MODEL,
     temperature: 0.25,
     max_tokens: 2000,
-    response_format: { type: "json_object" },
+    response_format: RESPONSE_FORMAT,
     messages: [
       {
         role: "system",
