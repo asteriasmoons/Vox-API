@@ -12,6 +12,34 @@ interface EntryInput {
   body: string;
 }
 
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  const content = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  if (!content) return null;
+
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+
+    try {
+      const parsed = JSON.parse(match[0]);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 export async function generateJournalAnalysis(
   entries: EntryInput[],
 ): Promise<JournalAnalysisResult> {
@@ -247,11 +275,9 @@ ${entryText}`,
   const raw = String(json?.choices?.[0]?.message?.content || "").trim();
   console.log("[analyze] Groq raw response:", raw);
 
-  let parsed: any;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    console.error("[analyze] JSON parse error:", e);
+  const parsed = parseJsonObject(raw);
+  if (!parsed) {
+    console.error("[analyze] JSON parse error: unable to extract JSON object");
     throw new Error(`Failed to parse Groq JSON response: ${raw}`);
   }
 

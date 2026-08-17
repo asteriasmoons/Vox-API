@@ -21,6 +21,34 @@ export interface MoodAnalysisResult {
   themes: string[];
 }
 
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  const content = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  if (!content) return null;
+
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+
+    try {
+      const parsed = JSON.parse(match[0]);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 export async function analyzeMood(
   input: MoodAnalysisInput,
 ): Promise<MoodAnalysisResult> {
@@ -149,10 +177,8 @@ Rules:
   const json: any = await resp.json();
   const raw = String(json?.choices?.[0]?.message?.content || "").trim();
 
-  let parsed: any;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
+  const parsed = parseJsonObject(raw);
+  if (!parsed) {
     throw new Error(`Failed to parse Groq JSON response: ${raw}`);
   }
 
