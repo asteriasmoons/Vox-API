@@ -1,5 +1,5 @@
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "openai/gpt-oss-120b";
+const GROQ_URL = "https://api.cerebras.ai/v1/chat/completions";
+const MODEL = "gpt-oss-120b";
 const RESPONSE_FORMAT = {
   type: "json_schema",
   json_schema: {
@@ -133,8 +133,8 @@ function moodAnalysisFromParsed(parsed: Record<string, unknown>): MoodAnalysisRe
 export async function analyzeMood(
   input: MoodAnalysisInput,
 ): Promise<MoodAnalysisResult> {
-  const apiKey = process.env.GROQ_API_KEY_ALT;
-  if (!apiKey) throw new Error("Missing GROQ_API_KEY_ALT");
+  const apiKey = process.env.CEREBRAS_API_KEY;
+  if (!apiKey) throw new Error("Missing CEREBRAS_API_KEY");
 
   // Build structured context
   const positiveEmotions = input.emotions
@@ -186,7 +186,7 @@ ${input.note ? `User note: "${input.note}"` : "No note provided"}`;
   const body: GroqRequestBody = {
     model: MODEL,
     temperature: 0.25,
-    max_completion_tokens: 8000,
+    max_completion_tokens: 5500,
     reasoning_effort: "low",
     response_format: RESPONSE_FORMAT,
     messages: [
