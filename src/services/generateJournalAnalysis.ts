@@ -35,7 +35,8 @@ interface EntryInput {
 interface GroqRequestBody {
   model: string;
   temperature: number;
-  max_tokens: number;
+  max_completion_tokens: number;
+  reasoning_effort?: "low" | "medium" | "high";
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
 }
@@ -129,7 +130,8 @@ export async function generateJournalAnalysis(
   const body: GroqRequestBody = {
     model: MODEL,
     temperature: 0.25,
-    max_tokens: 2000,
+    max_completion_tokens: 8000,
+    reasoning_effort: "low",
     response_format: RESPONSE_FORMAT,
     messages: [
       {
