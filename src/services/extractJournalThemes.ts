@@ -1,7 +1,8 @@
 import { normalizeTag } from "../utils/normalizeTag";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = "openai/gpt-oss-120b";
+const RESPONSE_FORMAT = { type: "json_object" };
 
 export interface ThemeExtractionResult {
   /** AI-detected broad thematic patterns */
@@ -14,6 +15,94 @@ interface EntryInput {
   title: string;
   body: string;
   tags?: string[];
+}
+
+interface GroqRequestBody {
+  model: string;
+  temperature: number;
+  max_completion_tokens: number;
+  response_format?: unknown;
+  messages: { role: "system" | "user"; content: string }[];
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  const content = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  if (!content) return null;
+
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+
+    try {
+      const parsed = JSON.parse(match[0]);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function isJsonValidationFailure(status: number, body: string): boolean {
+  return status === 400 && body.includes("json_validate_failed");
+}
+
+async function postGroq(
+  apiKey: string,
+  body: GroqRequestBody,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      throw new Error(`Groq request timed out after ${timeoutMs / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function themeExtractionFromParsed(
+  parsed: Record<string, unknown>,
+): ThemeExtractionResult {
+  const themes = Array.isArray(parsed.themes)
+    ? parsed.themes.map((t: any) => normalizeTag(String(t))).filter(Boolean)
+    : [];
+
+  const suggestedTags = Array.isArray(parsed.suggestedTags)
+    ? parsed.suggestedTags
+        .map((t: any) => String(t).trim().toLowerCase())
+        .filter(Boolean)
+    : [];
+
+  if (themes.length === 0) {
+    throw new Error("Groq returned no themes");
+  }
+
+  return { themes, suggestedTags };
 }
 
 export async function extractJournalThemes(
@@ -32,11 +121,11 @@ export async function extractJournalThemes(
     })
     .join("\n\n---\n\n");
 
-  const body = {
+  const body: GroqRequestBody = {
     model: MODEL,
     temperature: 0.15,
-    max_tokens: 2000,
-    response_format: { type: "json_object" },
+    max_completion_tokens: 2000,
+    response_format: RESPONSE_FORMAT,
     messages: [
       {
         role: "system",
@@ -65,57 +154,36 @@ Rules:
     ],
   };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
-
-  let resp: Response;
-  try {
-    resp = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err: any) {
-    clearTimeout(timeout);
-    if (err?.name === "AbortError")
-      throw new Error("Groq request timed out after 30s");
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
+  let resp = await postGroq(apiKey, body, 30_000);
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
+    if (isJsonValidationFailure(resp.status, text)) {
+      const retryBody: GroqRequestBody = { ...body };
+      delete retryBody.response_format;
+      resp = await postGroq(apiKey, retryBody, 30_000);
+      if (resp.ok) {
+        const retryJson: any = await resp.json();
+        const retryRaw = String(
+          retryJson?.choices?.[0]?.message?.content || "",
+        ).trim();
+        const retryParsed = parseJsonObject(retryRaw);
+        if (!retryParsed) {
+          throw new Error(`Failed to parse Groq JSON response: ${retryRaw}`);
+        }
+        return themeExtractionFromParsed(retryParsed);
+      }
+    }
     throw new Error(`Groq error ${resp.status}: ${text}`);
   }
 
   const json: any = await resp.json();
   const raw = String(json?.choices?.[0]?.message?.content || "").trim();
 
-  let parsed: any;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
+  const parsed = parseJsonObject(raw);
+  if (!parsed) {
     throw new Error(`Failed to parse Groq JSON response: ${raw}`);
   }
 
-  const themes = Array.isArray(parsed.themes)
-    ? parsed.themes.map((t: any) => normalizeTag(String(t))).filter(Boolean)
-    : [];
-
-  const suggestedTags = Array.isArray(parsed.suggestedTags)
-    ? parsed.suggestedTags
-        .map((t: any) => String(t).trim().toLowerCase())
-        .filter(Boolean)
-    : [];
-
-  if (themes.length === 0) {
-    throw new Error("Groq returned no themes");
-  }
-
-  return { themes, suggestedTags };
+  return themeExtractionFromParsed(parsed);
 }

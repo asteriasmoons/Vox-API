@@ -374,6 +374,11 @@ async function searchGoogleBooks(
   }
 
   const data = await fetchJson<GoogleBooksResponse>(url);
+  console.log("[book-details-debug] google query", {
+    title: input.title,
+    author: input.author,
+    resultCount: data.items?.length ?? 0,
+  });
   const volumes = (data.items ?? [])
     .map((item) => item.volumeInfo)
     .filter((volume): volume is GoogleVolumeInfo => Boolean(volume?.title));
@@ -432,6 +437,11 @@ async function searchOpenLibrary(
   );
 
   const data = await fetchJson<OpenLibrarySearchResponse>(url);
+  console.log("[book-details-debug] open library query", {
+    title: input.title,
+    author: input.author,
+    resultCount: Array.isArray(data.docs) ? data.docs.length : 0,
+  });
   const docs = Array.isArray(data.docs) ? data.docs : [];
 
   return docs
@@ -737,6 +747,19 @@ export async function enrichBookDetails(
       return [] as CatalogCandidate[];
     }),
   ]);
+
+  console.log("[book-details-debug] candidate scores", {
+    google: googleCandidates.map((candidate) => ({
+      title: candidate.title,
+      author: candidate.author,
+      score: candidate.score,
+    })),
+    openLibrary: openLibraryCandidates.map((candidate) => ({
+      title: candidate.title,
+      author: candidate.author,
+      score: candidate.score,
+    })),
+  });
 
   const catalog = mergeCatalogEvidence(request, [
     ...googleCandidates,
