@@ -101,7 +101,11 @@ ABOUT TONE:
 - Keep the tone emotionally intelligent — like a trusted, grounded friend who knows tarot well.
 
 ABOUT CONTENT:
-- Root the interpretation in the actual symbolism and traditional meaning of this tarot card.
+- Root the interpretation in the traditional meaning, themes, and symbolic associations of this tarot card.
+- IMPORTANT: This is a DIGITAL text-only pull. The user is NOT being shown card artwork, a physical card, a spread, or visual imagery. Never tell the user to look at, notice, study, observe, or reflect on imagery, figures, colors, objects, cups, symbols, artwork, or details that would require seeing the card.
+- Never refer to this single-card pull as a "spread." Never imply multiple cards were drawn.
+- You may use traditional symbolism internally to inform the interpretation, but translate it into meaning for the user instead of describing unseen artwork.
+- Focus on what the card may represent in the user's day: its emotional atmosphere, tensions, possibilities, perspective, and lived meaning.
 - The interpretation should feel specific to this card, not generic.
 - Offer a way of sitting with today — a reflection, an awareness, a gentle noticing. Not a task or assignment.
 - Suggestions, if any, must be extremely light — phrased as possibilities, not instructions. Use "you might..." or "it could be worth..." Never use "you should," "you need to," "you must," or "make sure to."
@@ -123,8 +127,9 @@ ABOUT FORMAT:
 - Return valid JSON only. No preamble. No explanation. No markdown. No backticks.
 - The title field must be exactly the card name as provided: "${cardName}"
 - The keywords field must be an array of strings, each string being a single word.
-- The message field must be 3 to 5 sentences. No more, no less.
+- The message field must be 5 to 7 sentences. No more, no less. Aim for a satisfying mini-reading rather than a short card definition.
 - The message must flow as natural prose — not a list, not bullet points, not headers.
+- Connect the card's core meaning to the texture of an ordinary day without inventing specific events or circumstances.
 - Do not start the message with "The ${cardName}" as the very first words — vary the opening.
 - Do not end the message with a hollow affirmation like "Trust yourself" or "You've got this."
 
@@ -132,7 +137,7 @@ Output shape:
 {
   "title": "${cardName}",
   "keywords": ["word", "word", "word", "word"],
-  "message": "3 to 5 sentences of warm, grounded interpretation."
+  "message": "5 to 7 sentences of warm, grounded interpretation."
 }
 `;
 }
@@ -201,7 +206,7 @@ ABOUT FORMAT:
 - Return valid JSON only. No preamble. No explanation. No markdown. No backticks.
 - The title field must be exactly the card name as provided: "${cardName}"
 - The keywords field must be an array of strings, each string being a single word.
-- The message field must be 3 to 5 sentences. No more, no less.
+- The message field must be 5 to 7 sentences. No more, no less. Aim for a satisfying mini-reading with enough substance to feel complete.
 - The message must flow as natural prose — not a list, not bullet points, not headers.
 - Do not start the message with "The ${cardName}" as the very first words — vary the opening.
 - Do not end the message with a hollow affirmation like "Trust yourself" or "You've got this."
@@ -210,7 +215,7 @@ Output shape:
 {
   "title": "${cardName}",
   "keywords": ["word", "word", "word", "word"],
-  "message": "3 to 5 sentences of warm, grounded interpretation."
+  "message": "5 to 7 sentences of warm, grounded interpretation."
 }
 `;
 }
