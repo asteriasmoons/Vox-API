@@ -162,11 +162,12 @@ export async function fillRoutineTaskDetails(
 
   const model =
     process.env.CEREBRAS_ROUTINE_DETAILS_MODEL ||
+    process.env.CEREBRAS_MODEL ||
     DEFAULT_CEREBRAS_ROUTINE_DETAILS_MODEL;
 
   const systemPrompt = `You are an AI routine-task generator inside Lurelia. Generate a complete, thoughtful routine-task details page that feels hand-written for THIS specific task, not generic form filler.
 
-Use the user's Context and existing task fields as the main source of truth. Preserve useful user-provided details instead of replacing them arbitrarily. Fill missing or weak fields with specific, practical, realistic content.
+Use the user's Context and existing task fields as the main source of truth. Preserve useful user-provided details instead of replacing them arbitrarily. Fill missing or weak fields with specific, practical, realistic content. NEVER invent unstated equipment, methods, times, schedules, locations, products, preferences, or circumstances. When the context does not specify a detail, stay general instead of guessing.
 
 Return ONLY valid JSON. No markdown, greetings, explanations, or extra commentary.
 
@@ -197,7 +198,7 @@ Allowed triggerType values:
 ${TRIGGER_TYPES.map((type) => `- ${type}`).join("\n")}
 
 TRIGGER:
-Write a concrete real-world cue that logically matches the selected triggerType. If Existing Habit is appropriate and task order/context supports it, describe completion of the preceding routine task as the cue.
+Write a concrete real-world cue that logically matches the selected triggerType. NEVER invent a clock time. Only mention a specific time if the user supplied that exact time in the input. If Existing Habit is appropriate and task order/context supports it, describe completion of the preceding routine task as the cue. If the context is insufficient, use a general cue such as completion of the preceding routine task rather than fabricating details.
 
 ENVIRONMENT:
 Choose the most natural place where the task is actually performed based on the supplied context.
@@ -206,10 +207,10 @@ OBSTACLES:
 Generate distinct, realistic obstacles that could genuinely interfere with THIS task. Write obstacles from the user's first-person perspective. Each solution must directly address its obstacle with a concrete, usable response. Avoid vague motivational filler.
 
 REWARD:
-If a reward is already supplied, preserve it when useful. Otherwise generate one simple, pleasant, task-appropriate reward. Avoid generic praise such as "feel proud of yourself" and avoid requiring money unless context supports it.
+Reward is OPTIONAL. If the user explicitly says no reward, none, disabled, off, or leaves reward intentionally empty, return an empty string for reward. NEVER create or enable a reward against the user's instruction. If a reward is supplied, preserve it. Only generate one when the input clearly requests a reward but does not provide one.
 
 CONSEQUENCE:
-If a consequence is already supplied, preserve it. Otherwise generate one clear, enforceable real-world consequence for intentionally skipping the task. Do not use shame, physical harm, deprivation of necessities, or merely describe the natural result of skipping.
+Consequence is OPTIONAL. If the user explicitly says no consequence, none, disabled, off, or leaves consequence intentionally empty, return an empty string for consequence. NEVER create or enable a consequence against the user's instruction. If a consequence is supplied, preserve it. Only generate one when the input clearly requests a consequence but does not provide one.
 
 Before returning JSON, internally verify: Is this specific to this task? Are the steps actually usable? Are the two obstacles meaningfully different? Does each field serve a distinct purpose? If not, improve it before answering.
 
@@ -221,8 +222,8 @@ JSON format:
   "trigger": "Concrete cue that starts the task",
   "triggerType": "One allowed trigger type or null",
   "environment": "Most natural environment",
-  "reward": "Task-appropriate reward",
-  "consequence": "Clear enforceable consequence",
+  "reward": "Task-appropriate reward or empty string when not requested",
+  "consequence": "Clear enforceable consequence or empty string when not requested",
   "steps": ["Concrete chronological step 1", "Concrete chronological step 2"],
   "supplies": ["Relevant supply 1"],
   "obstacles": [
@@ -244,7 +245,7 @@ JSON format:
         content: JSON.stringify({
           task: input,
           instruction:
-            "Fill every visible routine task add/edit text field. Keep the result practical, concrete, and specific to the user's context.",
+            "Fill only the routine task fields that should be populated from the user's input. Follow explicit negatives exactly: if the user says no reward or no consequence, return those fields as empty strings. Do not invent equipment, methods, times, schedules, or scenarios that were not supplied. When information is unknown, stay general rather than guessing. Keep the result practical and specific without talking to the user.",
         }),
       },
     ],
