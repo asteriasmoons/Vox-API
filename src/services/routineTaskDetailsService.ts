@@ -142,7 +142,7 @@ function sanitizeResult(parsed: ParsedRoutineTaskDetails): RoutineTaskDetailsRes
     environment: cleanText(parsed.environment),
     reward: cleanText(parsed.reward),
     consequence: cleanText(parsed.consequence),
-    steps: cleanTextArray(parsed.steps, 9),
+    steps: cleanTextArray(parsed.steps, 20),
     supplies: cleanTextArray(parsed.supplies, 12),
     obstacles: cleanObstacleArray(parsed.obstacles, 9),
   };
@@ -164,39 +164,78 @@ export async function fillRoutineTaskDetails(
     process.env.CEREBRAS_ROUTINE_DETAILS_MODEL ||
     DEFAULT_CEREBRAS_ROUTINE_DETAILS_MODEL;
 
-  const systemPrompt = `You fill out routine task detail fields for a polished iOS routine app.
+  const systemPrompt = `You are an AI routine-task generator inside Lurelia. Generate a complete, thoughtful routine-task details page that feels hand-written for THIS specific task, not generic form filler.
 
-Use the user's Context as the main source of truth. Preserve any existing field text when it is useful, but complete missing or weak fields with specific, concise language.
+Use the user's Context and existing task fields as the main source of truth. Preserve useful user-provided details instead of replacing them arbitrarily. Fill missing or weak fields with specific, practical, realistic content.
 
-Return only valid JSON. No markdown.
+Return ONLY valid JSON. No markdown, greetings, explanations, or extra commentary.
 
-Do not include Motivation, Why This Trigger Works, or Recovery Plan. Those fields are not available.
+Do not include Motivation, Why This Trigger Works, or Recovery Plan. Those fields do not exist here.
+
+QUALITY STANDARD:
+- The content must be specific enough that it could not be pasted onto an unrelated routine task with only the title changed.
+- Each field must add different information rather than repeating the same idea.
+- Write like a thoughtful human deliberately constructing a routine, not a generic self-help assistant.
+- Keep ordinary tasks ordinary. Do not make simple tasks sound profound or transformational.
+
+DESCRIPTION:
+Write 2-3 natural sentences describing what the task involves and how it fits into the routine. Explain the task itself without duplicating Steps or Purpose.
+
+PURPOSE:
+Write 2-3 thoughtful sentences explaining WHY the task matters, what it supports, or what outcome it creates. Purpose is not another task description.
+
+STEPS:
+Generate a thorough, realistic, chronological sequence from the true starting action through natural completion. Include meaningful small actions when they genuinely belong. Do not pad with useless micro-steps and do not artificially keep the list short.
+
+SUPPLIES:
+List the real supplies, tools, products, or equipment needed. Include obvious essentials, omit irrelevant extras, and never put actions in this list.
+
+TRIGGER TYPE:
+Choose exactly one allowed trigger type when one clearly fits. Choose based on the real task context, not for variety.
 
 Allowed triggerType values:
 ${TRIGGER_TYPES.map((type) => `- ${type}`).join("\n")}
 
+TRIGGER:
+Write a concrete real-world cue that logically matches the selected triggerType. If Existing Habit is appropriate and task order/context supports it, describe completion of the preceding routine task as the cue.
+
+ENVIRONMENT:
+Choose the most natural place where the task is actually performed based on the supplied context.
+
+OBSTACLES:
+Generate distinct, realistic obstacles that could genuinely interfere with THIS task. Write obstacles from the user's first-person perspective. Each solution must directly address its obstacle with a concrete, usable response. Avoid vague motivational filler.
+
+REWARD:
+If a reward is already supplied, preserve it when useful. Otherwise generate one simple, pleasant, task-appropriate reward. Avoid generic praise such as "feel proud of yourself" and avoid requiring money unless context supports it.
+
+CONSEQUENCE:
+If a consequence is already supplied, preserve it. Otherwise generate one clear, enforceable real-world consequence for intentionally skipping the task. Do not use shame, physical harm, deprivation of necessities, or merely describe the natural result of skipping.
+
+Before returning JSON, internally verify: Is this specific to this task? Are the steps actually usable? Are the two obstacles meaningfully different? Does each field serve a distinct purpose? If not, improve it before answering.
+
 JSON format:
 {
   "title": "Short task title",
-  "description": "One short description sentence",
-  "purpose": "Why this task exists",
-  "trigger": "What signals this task should begin",
+  "description": "2-3 specific sentences",
+  "purpose": "2-3 specific sentences explaining why it matters",
+  "trigger": "Concrete cue that starts the task",
   "triggerType": "One allowed trigger type or null",
-  "environment": "Where this task is normally done",
-  "reward": "What the user gets for completing this",
-  "consequence": "What happens if this gets skipped",
-  "steps": ["Concrete step 1", "Concrete step 2"],
-  "supplies": ["Supply 1"],
+  "environment": "Most natural environment",
+  "reward": "Task-appropriate reward",
+  "consequence": "Clear enforceable consequence",
+  "steps": ["Concrete chronological step 1", "Concrete chronological step 2"],
+  "supplies": ["Relevant supply 1"],
   "obstacles": [
-    { "obstacle": "Likely obstacle", "solution": "Specific solution" }
+    { "obstacle": "First-person realistic obstacle", "solution": "Specific practical solution" },
+    { "obstacle": "Second distinct first-person obstacle", "solution": "Specific practical solution" }
   ]
 }`;
 
   const body = {
     model,
     temperature: 0.35,
-    max_tokens: 1400,
-    ...(model.includes("gpt-oss") ? { reasoning_effort: "low" } : {}),
+    max_tokens: 2200,
+    ...(model.includes("gpt-oss") ? { reasoning_effort: "medium" } : {}),
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },

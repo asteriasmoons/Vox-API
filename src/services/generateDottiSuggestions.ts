@@ -37,6 +37,7 @@ export interface DottiSuggestionsInput {
   energy: DottiEnergy;
   bodyStates: DottiBodyState[];
   durationMinutes: number;
+  assignedRooms: DottiRoom[];
 }
 
 export interface DottiSuggestedTask {
@@ -123,7 +124,24 @@ export function parseDottiInput(body: unknown): DottiSuggestionsInput {
     throw new Error("durationMinutes must be one of: 5, 15, 30, 60");
   }
 
-  return { energy, bodyStates, durationMinutes: duration };
+  const assignedRoomsRaw = record.assignedRooms;
+  const assignedRooms: DottiRoom[] = [];
+  if (assignedRoomsRaw !== undefined && assignedRoomsRaw !== null) {
+    if (!Array.isArray(assignedRoomsRaw)) {
+      throw new Error("assignedRooms must be an array of strings");
+    }
+    if (assignedRoomsRaw.length > 3) {
+      throw new Error("assignedRooms can include at most 3 rooms");
+    }
+    for (const raw of assignedRoomsRaw) {
+      if (!isRoom(raw)) {
+        throw new Error(`assignedRooms contains an unknown value: ${String(raw)}`);
+      }
+      assignedRooms.push(raw);
+    }
+  }
+
+  return { energy, bodyStates, durationMinutes: duration, assignedRooms };
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +195,9 @@ Rules you MUST follow:
 
 6. Group tasks by room. Each group must have at least 1 task. Do not include a room group with 0 tasks.
 
-7. The "icon" field is optional. Include it only when a name from the allowed list clearly fits. Never invent an icon name.
+7. Assigned rooms are optional context from the user's calendar, not scheduled chores. When assigned rooms are provided, focus suggestions on those rooms when realistic for the user's energy, body state, and duration. If the assigned rooms do not fit the user's current capacity, return gentler whole_home or other suggestions instead. Never imply that the assigned rooms are due, overdue, required, or already tasks.
+
+8. The "icon" field is optional. Include it only when a name from the allowed list clearly fits. Never invent an icon name.
 
 Allowed icon names (partial, all lowercase, exact match required):
 shower, towel, bottle, bed, bedpillow, hanger, drawers, dresser, kitchentable, coffeemaker, teapot, dishwasher, refrigerator, oven, silverware, whisk, sofa, armchair, lamp, television, laundry, washmachine, washer, hanger, frontdoor, dooropen, mailbox, exitdoor, office, document, pencil, notespen, yard, treeoutside, seedling, sun, cloudie, houseoutline, basketflowers, trash, bucket, spraybottle, paintbrush, vacuumcleaner, sparkle, heartfill.
@@ -188,10 +208,14 @@ function summarize(input: DottiSuggestionsInput): string {
   const bodyList = input.bodyStates.length > 0
     ? input.bodyStates.join(", ")
     : "no notes";
+  const assignedRooms = input.assignedRooms.length > 0
+    ? input.assignedRooms.join(", ")
+    : "none";
   return [
     `Energy: ${input.energy}`,
     `Body state: ${bodyList}`,
     `Available time: ${input.durationMinutes} minutes`,
+    `Assigned rooms for this date: ${assignedRooms}`,
   ].join("\n");
 }
 
