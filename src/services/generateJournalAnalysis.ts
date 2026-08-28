@@ -1,5 +1,6 @@
-const GROQ_URL = "https://api.cerebras.ai/v1/chat/completions";
-const MODEL = "gpt-oss-120b";
+const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
+const MODEL = "mistral-small-latest";
+
 const RESPONSE_FORMAT = {
   type: "json_schema",
   json_schema: {
@@ -32,11 +33,11 @@ interface EntryInput {
   body: string;
 }
 
-interface GroqRequestBody {
+interface MistralRequestBody {
   model: string;
   temperature: number;
-  max_completion_tokens: number;
-  reasoning_effort?: "low" | "medium" | "high";
+  max_tokens: number;
+  reasoning_effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
 }
@@ -47,10 +48,12 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
+
   if (!content) return null;
 
   try {
     const parsed = JSON.parse(content);
+
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : null;
@@ -60,6 +63,7 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
 
     try {
       const parsed = JSON.parse(match[0]);
+
       return parsed && typeof parsed === "object" && !Array.isArray(parsed)
         ? (parsed as Record<string, unknown>)
         : null;
@@ -69,20 +73,16 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
-function isJsonValidationFailure(status: number, body: string): boolean {
-  return status === 400 && body.includes("json_validate_failed");
-}
-
-async function postGroq(
+async function postMistral(
   apiKey: string,
-  body: GroqRequestBody,
+  body: MistralRequestBody,
   timeoutMs: number,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    return await fetch(GROQ_URL, {
+    return await fetch(MISTRAL_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -93,176 +93,174 @@ async function postGroq(
     });
   } catch (err: any) {
     if (err?.name === "AbortError") {
-      throw new Error(`Groq request timed out after ${timeoutMs / 1000}s`);
+      throw new Error(
+        `Mistral request timed out after ${timeoutMs / 1000}s`,
+      );
     }
+
     throw err;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function journalAnalysisFromParsed(parsed: Record<string, unknown>): JournalAnalysisResult {
+function journalAnalysisFromParsed(
+  parsed: Record<string, unknown>,
+): JournalAnalysisResult {
   const themes = Array.isArray(parsed.themes)
     ? parsed.themes.map((t: any) => String(t).trim()).filter(Boolean)
     : [];
+
   const mood = String(parsed.mood || "").trim();
   const reflection = String(parsed.reflection || "").trim();
 
-  console.log("[analyze] themes:", themes, "mood:", mood, "reflection length:", reflection.length);
+  console.log(
+    "[analyze] themes:",
+    themes,
+    "mood:",
+    mood,
+    "reflection length:",
+    reflection.length,
+  );
 
   if (!mood || !reflection || themes.length === 0) {
-    throw new Error("Groq returned incomplete analysis fields");
+    throw new Error("Mistral returned incomplete analysis fields");
   }
 
-  return { themes, mood, reflection };
+  return {
+    themes,
+    mood,
+    reflection,
+  };
 }
 
 export async function generateJournalAnalysis(
   entries: EntryInput[],
 ): Promise<JournalAnalysisResult> {
-  const apiKey = process.env.CEREBRAS_API_KEY;
-  if (!apiKey) throw new Error("Missing CEREBRAS_API_KEY");
+  const apiKey = process.env.MISTRAL_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Missing MISTRAL_API_KEY");
+  }
 
   const entryText = entries
     .map((e) => `Entry: "${e.title}"\n${e.body.trim()}`)
     .join("\n\n---\n\n");
 
-  const body: GroqRequestBody = {
+  const body: MistralRequestBody = {
     model: MODEL,
     temperature: 0.25,
-    max_completion_tokens: 5500,
+    max_tokens: 1200,
     reasoning_effort: "low",
     response_format: RESPONSE_FORMAT,
+
     messages: [
       {
         role: "system",
-        content: `You analyze private journal entries for a wellness app called Lunixia.
+        content: `You analyze private journal entries for the wellness app Lunixia.
 
-Write like an intelligent friend who read the whole entry carefully and has a few perceptive observations. Accuracy matters more than depth. Relevance matters more than cleverness. Ordinary things are allowed to stay ordinary. Respond intelligently to what is actually present instead of forcing hidden meaning or trying to sound profound.
+Write directly to the user as an intelligent friend who carefully read the entire entry. Use "you," never third person. Be perceptive, conversational, precise, and grounded. Accuracy and relevance matter more than sounding profound.
 
-Do not produce a recap of the journal, but do acknowledge the entire entry from beginning through the closing thought so the user feels that nothing important was skipped. Acknowledge all major subjects, practical events, emotional turns, decisions, questions, and conclusions without turning each one into a separate mini-analysis. Do not compliment, reassure, encourage, advise, coach, or therapize. Do not write like a teacher, psychologist, clinical analyst, literary critic, or motivational speaker.
+Analyze what is actually written. Do not recap the journal, but acknowledge every major subject, practical event, emotional turn, decision, question, and closing thought so the full entry feels read. Ordinary details may remain ordinary. Go deeper only when the entry clearly supports it.
 
-Always write directly to the user using "you." Never refer to the user in the third person.
+Notice meaningful patterns, shifts, contradictions, repeated ideas, or connections when they are genuinely present. Never force unrelated subjects together or treat practical events as symbols without clear support.
 
-Never assume a named person's relationship to the user. If the journal names someone but does not explicitly identify the relationship, use that person's name only. Do not invent labels such as friend, partner, spouse, family member, coworker, or similar relationship terms. Theme tags must follow the same rule: prefer a grounded label such as "Jordan's mood" over an invented relationship label such as "friend's attitude."
+Do not invent or exaggerate:
+- emotions
+- motivations
+- beliefs
+- personality traits
+- psychological explanations
+- diagnoses
+- trauma
+- symbolism
+- personal growth
+- relationship labels
 
-Stay completely grounded in what was actually written. Never invent emotions, motivations, beliefs, personality traits, trauma, attachment styles, diagnoses, symbolism, or personal growth that the journal does not support. Never upgrade an inference into a fact.
+Never turn an inference into a fact. Match emotional intensity to the user's actual wording.
 
-Only infer when the connection is genuinely supported by the entry. Do not connect unrelated subjects just to make the analysis feel deeper. Do not treat practical events as symbols unless the user clearly framed them that way. A dog accident can simply be a dog accident. A chore can simply be a chore.
+If a person is named but their relationship to the user is not explicitly stated, use only their name. Never invent labels such as friend, partner, spouse, family member, or coworker. Theme tags follow the same rule.
 
-Notice patterns, shifts, contradictions, repeated ideas, or meaningful connections only when they are clear enough to be useful. Cover the full entry even when only a few parts invite deeper analysis: some parts can simply be acknowledged accurately. Do not stretch minor details into larger conclusions, but do not omit major parts of the entry just because they are ordinary.
+Do not compliment, praise, reassure, encourage, advise, coach, therapize, or tell the user what they should do.
 
-Use normal conversational language. Sound like a smart friend, not a report. Avoid academic or literary-analysis words such as juxtaposition, polarity, underscores, symbolizes, externalizing, dichotomy, tangible versus intangible, or similar language unless the user actually writes that way.
+Do not sound clinical, academic, literary, motivational, or like a report. Avoid abstract depth-signaling language when a direct observation works better.
 
-Prefer precise observations like:
-"You were irritated by this, but it did not dominate the rest of the entry."
-"You moved from a practical problem into a broader thought about joy."
-"The thing you kept returning to was..."
+Do not repeat an observation in different words.
 
-Avoid vague depth-signaling phrases such as:
-"This raises the possibility that..."
-"It almost reads as though..."
-"This may represent something larger..."
-"There is a quiet tension between..."
-unless the journal provides unusually strong evidence for them.
+For a substantive entry, the reflection should usually be 250-450 words and 1-2 natural paragraphs. Use up to 3 paragraphs when several distinct subjects or shifts require it. Short entries may receive shorter reflections.
 
-Do not intensify emotions beyond the user's wording. If they write boredom, do not call it hopelessness. If they write tiredness, do not call it exhaustion. If they write uncertainty, do not call it crisis.
+Return only the structured JSON requested by the response schema.
 
-Do not repeat the same observation in different words. Once a point is made, move on.
+Field requirements:
 
-Length should match the substance of the entry. For a substantive entry, aim for 250-450 words total so there is enough room to acknowledge the whole entry without rushing. One or two paragraphs are usually enough; use three when the entry contains several distinct subjects or turns. Very short entries may be shorter, but do not compress a full entry so aggressively that major subjects or the closing thought disappear.
-
-The ideal response should leave the user feeling accurately understood and maybe noticing one or two real patterns they had not explicitly named. It should never feel like the model is hunting for a thesis.
-
-CRITICAL JSON FORMAT RULES:
-- Return only valid JSON.
-- Return a JSON object with exactly these keys: "themes", "mood", "reflection".
-- Every string value must be wrapped in double quotes.
-- The reflection value must be one JSON string.
-- Use escaped newline characters \n only when separating paragraphs.
-- Do not include literal line breaks inside the reflection string.
-- Do not write line breaks outside JSON string values.
-
-JSON field requirements:
-
-themes
+themes:
 - 2-4 concise theme tags
 - 1-3 words each
-- scannable labels
-- emotionally neutral
+- grounded in the entry
+- scannable and emotionally neutral
 - never deficit-based
 
-mood
+mood:
 - 1-3 words
-- emotionally accurate
+- accurately reflects the overall emotional tone
 - never clinical, insulting, or judgmental
 
-reflection
+reflection:
 - one natural conversational analysis
-- usually 250-450 words for a substantive entry; shorter only when the journal itself is very short
-- usually 1-2 paragraphs; up to 3 when the entry contains several distinct subjects or turns
-- acknowledges the entire entry from its opening practical details through its closing thought
-- no headings, labels, bullets, or numbered parts
-- grounded in the user's actual writing
-- notices only clear, useful patterns or connections
-- ordinary details may remain ordinary while still being acknowledged
-- no forced symbolism, hidden meanings, invented psychological explanations, or invented relationship labels
-- sounds like an intelligent friend, not an analyst, report, book report, or therapist`,
+- normally 250-450 words for a substantive entry
+- acknowledge the entry from its opening details through its closing thought
+- no headings, labels, bullets, or numbered sections
+- include only supported observations and connections
+- no forced symbolism or hidden meanings
+- no invented relationships or psychological explanations
+- sound like an intelligent friend who genuinely read the whole thing`,
       },
+
       {
         role: "user",
-        content: `Here is my journal entry. Read it fully from beginning to end before responding. Give me a grounded, conversational analysis of what is actually there. Acknowledge every major subject, practical event, emotional turn, decision, question, and closing thought, even when some of those details are ordinary and do not need deeper interpretation. Notice clear patterns or connections if they genuinely exist, but do not hunt for hidden meaning, symbolism, or psychological explanations. Never assume how any named person is related to me unless the journal explicitly says so; otherwise use the person's name only. Do not recap the entry, and do not praise, reassure, encourage, advise, or therapize. Be thorough enough that the whole entry feels read, but do not inflate minor details just to sound insightful.
+        content: `Read this journal entry completely before analyzing it.
+
+Give me one grounded conversational analysis that accounts for the whole entry. Include the important practical details and emotional turns, even when they do not require deeper interpretation. Notice meaningful patterns or connections only when they are clearly supported.
+
+Do not recap, praise, reassure, advise, therapize, invent relationships, or search for hidden meaning.
 
 ${entryText}`,
       },
     ],
   };
 
-  console.log("[analyze] Sending request to Groq...");
+  console.log("[analyze] Sending request to Mistral...");
 
-  let resp = await postGroq(apiKey, body, 60_000);
+  const resp = await postMistral(apiKey, body, 60_000);
 
-  console.log("[analyze] Groq status:", resp.status);
+  console.log("[analyze] Mistral status:", resp.status);
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    console.error("[analyze] Groq error body:", text);
-    if (isJsonValidationFailure(resp.status, text)) {
-      console.warn("[analyze] Retrying Groq without response_format after JSON validation failure");
-      const retryBody: GroqRequestBody = { ...body };
-      delete retryBody.response_format;
-      resp = await postGroq(apiKey, retryBody, 60_000);
 
-      if (resp.ok) {
-        const json: any = await resp.json();
-        const raw = String(json?.choices?.[0]?.message?.content || "").trim();
-        console.log("[analyze] Groq raw response:", raw);
+    console.error("[analyze] Mistral error body:", text);
 
-        const parsed = parseJsonObject(raw);
-        if (!parsed) {
-          console.error("[analyze] JSON parse error: unable to extract JSON object");
-          throw new Error(`Failed to parse Groq JSON response: ${raw}`);
-        }
-
-        console.log("[analyze] Parsed:", JSON.stringify(parsed));
-        return journalAnalysisFromParsed(parsed);
-      }
-
-      const retryText = await resp.text().catch(() => "");
-      console.error("[analyze] Groq retry error body:", retryText);
-      throw new Error(`Groq error ${resp.status}: ${retryText}`);
-    }
-    throw new Error(`Groq error ${resp.status}: ${text}`);
+    throw new Error(`Mistral error ${resp.status}: ${text}`);
   }
 
   const json: any = await resp.json();
-  const raw = String(json?.choices?.[0]?.message?.content || "").trim();
-  console.log("[analyze] Groq raw response:", raw);
+
+  const raw = String(
+    json?.choices?.[0]?.message?.content || "",
+  ).trim();
+
+  console.log("[analyze] Mistral raw response:", raw);
 
   const parsed = parseJsonObject(raw);
+
   if (!parsed) {
-    console.error("[analyze] JSON parse error: unable to extract JSON object");
-    throw new Error(`Failed to parse Groq JSON response: ${raw}`);
+    console.error(
+      "[analyze] JSON parse error: unable to extract JSON object",
+    );
+
+    throw new Error(
+      `Failed to parse Mistral JSON response: ${raw}`,
+    );
   }
 
   console.log("[analyze] Parsed:", JSON.stringify(parsed));
