@@ -1,10 +1,40 @@
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "groq/compound";
-const GROQ_COMPOUND_MAX_TOKENS = 8192;
-const RESPONSE_FORMAT = { type: "json_object" };
+const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
+const MODEL = "mistral-small-latest";
+
+const RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "mood_analysis",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        mindset: { type: "string" },
+        emotionalBalance: { type: "string" },
+        influences: { type: "string" },
+        reflection: { type: "string" },
+        themes: {
+          type: "array",
+          items: { type: "string" },
+        },
+      },
+      required: [
+        "mindset",
+        "emotionalBalance",
+        "influences",
+        "reflection",
+        "themes",
+      ],
+      additionalProperties: false,
+    },
+  },
+};
 
 export interface MoodAnalysisInput {
-  emotions: { name: string; category: "positive" | "neutral" | "negative" }[];
+  emotions: {
+    name: string;
+    category: "positive" | "neutral" | "negative";
+  }[];
   activities: string[];
   sleepHours: number;
   exerciseMinutes: number;
@@ -12,7 +42,7 @@ export interface MoodAnalysisInput {
   meditationMinutes: number;
   waterOz: number;
   note: string;
-  timestamp: string; // ISO date string
+  timestamp: string;
 }
 
 export interface MoodAnalysisResult {
@@ -23,34 +53,48 @@ export interface MoodAnalysisResult {
   themes: string[];
 }
 
-interface GroqRequestBody {
+interface MistralRequestBody {
   model: string;
   temperature: number;
   max_tokens: number;
+  reasoning_effort?: "none" | "high";
   response_format?: unknown;
-  messages: { role: "system" | "user"; content: string }[];
+  messages: {
+    role: "system" | "user";
+    content: string;
+  }[];
 }
 
-function parseJsonObject(raw: string): Record<string, unknown> | null {
+function parseJsonObject(
+  raw: string,
+): Record<string, unknown> | null {
   const content = raw
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
+
   if (!content) return null;
 
   try {
     const parsed = JSON.parse(content);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+
+    return parsed &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : null;
   } catch {
     const match = content.match(/\{[\s\S]*\}/);
+
     if (!match) return null;
 
     try {
       const parsed = JSON.parse(match[0]);
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+
+      return parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed)
         ? (parsed as Record<string, unknown>)
         : null;
     } catch {
@@ -59,20 +103,19 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
-function isJsonValidationFailure(status: number, body: string): boolean {
-  return status === 400 && body.includes("json_validate_failed");
-}
-
-async function postGroq(
+async function postMistral(
   apiKey: string,
-  body: GroqRequestBody,
+  body: MistralRequestBody,
   timeoutMs: number,
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    timeoutMs,
+  );
 
   try {
-    return await fetch(GROQ_URL, {
+    return await fetch(MISTRAL_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -83,45 +126,87 @@ async function postGroq(
     });
   } catch (err: any) {
     if (err?.name === "AbortError") {
-      throw new Error(`Groq request timed out after ${timeoutMs / 1000}s`);
+      throw new Error(
+        `Mistral request timed out after ${timeoutMs / 1000}s`,
+      );
     }
+
     throw err;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-function moodAnalysisFromParsed(parsed: Record<string, unknown>): MoodAnalysisResult {
+function moodAnalysisFromParsed(
+  parsed: Record<string, unknown>,
+): MoodAnalysisResult {
+  const mindset = String(
+    parsed.mindset || "",
+  ).trim();
+
+  const emotionalBalance = String(
+    parsed.emotionalBalance || "",
+  ).trim();
+
+  const influences = String(
+    parsed.influences || "",
+  ).trim();
+
+  const reflection = String(
+    parsed.reflection || "",
+  ).trim();
+
+  const themes = Array.isArray(parsed.themes)
+    ? parsed.themes
+        .map((t: any) => String(t).trim())
+        .filter(Boolean)
+    : [];
+
+  if (
+    !mindset ||
+    !emotionalBalance ||
+    !influences ||
+    !reflection ||
+    themes.length === 0
+  ) {
+    throw new Error(
+      "Mistral returned incomplete mood analysis fields",
+    );
+  }
+
   return {
-    mindset: String(parsed.mindset || "").trim(),
-    emotionalBalance: String(parsed.emotionalBalance || "").trim(),
-    influences: String(parsed.influences || "").trim(),
-    reflection: String(parsed.reflection || "").trim(),
-    themes: Array.isArray(parsed.themes)
-      ? parsed.themes.map((t: any) => String(t).trim()).filter(Boolean)
-      : [],
+    mindset,
+    emotionalBalance,
+    influences,
+    reflection,
+    themes,
   };
 }
 
 export async function analyzeMood(
   input: MoodAnalysisInput,
 ): Promise<MoodAnalysisResult> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("Missing GROQ_API_KEY");
+  const apiKey = process.env.MISTRAL_API_KEY;
 
-  // Build structured context
+  if (!apiKey) {
+    throw new Error("Missing MISTRAL_API_KEY");
+  }
+
   const positiveEmotions = input.emotions
     .filter((e) => e.category === "positive")
     .map((e) => e.name);
+
   const neutralEmotions = input.emotions
     .filter((e) => e.category === "neutral")
     .map((e) => e.name);
+
   const negativeEmotions = input.emotions
     .filter((e) => e.category === "negative")
     .map((e) => e.name);
 
   const date = new Date(input.timestamp);
   const hour = date.getHours();
+
   const timeOfDay =
     hour < 6
       ? "late night"
@@ -133,106 +218,187 @@ export async function analyzeMood(
             ? "evening"
             : "night";
 
-  let lifestyleLines: string[] = [];
-  if (input.sleepHours > 0)
-    lifestyleLines.push(`Sleep: ${input.sleepHours} hours`);
-  if (input.exerciseMinutes > 0)
-    lifestyleLines.push(`Exercise: ${input.exerciseMinutes} minutes`);
-  if (input.steps > 0) lifestyleLines.push(`Steps: ${input.steps}`);
-  if (input.meditationMinutes > 0)
-    lifestyleLines.push(`Mindfulness: ${input.meditationMinutes} minutes`);
-  if (input.waterOz > 0) lifestyleLines.push(`Water: ${input.waterOz} oz`);
+  const lifestyleLines: string[] = [];
 
-  const userContent = `Mood log recorded in the ${timeOfDay} on ${date.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}:
+  if (input.sleepHours > 0) {
+    lifestyleLines.push(
+      `Sleep: ${input.sleepHours} hours`,
+    );
+  }
 
-Positive emotions (${positiveEmotions.length}): ${positiveEmotions.join(", ") || "none"}
-Neutral emotions (${neutralEmotions.length}): ${neutralEmotions.join(", ") || "none"}
-Negative emotions (${negativeEmotions.length}): ${negativeEmotions.join(", ") || "none"}
+  if (input.exerciseMinutes > 0) {
+    lifestyleLines.push(
+      `Exercise: ${input.exerciseMinutes} minutes`,
+    );
+  }
 
-Activities: ${input.activities.length > 0 ? input.activities.join(", ") : "none selected"}
+  if (input.steps > 0) {
+    lifestyleLines.push(
+      `Steps: ${input.steps}`,
+    );
+  }
 
-Lifestyle data:
+  if (input.meditationMinutes > 0) {
+    lifestyleLines.push(
+      `Mindfulness: ${input.meditationMinutes} minutes`,
+    );
+  }
+
+  if (input.waterOz > 0) {
+    lifestyleLines.push(
+      `Water: ${input.waterOz} oz`,
+    );
+  }
+
+  const userContent = `Mood log recorded in the ${timeOfDay} on ${date.toLocaleDateString(
+    "en-US",
+    {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    },
+  )}:
+
+Positive emotions (${positiveEmotions.length}):
+${positiveEmotions.join(", ") || "none"}
+
+Neutral emotions (${neutralEmotions.length}):
+${neutralEmotions.join(", ") || "none"}
+
+Negative emotions (${negativeEmotions.length}):
+${negativeEmotions.join(", ") || "none"}
+
+Activities:
+${input.activities.length > 0 ? input.activities.join(", ") : "none selected"}
+
+Lifestyle:
 ${lifestyleLines.length > 0 ? lifestyleLines.join("\n") : "No lifestyle data recorded"}
 
-${input.note ? `User note: "${input.note}"` : "No note provided"}`;
+${input.note ? `Note: "${input.note}"` : "No note provided"}`;
 
-  const body: GroqRequestBody = {
+  const body: MistralRequestBody = {
     model: MODEL,
     temperature: 0.1,
-    max_tokens: GROQ_COMPOUND_MAX_TOKENS,
+    max_tokens: 900,
+    reasoning_effort: "none",
     response_format: RESPONSE_FORMAT,
+
     messages: [
       {
         role: "system",
-        content: `You are a mood insight analyzer for a wellness app called Lunixia. You receive a mood log containing selected emotions (categorized as positive, neutral, or negative), selected activities, lifestyle data (sleep, exercise, steps, mindfulness, water), an optional note, and the time of day.
+        content: `You analyze mood logs for the wellness app Lunixia.
 
-Your job is to produce a grounded, thoughtful reflection of the person's current emotional state. You are not a therapist. You are not diagnosing anything. You are simply helping someone see their own mood more clearly.
+Write directly to the user using "you." Sound like an intelligent, warm friend who understands the full mood log without exaggerating it.
 
-Return a JSON object with exactly these keys:
+Use all selected emotions proportionally. A single negative emotion must not outweigh several positive or neutral emotions. Mixed emotions are normal and may coexist without needing explanation or resolution.
 
-"mindset" — A short phrase (2-5 words) capturing the overall feel. Examples: "Reflective and optimistic", "Quietly energized", "Processing a heavy day"
+Use activities, lifestyle data, the note, and time of day only when they provide a reasonable influence or connection. Describe uncertain connections with words such as "may," "could," "seems," or "appears." Never present an inference as fact.
 
-"emotionalBalance" — 2-3 sentences describing how the selected emotions sit together. Consider ALL of them proportionally. If someone picked 10 positive emotions and 1 negative one, the negative one is part of the picture — it does not define it. Mixed emotions are normal and should be described that way.
+Do not:
+- diagnose or psychoanalyze
+- invent hidden meanings, motives, or emotions
+- intensify the emotional state beyond what was logged
+- tell the user what they should feel or do
+- advise, coach, reassure, or therapize
+- make dramatic or alarming conclusions
+- flatten a mixed emotional state into one simplistic takeaway
+- sound clinical, preachy, generic, or like a report
 
-"influences" — 2-3 sentences about what may be shaping the mood, drawn from the activities, lifestyle data, note, and time of day. Use language like "may," "appears," "could," "seems." These are possible connections, not conclusions.
+Return only the structured JSON required by the schema.
 
-"reflection" — 3-5 sentences offering a warm, grounded overall insight. Speak directly using "you" — never say "the user." Write like a thoughtful friend who gets it, not like a clinical report. Acknowledge complexity. If frustration exists alongside motivation, say that. If calm sits next to uncertainty, say that. Do not flatten someone's emotional range into a single takeaway.
+Field requirements:
 
-"themes" — An array of 2-5 short theme words in Title Case derived from the activities and emotional patterns. Examples: "Creativity", "Self-Care", "Responsibility", "Social Connection", "Rest"
+mindset:
+- 2-5 words
+- captures the overall emotional feel
+- natural and specific
 
-Rules:
-- Always speak directly to the person. Never say "the user" or "this person."
-- Consider all selected emotions together and proportionally
-- Never let one negative emotion override several positive or neutral ones
-- Acknowledge mixed emotions as natural — do not treat them as a problem
-- Do not diagnose mental health conditions
-- Do not psychoanalyze or assign hidden meanings
-- Do not make alarming or dramatic conclusions
-- Do not tell someone how they should feel or what they should do
-- Do not be preachy, clinical, or generic
-- Be warm and human — like someone who actually listened
-- Return valid JSON only`,
+emotionalBalance:
+- 2-3 sentences
+- describe how the selected emotions coexist
+- consider all emotions proportionally
+- acknowledge mixed emotions naturally when present
+
+influences:
+- 2-3 sentences
+- describe plausible influences from activities, lifestyle data, note, or time of day
+- stay tentative when the connection is uncertain
+- do not invent causation
+
+reflection:
+- 3-5 conversational sentences
+- bring the full mood log together
+- acknowledge complexity when present
+- speak directly to the user
+- stay grounded in the recorded data
+
+themes:
+- 2-5 short theme labels
+- Title Case
+- derived from activities and emotional patterns
+- concise and scannable`,
       },
       {
         role: "user",
-        content: userContent,
+        content: `Analyze this mood log as one complete picture. Keep the interpretation grounded in what was actually recorded and return the requested structured JSON.
+
+${userContent}`,
       },
     ],
   };
 
-  let resp = await postGroq(apiKey, body, 30_000);
+  console.log(
+    "[mood-analysis] Sending request to Mistral...",
+  );
+
+  const resp = await postMistral(
+    apiKey,
+    body,
+    30_000,
+  );
+
+  console.log(
+    "[mood-analysis] Mistral status:",
+    resp.status,
+  );
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    if (isJsonValidationFailure(resp.status, text)) {
-      const retryBody: GroqRequestBody = { ...body };
-      delete retryBody.response_format;
-      resp = await postGroq(apiKey, retryBody, 30_000);
 
-      if (resp.ok) {
-        const json: any = await resp.json();
-        const raw = String(json?.choices?.[0]?.message?.content || "").trim();
-        const parsed = parseJsonObject(raw);
-        if (!parsed) {
-          throw new Error(`Failed to parse Groq JSON response: ${raw}`);
-        }
+    console.error(
+      "[mood-analysis] Mistral error body:",
+      text,
+    );
 
-        return moodAnalysisFromParsed(parsed);
-      }
-
-      const retryText = await resp.text().catch(() => "");
-      throw new Error(`Groq error ${resp.status}: ${retryText}`);
-    }
-    throw new Error(`Groq error ${resp.status}: ${text}`);
+    throw new Error(
+      `Mistral error ${resp.status}: ${text}`,
+    );
   }
 
   const json: any = await resp.json();
-  const raw = String(json?.choices?.[0]?.message?.content || "").trim();
+
+  const raw = String(
+    json?.choices?.[0]?.message?.content || "",
+  ).trim();
+
+  console.log(
+    "[mood-analysis] Mistral raw response:",
+    raw,
+  );
 
   const parsed = parseJsonObject(raw);
+
   if (!parsed) {
-    throw new Error(`Failed to parse Groq JSON response: ${raw}`);
+    throw new Error(
+      `Failed to parse Mistral JSON response: ${raw}`,
+    );
   }
+
+  console.log(
+    "[mood-analysis] Parsed:",
+    JSON.stringify(parsed),
+  );
 
   return moodAnalysisFromParsed(parsed);
 }
