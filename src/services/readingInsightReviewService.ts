@@ -1,4 +1,4 @@
-import { regularCerebrasChatJson } from "./regularRecs/regularRecsProviders";
+import { regularSecondaryGroqChatJson } from "./regularRecs/regularRecsProviders";
 
 export interface ReadingInsightReviewBookInput {
   title: string;
@@ -81,9 +81,9 @@ export async function generateReadingInsightReview(
     insights,
   });
 
-  const raw = await regularCerebrasChatJson(systemPrompt, userPrompt, {
-    temperature: 0.55,
-    maxTokens: 1500,
+  const raw = await regularSecondaryGroqChatJson(systemPrompt, userPrompt, {
+    temperature: 0.2,
+    maxTokens: 8192,
   });
 
   const parsed = parseReviewJSON(raw);
@@ -91,7 +91,7 @@ export async function generateReadingInsightReview(
   const content = cleanReviewContent(parsed.content);
 
   if (!title || !content) {
-    throw new Error("Cerebras returned an incomplete reading insight review");
+    throw new Error("Groq returned an incomplete reading insight review");
   }
 
   return { title, content };
@@ -200,7 +200,7 @@ function insightText(insight: ReadingInsightReviewInsightInput): string {
 function parseReviewJSON(raw: string): AIReviewPayload {
   const cleaned = cleanText(raw);
   if (!cleaned) {
-    throw new Error("Cerebras returned an empty reading insight review");
+    throw new Error("Groq returned an empty reading insight review");
   }
 
   try {
@@ -208,7 +208,7 @@ function parseReviewJSON(raw: string): AIReviewPayload {
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (!match) {
-      throw new Error("Cerebras returned invalid reading insight review JSON");
+      throw new Error("Groq returned invalid reading insight review JSON");
     }
     return JSON.parse(match[0]) as AIReviewPayload;
   }

@@ -1,10 +1,10 @@
 //
 //  regularRecsProviders.ts
-//  Mistral + OpenRouter chat clients for the REGULAR engine.
-//  (Groq lives in regularRecsGroq.ts.) Self-contained; no collection code.
+//  Mistral + OpenRouter + secondary Groq chat clients for the REGULAR engine.
+//  (Primary Groq lives in regularRecsGroq.ts.) Self-contained; no collection code.
 //
-//  These let the engine spread candidate generation across three providers in
-//  parallel so no single provider's per-minute token limit is a bottleneck.
+//  These let the engine spread candidate generation across independent calls in
+//  parallel while keeping provider-specific request logic isolated.
 //
 
 import { REGULAR_GROQ_TIMEOUT_MS } from "./regularRecsConfig";
@@ -12,14 +12,14 @@ import { cleanText, fetchWithRetry } from "./regularRecsUtils";
 
 const MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions";
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
-const CEREBRAS_CHAT_URL = "https://api.cerebras.ai/v1/chat/completions";
+const SECONDARY_GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 export const REGULAR_MISTRAL_MODEL =
   process.env.MISTRAL_MODEL || "mistral-small-latest";
 export const REGULAR_OPENROUTER_MODEL =
   process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
-export const REGULAR_CEREBRAS_MODEL =
-  process.env.CEREBRAS_MODEL || "gpt-oss-120b";
+export const REGULAR_SECONDARY_GROQ_MODEL =
+  process.env.GROQ_ALT_MODEL || process.env.GROQ_MODEL || "groq/compound";
 
 interface ProviderChatResponse {
   choices?: Array<{ message?: { content?: unknown } | null }>;
@@ -114,23 +114,18 @@ export async function regularOpenRouterChatJson(
   );
 }
 
-export async function regularCerebrasChatJson(
+export async function regularSecondaryGroqChatJson(
   systemPrompt: string,
   userPrompt: string,
   options: { temperature: number; maxTokens: number },
 ): Promise<string> {
-  // gpt-oss on Cerebras is a reasoning model; keep reasoning minimal.
-  const extraBody = REGULAR_CEREBRAS_MODEL.includes("gpt-oss")
-    ? { reasoning_effort: "low" }
-    : {};
   return providerChatJson(
-    CEREBRAS_CHAT_URL,
-    cleanText(process.env.CEREBRAS_API_KEY),
-    REGULAR_CEREBRAS_MODEL,
-    "Cerebras",
+    SECONDARY_GROQ_CHAT_URL,
+    cleanText(process.env.GROQ_API_KEY_ALT) || cleanText(process.env.GROQ_API_KEY),
+    REGULAR_SECONDARY_GROQ_MODEL,
+    "Groq",
     systemPrompt,
     userPrompt,
-    options,
-    extraBody,
+    { ...options, maxTokens: 8192 },
   );
 }

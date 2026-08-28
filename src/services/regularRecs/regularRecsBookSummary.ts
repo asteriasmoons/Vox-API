@@ -1,11 +1,11 @@
 //
 //  regularRecsBookSummary.ts
 //  On-demand "Get Details" summary for a single REGULAR-recs book.
-//  Reuses the collections book-detail COPYWRITER prompt, but runs on CEREBRAS
-//  (regularCerebrasChatJson). Self-contained; cached in the regularRecs cache.
+//  Reuses the collections book-detail COPYWRITER prompt, but runs on Groq.
+//  Self-contained; cached in the regularRecs cache.
 //
 
-import { regularCerebrasChatJson } from "./regularRecsProviders";
+import { regularSecondaryGroqChatJson } from "./regularRecsProviders";
 import { regularRecsCache } from "./regularRecsCache";
 import { cleanText, normalizeKey, parseJsonLoose } from "./regularRecsUtils";
 import { searchGoogleBooks, searchOpenLibrary, type BookSearchResult } from "../../routes/bookSearch";
@@ -128,9 +128,9 @@ export async function buildRegularRecBookSummary(
   const lookup = await lookupBook(input);
   console.log(`[RegularRecsSummary] lookup ${lookup ? "found" : "not found"}: ${title} — ${author}${lookup ? ` via ${lookup.source}` : ""}`);
 
-  const content = await regularCerebrasChatJson(SYSTEM_PROMPT, buildUserPrompt(input, lookup), {
-    temperature: 0.35,
-    maxTokens: 1400,
+  const content = await regularSecondaryGroqChatJson(SYSTEM_PROMPT, buildUserPrompt(input, lookup), {
+    temperature: 0.15,
+    maxTokens: 8192,
   });
 
   const parsed = parseJsonLoose(content);

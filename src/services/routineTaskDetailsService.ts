@@ -1,6 +1,7 @@
-const CEREBRAS_CHAT_COMPLETIONS_URL = "https://api.cerebras.ai/v1/chat/completions";
-const DEFAULT_CEREBRAS_ROUTINE_DETAILS_MODEL = "gpt-oss-120b";
-const CEREBRAS_TIMEOUT_MS = 45_000;
+const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
+const DEFAULT_GROQ_ROUTINE_DETAILS_MODEL = "groq/compound";
+const GROQ_COMPOUND_MAX_TOKENS = 8192;
+const GROQ_TIMEOUT_MS = 45_000;
 
 export interface RoutineTaskDetailsObstacle {
   obstacle: string;
@@ -36,7 +37,7 @@ export interface RoutineTaskDetailsResult {
   obstacles: RoutineTaskDetailsObstacle[];
 }
 
-type CerebrasResponse = {
+type GroqResponse = {
   choices?: Array<{
     message?: {
       content?: unknown;
@@ -44,7 +45,7 @@ type CerebrasResponse = {
   }>;
 };
 
-type CerebrasErrorBody = {
+type GroqErrorBody = {
   error?: unknown;
   message?: unknown;
 };
@@ -112,15 +113,15 @@ function contentToText(content: unknown): string {
     .join("");
 }
 
-function errorMessage(body: CerebrasErrorBody | null): string {
+function errorMessage(body: GroqErrorBody | null): string {
   const error = body?.error;
   if (typeof error === "string") return error;
   if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
-    return cleanText(record.message) || cleanText(record.type) || "Cerebras error";
+    return cleanText(record.message) || cleanText(record.type) || "Groq error";
   }
 
-  return cleanText(body?.message) || "Cerebras error";
+  return cleanText(body?.message) || "Groq error";
 }
 
 function isAbortError(error: unknown): boolean {
@@ -148,7 +149,7 @@ function sanitizeResult(parsed: ParsedRoutineTaskDetails): RoutineTaskDetailsRes
   };
 
   if (!result.title || !result.description || !result.purpose) {
-    throw new Error("Cerebras returned incomplete routine task details");
+    throw new Error("Groq returned incomplete routine task details");
   }
 
   return result;
@@ -157,13 +158,13 @@ function sanitizeResult(parsed: ParsedRoutineTaskDetails): RoutineTaskDetailsRes
 export async function fillRoutineTaskDetails(
   input: RoutineTaskDetailsRequest,
 ): Promise<RoutineTaskDetailsResult> {
-  const apiKey = process.env.CEREBRAS_API_KEY;
-  if (!apiKey) throw new Error("Missing CEREBRAS_API_KEY");
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("Missing GROQ_API_KEY");
 
   const model =
-    process.env.CEREBRAS_ROUTINE_DETAILS_MODEL ||
-    process.env.CEREBRAS_MODEL ||
-    DEFAULT_CEREBRAS_ROUTINE_DETAILS_MODEL;
+    process.env.GROQ_ROUTINE_DETAILS_MODEL ||
+    process.env.GROQ_MODEL ||
+    DEFAULT_GROQ_ROUTINE_DETAILS_MODEL;
 
   const systemPrompt = `You are an AI routine-task generator inside Lurelia. Generate a complete, thoughtful routine-task details page that feels hand-written for THIS specific task, not generic form filler.
 
@@ -234,9 +235,8 @@ JSON format:
 
   const body = {
     model,
-    temperature: 0.35,
-    max_tokens: 2200,
-    ...(model.includes("gpt-oss") ? { reasoning_effort: "medium" } : {}),
+    temperature: 0.15,
+    max_tokens: GROQ_COMPOUND_MAX_TOKENS,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
@@ -252,11 +252,11 @@ JSON format:
   };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CEREBRAS_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
   let response: Response;
 
   try {
-    response = await fetch(CEREBRAS_CHAT_COMPLETIONS_URL, {
+    response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -268,7 +268,7 @@ JSON format:
   } catch (error: unknown) {
     clearTimeout(timeout);
     if (isAbortError(error)) {
-      throw new Error("Cerebras request timed out after 45s");
+      throw new Error("Groq request timed out after 45s");
     }
     throw error;
   } finally {
@@ -276,17 +276,17 @@ JSON format:
   }
 
   const json = (await response.json().catch(() => null)) as
-    | CerebrasResponse
-    | CerebrasErrorBody
+    | GroqResponse
+    | GroqErrorBody
     | null;
 
   if (!response.ok) {
     throw new Error(
-      `Cerebras error ${response.status}: ${errorMessage(json as CerebrasErrorBody | null)}`,
+      `Groq error ${response.status}: ${errorMessage(json as GroqErrorBody | null)}`,
     );
   }
 
-  const raw = contentToText((json as CerebrasResponse | null)?.choices?.[0]?.message?.content)
+  const raw = contentToText((json as GroqResponse | null)?.choices?.[0]?.message?.content)
     .trim();
 
   let parsed: ParsedRoutineTaskDetails;
@@ -295,7 +295,7 @@ JSON format:
     parsed = JSON.parse(raw) as ParsedRoutineTaskDetails;
   } catch (error: unknown) {
     console.error("[routine-task-details/fill] JSON parse error:", error);
-    throw new Error(`Failed to parse Cerebras JSON response: ${raw}`);
+    throw new Error(`Failed to parse Groq JSON response: ${raw}`);
   }
 
   return sanitizeResult(parsed);

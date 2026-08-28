@@ -6,6 +6,11 @@ import { DailyJournalAnalysis } from "../models/DailyJournalAnalysis";
 import { chicagoDateKey } from "../utils/chicagoDateKey";
 
 const router = Router();
+const encoder = new TextEncoder();
+
+function byteLength(value: string): number {
+  return encoder.encode(value).length;
+}
 
 // POST /api/journal/prompt
 router.post("/prompt", async (req, res) => {
@@ -114,6 +119,7 @@ router.post("/analyze", async (req, res) => {
     const dateKeyOverride = String(req.body?.dateKey || "").trim();
 
     console.log("[analyze] userId:", userId, "bookId:", bookId, "entries count:", entries.length, "dateKey:", dateKeyOverride || "(today)");
+    console.log("[analyze] incoming request body bytes:", byteLength(JSON.stringify(req.body ?? {})));
     if (entries.length > 0 && entries[0]) {
       const first = entries[0] as { title: string; body: string };
       console.log("[analyze] first entry body length:", first.body?.length);

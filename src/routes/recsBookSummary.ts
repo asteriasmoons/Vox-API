@@ -1,7 +1,7 @@
 //
 //  recsBookSummary.ts
 //  POST /api/books/recs/book-summary
-//  On-demand compelling summary for a single regular-recs book (Cerebras).
+//  On-demand compelling summary for a single regular-recs book (Groq).
 //
 
 import { Router } from "express";
