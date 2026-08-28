@@ -1,5 +1,6 @@
-const GROQ_URL = "https://api.cerebras.ai/v1/chat/completions";
-const MODEL = "gpt-oss-120b";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const MODEL = "openai/gpt-oss-120b";
+const GROQ_FREE_PLAN_MAX_TOKENS = 8000;
 const RESPONSE_FORMAT = {
   type: "json_schema",
   json_schema: {
@@ -52,7 +53,7 @@ export interface MoodAnalysisResult {
 interface GroqRequestBody {
   model: string;
   temperature: number;
-  max_completion_tokens: number;
+  max_tokens: number;
   reasoning_effort?: "low" | "medium" | "high";
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
@@ -133,8 +134,8 @@ function moodAnalysisFromParsed(parsed: Record<string, unknown>): MoodAnalysisRe
 export async function analyzeMood(
   input: MoodAnalysisInput,
 ): Promise<MoodAnalysisResult> {
-  const apiKey = process.env.CEREBRAS_API_KEY;
-  if (!apiKey) throw new Error("Missing CEREBRAS_API_KEY");
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("Missing GROQ_API_KEY");
 
   // Build structured context
   const positiveEmotions = input.emotions
@@ -186,7 +187,7 @@ ${input.note ? `User note: "${input.note}"` : "No note provided"}`;
   const body: GroqRequestBody = {
     model: MODEL,
     temperature: 0.25,
-    max_completion_tokens: 5500,
+    max_tokens: GROQ_FREE_PLAN_MAX_TOKENS,
     reasoning_effort: "low",
     response_format: RESPONSE_FORMAT,
     messages: [

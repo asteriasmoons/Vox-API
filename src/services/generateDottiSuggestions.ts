@@ -1,4 +1,4 @@
-import { cerebrasChatJson } from "./cerebrasAIClient";
+import { groqChatJson } from "./groqAIClient";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -277,13 +277,13 @@ function normalizeGroups(raw: unknown): DottiSuggestionGroup[] {
 export async function generateDottiSuggestions(
   input: DottiSuggestionsInput,
 ): Promise<DottiSuggestionsResult> {
-  const raw = await cerebrasChatJson(
+  const raw = await groqChatJson(
     SYSTEM_PROMPT,
     summarize(input),
     {
       stage: "dotti_suggestions",
       temperature: 0.7,
-      maxTokens: 700,
+      maxTokens: 8000,
     },
   );
 
@@ -291,12 +291,12 @@ export async function generateDottiSuggestions(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error(`Failed to parse Cerebras JSON: ${raw.slice(0, 200)}`);
+    throw new Error(`Failed to parse Groq JSON: ${raw.slice(0, 200)}`);
   }
 
   const groups = normalizeGroups(parsed);
   if (groups.length === 0) {
-    throw new Error("Cerebras returned no valid suggestion groups");
+    throw new Error("Groq returned no valid suggestion groups");
   }
   return { groups };
 }

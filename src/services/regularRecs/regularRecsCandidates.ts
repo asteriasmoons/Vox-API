@@ -2,15 +2,14 @@
 //  regularRecsCandidates.ts
 //  Multi-provider AI candidate generation + early deduplication.
 //
-//  The six candidate groups are spread across THREE providers running in
-//  parallel (Groq, Mistral, Cerebras) so no single provider's per-minute
-//  token limit is a bottleneck and we still get the full multi-pass pool.
+//  The six candidate groups are spread across independent provider calls in
+//  parallel so we still get the full multi-pass pool.
 //
 
 import { regularGroqChatJson } from "./regularRecsGroq";
 import {
-  regularCerebrasChatJson,
   regularMistralChatJson,
+  regularSecondaryGroqChatJson,
 } from "./regularRecsProviders";
 import { regularSeedContextBlock } from "./regularRecsRequestProfile";
 import {
@@ -44,7 +43,7 @@ const PROVIDER_JOBS: Array<{
 }> = [
   { label: "Groq", run: regularGroqChatJson, groups: ["closest", "reader_safe"] },
   { label: "Mistral", run: regularMistralChatJson, groups: ["hidden_gem", "backlist"] },
-  { label: "Cerebras", run: regularCerebrasChatJson, groups: ["recent_release", "adjacent"] },
+  { label: "Groq", run: regularSecondaryGroqChatJson, groups: ["recent_release", "adjacent"] },
 ];
 
 const REGULAR_CANDIDATE_GROUP_SET = new Set<string>(REGULAR_CANDIDATE_GROUPS);

@@ -1,5 +1,6 @@
-const GROQ_URL = "https://api.cerebras.ai/v1/chat/completions";
-const MODEL = "gpt-oss-120b";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const MODEL = "openai/gpt-oss-120b";
+const GROQ_FREE_PLAN_MAX_TOKENS = 8000;
 const RESPONSE_FORMAT = {
   type: "json_schema",
   json_schema: {
@@ -35,7 +36,7 @@ interface EntryInput {
 interface GroqRequestBody {
   model: string;
   temperature: number;
-  max_completion_tokens: number;
+  max_tokens: number;
   reasoning_effort?: "low" | "medium" | "high";
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
@@ -120,8 +121,8 @@ function journalAnalysisFromParsed(parsed: Record<string, unknown>): JournalAnal
 export async function generateJournalAnalysis(
   entries: EntryInput[],
 ): Promise<JournalAnalysisResult> {
-  const apiKey = process.env.CEREBRAS_API_KEY;
-  if (!apiKey) throw new Error("Missing CEREBRAS_API_KEY");
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("Missing GROQ_API_KEY");
 
   const entryText = entries
     .map((e) => `Entry: "${e.title}"\n${e.body.trim()}`)
@@ -130,7 +131,7 @@ export async function generateJournalAnalysis(
   const body: GroqRequestBody = {
     model: MODEL,
     temperature: 0.25,
-    max_completion_tokens: 5500,
+    max_tokens: GROQ_FREE_PLAN_MAX_TOKENS,
     reasoning_effort: "low",
     response_format: RESPONSE_FORMAT,
     messages: [

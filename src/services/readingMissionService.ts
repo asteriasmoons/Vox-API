@@ -1,4 +1,4 @@
-import { regularCerebrasChatJson } from "./regularRecs/regularRecsProviders";
+import { regularSecondaryGroqChatJson } from "./regularRecs/regularRecsProviders";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const READING_MISSION_MODEL = "openai/gpt-oss-120b";
@@ -163,9 +163,9 @@ export async function scoreReadingMission(
     prompts,
   });
 
-  const raw = await regularCerebrasChatJson(systemPrompt, userPrompt, {
+  const raw = await regularSecondaryGroqChatJson(systemPrompt, userPrompt, {
     temperature: 0.22,
-    maxTokens: 1600,
+    maxTokens: 8000,
   });
 
   return normalizeMissionScore(parseMissionJSON(raw), prompts);

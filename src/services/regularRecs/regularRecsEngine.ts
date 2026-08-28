@@ -107,7 +107,7 @@ export async function buildRegularRecommendations(
       }))
     : [];
 
-  // Candidate groups are generated across Groq + Mistral + Cerebras in parallel
+  // Candidate groups are generated across Groq + Mistral + secondary Groq in parallel
   // (see regularRecsCandidates); comps are merged in as extra strong candidates.
   const aiCandidates = await generateAllRegularCandidates(requestText, seed, profile);
   const candidates = dedupeRegularCandidates(

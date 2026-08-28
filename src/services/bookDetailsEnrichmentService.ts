@@ -1,4 +1,4 @@
-import { regularCerebrasChatJson } from "./regularRecs/regularRecsProviders";
+import { regularSecondaryGroqChatJson } from "./regularRecs/regularRecsProviders";
 
 const GOOGLE_BOOKS_SEARCH_URL = "https://www.googleapis.com/books/v1/volumes";
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
@@ -637,24 +637,24 @@ async function generateAIEnrichment(
     ),
   ].join("\n");
 
-  console.log("[book-details-enrichment] cerebras request", {
+  console.log("[book-details-enrichment] groq request", {
     title: input.title,
     author: input.author,
     promptChars: userPrompt.length,
   });
 
   const startedAt = Date.now();
-  const raw = await regularCerebrasChatJson(systemPrompt, userPrompt, {
+  const raw = await regularSecondaryGroqChatJson(systemPrompt, userPrompt, {
     temperature: 0.28,
-    maxTokens: AI_MAX_TOKENS,
+    maxTokens: 8000,
   });
   const parsed = parseAIResponse(raw);
 
   if (!cleanText(parsed.summary)) {
-    throw new Error("Cerebras book details enrichment returned no usable summary");
+    throw new Error("Groq book details enrichment returned no usable summary");
   }
 
-  console.log("[book-details-enrichment] cerebras success", {
+  console.log("[book-details-enrichment] groq success", {
     title: input.title,
     author: input.author,
     durationMs: Date.now() - startedAt,
