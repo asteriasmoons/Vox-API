@@ -645,8 +645,8 @@ async function generateAIEnrichment(
 
   const startedAt = Date.now();
   const raw = await regularSecondaryGroqChatJson(systemPrompt, userPrompt, {
-    temperature: 0.28,
-    maxTokens: 8000,
+    temperature: 0.15,
+    maxTokens: 8192,
   });
   const parsed = parseAIResponse(raw);
 

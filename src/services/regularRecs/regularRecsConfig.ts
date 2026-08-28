@@ -9,7 +9,7 @@ export const REGULAR_GOOGLE_BOOKS_SEARCH_URL =
   "https://www.googleapis.com/books/v1/volumes";
 export const REGULAR_OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
 
-export const REGULAR_GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+export const REGULAR_GROQ_MODEL = process.env.GROQ_MODEL || "groq/compound";
 
 export const REGULAR_TARGET_FINAL_RECOMMENDATION_COUNT = 30;
 export const REGULAR_MIN_ACCEPTABLE_RECOMMENDATION_COUNT = 12;
@@ -22,10 +22,10 @@ export const REGULAR_GROQ_TIMEOUT_MS = 45_000;
 export const REGULAR_CATALOG_TIMEOUT_MS = 12_000;
 export const REGULAR_MAX_HTTP_RETRIES = 3;
 
-export const REGULAR_GROQ_TEMPERATURE_ANALYZE = 0.2;
-export const REGULAR_GROQ_TEMPERATURE_RECOMMEND = 0.35;
-export const REGULAR_GROQ_MAX_TOKENS_ANALYZE = 700;
-export const REGULAR_GROQ_MAX_TOKENS_RECOMMEND = 2200;
+export const REGULAR_GROQ_TEMPERATURE_ANALYZE = 0.1;
+export const REGULAR_GROQ_TEMPERATURE_RECOMMEND = 0.15;
+export const REGULAR_GROQ_MAX_TOKENS_ANALYZE = 8192;
+export const REGULAR_GROQ_MAX_TOKENS_RECOMMEND = 8192;
 
 // Cache TTLs (ms)
 export const REGULAR_TTL_SEED = 12 * 60 * 60 * 1000;

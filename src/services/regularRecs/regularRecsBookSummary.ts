@@ -129,8 +129,8 @@ export async function buildRegularRecBookSummary(
   console.log(`[RegularRecsSummary] lookup ${lookup ? "found" : "not found"}: ${title} — ${author}${lookup ? ` via ${lookup.source}` : ""}`);
 
   const content = await regularSecondaryGroqChatJson(SYSTEM_PROMPT, buildUserPrompt(input, lookup), {
-    temperature: 0.35,
-    maxTokens: 8000,
+    temperature: 0.15,
+    maxTokens: 8192,
   });
 
   const parsed = parseJsonLoose(content);

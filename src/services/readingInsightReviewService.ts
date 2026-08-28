@@ -82,8 +82,8 @@ export async function generateReadingInsightReview(
   });
 
   const raw = await regularSecondaryGroqChatJson(systemPrompt, userPrompt, {
-    temperature: 0.55,
-    maxTokens: 8000,
+    temperature: 0.2,
+    maxTokens: 8192,
   });
 
   const parsed = parseReviewJSON(raw);

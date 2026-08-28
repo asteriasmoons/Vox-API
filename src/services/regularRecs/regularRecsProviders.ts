@@ -19,7 +19,7 @@ export const REGULAR_MISTRAL_MODEL =
 export const REGULAR_OPENROUTER_MODEL =
   process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
 export const REGULAR_SECONDARY_GROQ_MODEL =
-  process.env.GROQ_ALT_MODEL || process.env.GROQ_MODEL || "openai/gpt-oss-120b";
+  process.env.GROQ_ALT_MODEL || process.env.GROQ_MODEL || "groq/compound";
 
 interface ProviderChatResponse {
   choices?: Array<{ message?: { content?: unknown } | null }>;
@@ -119,10 +119,6 @@ export async function regularSecondaryGroqChatJson(
   userPrompt: string,
   options: { temperature: number; maxTokens: number },
 ): Promise<string> {
-  // gpt-oss is a reasoning model; keep reasoning minimal.
-  const extraBody = REGULAR_SECONDARY_GROQ_MODEL.includes("gpt-oss")
-    ? { reasoning_effort: "low" }
-    : {};
   return providerChatJson(
     SECONDARY_GROQ_CHAT_URL,
     cleanText(process.env.GROQ_API_KEY_ALT) || cleanText(process.env.GROQ_API_KEY),
@@ -130,7 +126,6 @@ export async function regularSecondaryGroqChatJson(
     "Groq",
     systemPrompt,
     userPrompt,
-    { ...options, maxTokens: 8000 },
-    extraBody,
+    { ...options, maxTokens: 8192 },
   );
 }

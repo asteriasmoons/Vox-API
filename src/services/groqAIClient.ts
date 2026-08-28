@@ -1,5 +1,5 @@
 const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
+const DEFAULT_GROQ_MODEL = "groq/compound";
 const GROQ_TIMEOUT_MS = 30_000;
 const GROQ_RETRIES = 2;
 
@@ -137,7 +137,6 @@ async function groqChat(
           model,
           temperature: options.temperature,
           max_tokens: options.maxTokens,
-          ...(model.includes("gpt-oss") ? { reasoning_effort: "low" } : {}),
           ...(options.responseFormat !== "text"
             ? { response_format: { type: "json_object" } }
             : {}),

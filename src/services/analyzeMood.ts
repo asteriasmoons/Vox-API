@@ -1,34 +1,7 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "openai/gpt-oss-120b";
-const GROQ_FREE_PLAN_MAX_TOKENS = 8000;
-const RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "mood_analysis",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        mindset: { type: "string" },
-        emotionalBalance: { type: "string" },
-        influences: { type: "string" },
-        reflection: { type: "string" },
-        themes: {
-          type: "array",
-          items: { type: "string" },
-        },
-      },
-      required: [
-        "mindset",
-        "emotionalBalance",
-        "influences",
-        "reflection",
-        "themes",
-      ],
-      additionalProperties: false,
-    },
-  },
-};
+const MODEL = "groq/compound";
+const GROQ_COMPOUND_MAX_TOKENS = 8192;
+const RESPONSE_FORMAT = { type: "json_object" };
 
 export interface MoodAnalysisInput {
   emotions: { name: string; category: "positive" | "neutral" | "negative" }[];
@@ -54,7 +27,6 @@ interface GroqRequestBody {
   model: string;
   temperature: number;
   max_tokens: number;
-  reasoning_effort?: "low" | "medium" | "high";
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
 }
@@ -186,9 +158,8 @@ ${input.note ? `User note: "${input.note}"` : "No note provided"}`;
 
   const body: GroqRequestBody = {
     model: MODEL,
-    temperature: 0.25,
-    max_tokens: GROQ_FREE_PLAN_MAX_TOKENS,
-    reasoning_effort: "low",
+    temperature: 0.1,
+    max_tokens: GROQ_COMPOUND_MAX_TOKENS,
     response_format: RESPONSE_FORMAT,
     messages: [
       {

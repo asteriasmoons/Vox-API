@@ -1,6 +1,6 @@
 const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_GROQ_ROUTINE_DETAILS_MODEL = "openai/gpt-oss-120b";
-const GROQ_FREE_PLAN_MAX_TOKENS = 8000;
+const DEFAULT_GROQ_ROUTINE_DETAILS_MODEL = "groq/compound";
+const GROQ_COMPOUND_MAX_TOKENS = 8192;
 const GROQ_TIMEOUT_MS = 45_000;
 
 export interface RoutineTaskDetailsObstacle {
@@ -235,9 +235,8 @@ JSON format:
 
   const body = {
     model,
-    temperature: 0.35,
-    max_tokens: GROQ_FREE_PLAN_MAX_TOKENS,
-    ...(model.includes("gpt-oss") ? { reasoning_effort: "medium" } : {}),
+    temperature: 0.15,
+    max_tokens: GROQ_COMPOUND_MAX_TOKENS,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },

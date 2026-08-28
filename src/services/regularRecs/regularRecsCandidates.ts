@@ -149,7 +149,7 @@ Return STRICT JSON only:
     const content = await run(
       "You are a factual book recommender. You only name REAL published books and describe them truthfully. You never invent titles, authors, or details, and you never mislabel a book's genre or plot. Return strict JSON only — no markdown, prose, or summaries.",
       prompt,
-      { temperature: 0.2, maxTokens: 3500 },
+      { temperature: 0.1, maxTokens: 8192 },
     );
     return parseAiCandidates(content, groups[0] ?? "closest");
   } catch (error) {

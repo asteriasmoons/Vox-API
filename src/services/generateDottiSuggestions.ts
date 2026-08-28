@@ -282,8 +282,8 @@ export async function generateDottiSuggestions(
     summarize(input),
     {
       stage: "dotti_suggestions",
-      temperature: 0.7,
-      maxTokens: 8000,
+      temperature: 0.2,
+      maxTokens: 8192,
     },
   );
 

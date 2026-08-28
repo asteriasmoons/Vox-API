@@ -1,26 +1,7 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "openai/gpt-oss-120b";
-const GROQ_FREE_PLAN_MAX_TOKENS = 8000;
-const RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "journal_analysis",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        themes: {
-          type: "array",
-          items: { type: "string" },
-        },
-        mood: { type: "string" },
-        reflection: { type: "string" },
-      },
-      required: ["themes", "mood", "reflection"],
-      additionalProperties: false,
-    },
-  },
-};
+const MODEL = "groq/compound";
+const GROQ_COMPOUND_MAX_TOKENS = 8192;
+const RESPONSE_FORMAT = { type: "json_object" };
 
 export interface JournalAnalysisResult {
   themes: string[];
@@ -37,7 +18,6 @@ interface GroqRequestBody {
   model: string;
   temperature: number;
   max_tokens: number;
-  reasoning_effort?: "low" | "medium" | "high";
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
 }
@@ -130,9 +110,8 @@ export async function generateJournalAnalysis(
 
   const body: GroqRequestBody = {
     model: MODEL,
-    temperature: 0.25,
-    max_tokens: GROQ_FREE_PLAN_MAX_TOKENS,
-    reasoning_effort: "low",
+    temperature: 0.1,
+    max_tokens: GROQ_COMPOUND_MAX_TOKENS,
     response_format: RESPONSE_FORMAT,
     messages: [
       {
