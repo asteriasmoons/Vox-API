@@ -37,7 +37,7 @@ interface MistralRequestBody {
   model: string;
   temperature: number;
   max_tokens: number;
-  reasoning_effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+reasoning_effort?: "none" | "high";
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
 }
@@ -151,7 +151,7 @@ export async function generateJournalAnalysis(
     model: MODEL,
     temperature: 0.25,
     max_tokens: 1200,
-    reasoning_effort: "low",
+    reasoning_effort: "none",
     response_format: RESPONSE_FORMAT,
 
     messages: [
