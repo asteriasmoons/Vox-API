@@ -55,7 +55,7 @@ const io = new SocketIOServer(httpServer, {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 app.get("/", (_req, res) => {
   res.json({ status: "Vox Apps API running" });
