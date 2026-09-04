@@ -1,5 +1,5 @@
-const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
-const MODEL = "mistral-small-latest";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const MODEL = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
 
 const RESPONSE_FORMAT = {
   type: "json_schema",
@@ -33,11 +33,10 @@ interface EntryInput {
   body: string;
 }
 
-interface MistralRequestBody {
+interface OpenRouterRequestBody {
   model: string;
   temperature: number;
   max_tokens: number;
-reasoning_effort?: "none" | "high";
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
 }
@@ -73,16 +72,16 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
-async function postMistral(
+async function postOpenRouter(
   apiKey: string,
-  body: MistralRequestBody,
+  body: OpenRouterRequestBody,
   timeoutMs: number,
 ): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    return await fetch(MISTRAL_URL, {
+    return await fetch(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -94,7 +93,7 @@ async function postMistral(
   } catch (err: any) {
     if (err?.name === "AbortError") {
       throw new Error(
-        `Mistral request timed out after ${timeoutMs / 1000}s`,
+        `OpenRouter request timed out after ${timeoutMs / 1000}s`,
       );
     }
 
@@ -124,7 +123,7 @@ function journalAnalysisFromParsed(
   );
 
   if (!mood || !reflection || themes.length === 0) {
-    throw new Error("Mistral returned incomplete analysis fields");
+    throw new Error("OpenRouter returned incomplete analysis fields");
   }
 
   return {
@@ -137,21 +136,20 @@ function journalAnalysisFromParsed(
 export async function generateJournalAnalysis(
   entries: EntryInput[],
 ): Promise<JournalAnalysisResult> {
-  const apiKey = process.env.MISTRAL_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
-    throw new Error("Missing MISTRAL_API_KEY");
+    throw new Error("Missing OPENROUTER_API_KEY");
   }
 
   const entryText = entries
     .map((e) => `Entry: "${e.title}"\n${e.body.trim()}`)
     .join("\n\n---\n\n");
 
-  const body: MistralRequestBody = {
+  const body: OpenRouterRequestBody = {
     model: MODEL,
     temperature: 0.25,
     max_tokens: 1200,
-    reasoning_effort: "none",
     response_format: RESPONSE_FORMAT,
 
     messages: [
@@ -229,18 +227,18 @@ ${entryText}`,
     ],
   };
 
-  console.log("[analyze] Sending request to Mistral...");
+  console.log("[analyze] Sending request to OpenRouter...");
 
-  const resp = await postMistral(apiKey, body, 60_000);
+  const resp = await postOpenRouter(apiKey, body, 60_000);
 
-  console.log("[analyze] Mistral status:", resp.status);
+  console.log("[analyze] OpenRouter status:", resp.status);
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
 
-    console.error("[analyze] Mistral error body:", text);
+    console.error("[analyze] OpenRouter error body:", text);
 
-    throw new Error(`Mistral error ${resp.status}: ${text}`);
+    throw new Error(`OpenRouter error ${resp.status}: ${text}`);
   }
 
   const json: any = await resp.json();
@@ -249,7 +247,7 @@ ${entryText}`,
     json?.choices?.[0]?.message?.content || "",
   ).trim();
 
-  console.log("[analyze] Mistral raw response:", raw);
+  console.log("[analyze] OpenRouter raw response:", raw);
 
   const parsed = parseJsonObject(raw);
 
@@ -259,7 +257,7 @@ ${entryText}`,
     );
 
     throw new Error(
-      `Failed to parse Mistral JSON response: ${raw}`,
+      `Failed to parse OpenRouter JSON response: ${raw}`,
     );
   }
 

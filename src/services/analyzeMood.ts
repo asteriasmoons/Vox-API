@@ -1,5 +1,5 @@
-const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
-const MODEL = "mistral-small-latest";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const MODEL = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
 
 const RESPONSE_FORMAT = {
   type: "json_schema",
@@ -53,11 +53,10 @@ export interface MoodAnalysisResult {
   themes: string[];
 }
 
-interface MistralRequestBody {
+interface OpenRouterRequestBody {
   model: string;
   temperature: number;
   max_tokens: number;
-  reasoning_effort?: "none" | "high";
   response_format?: unknown;
   messages: {
     role: "system" | "user";
@@ -103,9 +102,9 @@ function parseJsonObject(
   }
 }
 
-async function postMistral(
+async function postOpenRouter(
   apiKey: string,
-  body: MistralRequestBody,
+  body: OpenRouterRequestBody,
   timeoutMs: number,
 ): Promise<Response> {
   const controller = new AbortController();
@@ -115,7 +114,7 @@ async function postMistral(
   );
 
   try {
-    return await fetch(MISTRAL_URL, {
+    return await fetch(OPENROUTER_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -127,7 +126,7 @@ async function postMistral(
   } catch (err: any) {
     if (err?.name === "AbortError") {
       throw new Error(
-        `Mistral request timed out after ${timeoutMs / 1000}s`,
+        `OpenRouter request timed out after ${timeoutMs / 1000}s`,
       );
     }
 
@@ -170,7 +169,7 @@ function moodAnalysisFromParsed(
     themes.length === 0
   ) {
     throw new Error(
-      "Mistral returned incomplete mood analysis fields",
+      "OpenRouter returned incomplete mood analysis fields",
     );
   }
 
@@ -186,10 +185,10 @@ function moodAnalysisFromParsed(
 export async function analyzeMood(
   input: MoodAnalysisInput,
 ): Promise<MoodAnalysisResult> {
-  const apiKey = process.env.MISTRAL_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
 
   if (!apiKey) {
-    throw new Error("Missing MISTRAL_API_KEY");
+    throw new Error("Missing OPENROUTER_API_KEY");
   }
 
   const positiveEmotions = input.emotions
@@ -277,11 +276,10 @@ ${lifestyleLines.length > 0 ? lifestyleLines.join("\n") : "No lifestyle data rec
 
 ${input.note ? `Note: "${input.note}"` : "No note provided"}`;
 
-  const body: MistralRequestBody = {
+  const body: OpenRouterRequestBody = {
     model: MODEL,
     temperature: 0.1,
     max_tokens: 900,
-    reasoning_effort: "none",
     response_format: RESPONSE_FORMAT,
 
     messages: [
@@ -349,17 +347,17 @@ ${userContent}`,
   };
 
   console.log(
-    "[mood-analysis] Sending request to Mistral...",
+    "[mood-analysis] Sending request to OpenRouter...",
   );
 
-  const resp = await postMistral(
+  const resp = await postOpenRouter(
     apiKey,
     body,
     30_000,
   );
 
   console.log(
-    "[mood-analysis] Mistral status:",
+    "[mood-analysis] OpenRouter status:",
     resp.status,
   );
 
@@ -367,12 +365,12 @@ ${userContent}`,
     const text = await resp.text().catch(() => "");
 
     console.error(
-      "[mood-analysis] Mistral error body:",
+      "[mood-analysis] OpenRouter error body:",
       text,
     );
 
     throw new Error(
-      `Mistral error ${resp.status}: ${text}`,
+      `OpenRouter error ${resp.status}: ${text}`,
     );
   }
 
@@ -383,7 +381,7 @@ ${userContent}`,
   ).trim();
 
   console.log(
-    "[mood-analysis] Mistral raw response:",
+    "[mood-analysis] OpenRouter raw response:",
     raw,
   );
 
@@ -391,7 +389,7 @@ ${userContent}`,
 
   if (!parsed) {
     throw new Error(
-      `Failed to parse Mistral JSON response: ${raw}`,
+      `Failed to parse OpenRouter JSON response: ${raw}`,
     );
   }
 
