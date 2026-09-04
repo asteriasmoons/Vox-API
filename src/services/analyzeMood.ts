@@ -1,7 +1,34 @@
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
 
-const RESPONSE_FORMAT = { type: "json_object" };
+const RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "mood_analysis",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        mindset: { type: "string" },
+        emotionalBalance: { type: "string" },
+        influences: { type: "string" },
+        reflection: { type: "string" },
+        themes: {
+          type: "array",
+          items: { type: "string" },
+        },
+      },
+      required: [
+        "mindset",
+        "emotionalBalance",
+        "influences",
+        "reflection",
+        "themes",
+      ],
+      additionalProperties: false,
+    },
+  },
+};
 
 export interface MoodAnalysisInput {
   emotions: {
@@ -30,6 +57,10 @@ interface OpenRouterRequestBody {
   model: string;
   temperature: number;
   max_tokens: number;
+  reasoning?: {
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+    exclude?: boolean;
+  };
   response_format?: unknown;
   messages: {
     role: "system" | "user";
@@ -253,6 +284,10 @@ ${input.note ? `Note: "${input.note}"` : "No note provided"}`;
     model: MODEL,
     temperature: 0.1,
     max_tokens: 900,
+    reasoning: {
+      effort: "none",
+      exclude: true,
+    },
     response_format: RESPONSE_FORMAT,
 
     messages: [

@@ -1,7 +1,26 @@
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
 
-const RESPONSE_FORMAT = { type: "json_object" };
+const RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    name: "journal_analysis",
+    strict: true,
+    schema: {
+      type: "object",
+      properties: {
+        themes: {
+          type: "array",
+          items: { type: "string" },
+        },
+        mood: { type: "string" },
+        reflection: { type: "string" },
+      },
+      required: ["themes", "mood", "reflection"],
+      additionalProperties: false,
+    },
+  },
+};
 
 export interface JournalAnalysisResult {
   themes: string[];
@@ -18,6 +37,10 @@ interface OpenRouterRequestBody {
   model: string;
   temperature: number;
   max_tokens: number;
+  reasoning?: {
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+    exclude?: boolean;
+  };
   response_format?: unknown;
   messages: { role: "system" | "user"; content: string }[];
 }
@@ -131,6 +154,10 @@ export async function generateJournalAnalysis(
     model: MODEL,
     temperature: 0.25,
     max_tokens: 1200,
+    reasoning: {
+      effort: "none",
+      exclude: true,
+    },
     response_format: RESPONSE_FORMAT,
 
     messages: [
