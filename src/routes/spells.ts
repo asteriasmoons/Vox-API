@@ -13,10 +13,6 @@ function requiredString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function booleanFlag(value: unknown): boolean {
-  return value === true || value === "true" || value === 1 || value === "1";
-}
-
 function sentenceCount(value: string): number {
   const matches = value.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
   return matches.map((item) => item.trim()).filter(Boolean).length;
@@ -30,7 +26,7 @@ router.post("/generate", async (req, res) => {
     const intention = requiredString(req.body?.intention);
     const level = normalizePractitionerLevel(requiredString(req.body?.level));
     const context = requiredString(req.body?.context);
-    const refresh = booleanFlag(req.body?.refresh);
+    const refresh = true;
 
     if (!rawCategory) {
       return res.status(400).json({ error: "category is required" });
