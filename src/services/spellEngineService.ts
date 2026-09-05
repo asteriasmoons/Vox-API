@@ -314,6 +314,8 @@ Rules:
 - For love and relationship spells, focus on consent, self-work, harmony, openness, compassion, repair, or attraction without control over another person's will.
 - For healing and wellness spells, do not make medical claims and do not replace professional care.
 - Keep ingredients and tools practical and safe. Mention safety in aftercare or notes when needed.
+- Any affirmation, chant, incantation, petition, or other spoken spell verse must rhyme naturally; use couplets or another consistent rhyme scheme rather than forced rhyme.
+- Keep ritual forces consistent: never thank, release, dismiss, or otherwise address a planet, deity, spirit, ancestor, direction, element, or similar force unless the spell explicitly invoked, invited, or called upon it earlier.
 - The completed spell should feel polished, immersive, original, and worthy of being saved in a personal grimoire.
 - Return JSON only. No markdown. No preamble. No backticks.
 `;
