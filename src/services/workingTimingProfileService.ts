@@ -1,7 +1,7 @@
 import { groqChatJson } from "./groqAIClient";
 
 const WORKING_TIMING_GROQ_MODEL =
-  process.env.WORKING_TIMING_GROQ_MODEL || "qwen/qwen3.6-27b";
+  process.env.WORKING_TIMING_GROQ_MODEL || "openai/gpt-oss-120b";
 
 export const TIMING_PLANETS = [
   "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
@@ -183,8 +183,7 @@ export async function generateWorkingTimingProfile(
     stage: "working-timing-profile",
     model: WORKING_TIMING_GROQ_MODEL,
     temperature: 0.15,
-    maxTokens: 850,
-    reasoningFormat: "hidden",
+    maxTokens: 2000,
   });
 
   return parseProfile(raw);

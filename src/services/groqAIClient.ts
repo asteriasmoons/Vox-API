@@ -111,6 +111,9 @@ async function groqChat(
   }
 
   const model = options.model ?? process.env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL;
+  // openai/gpt-oss models use max_completion_tokens and do NOT support the
+  // reasoning_format parameter (reasoning is returned in a separate field).
+  const isGptOss = model.startsWith("openai/gpt-oss");
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= GROQ_RETRIES; attempt += 1) {
@@ -140,11 +143,13 @@ async function groqChat(
         body: JSON.stringify({
           model,
           temperature: options.temperature,
-          max_tokens: options.maxTokens,
+          ...(isGptOss
+            ? { max_completion_tokens: options.maxTokens }
+            : { max_tokens: options.maxTokens }),
           ...(options.responseFormat !== "text"
             ? { response_format: { type: "json_object" } }
             : {}),
-          ...(options.reasoningFormat
+          ...(options.reasoningFormat && !isGptOss
             ? { reasoning_format: options.reasoningFormat }
             : {}),
           messages,
