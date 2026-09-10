@@ -1,5 +1,8 @@
 import { groqChatJson } from "./groqAIClient";
 
+const WORKING_TIMING_GROQ_MODEL =
+  process.env.WORKING_TIMING_GROQ_MODEL || "llama-3.1-8b-instant";
+
 export const TIMING_PLANETS = [
   "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
   "Uranus", "Neptune",
@@ -172,6 +175,7 @@ export async function generateWorkingTimingProfile(
 ): Promise<WorkingTimingProfile> {
   const raw = await groqChatJson(SYSTEM_PROMPT, userPrompt(intention), {
     stage: "working-timing-profile",
+    model: WORKING_TIMING_GROQ_MODEL,
     temperature: 0.15,
     maxTokens: 850,
   });

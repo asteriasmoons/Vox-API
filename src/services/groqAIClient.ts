@@ -1,5 +1,6 @@
 const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_GROQ_MODEL = "groq/compound";
+const GROQ_LOG_PREFIX = "[vox:groq]";
 const GROQ_TIMEOUT_MS = 30_000;
 const GROQ_RETRIES = 2;
 
@@ -117,7 +118,7 @@ async function groqChat(
     const timeout = setTimeout(() => controller.abort(), GROQ_TIMEOUT_MS);
 
     try {
-      console.log("[dotti:groq] request", {
+      console.log(`${GROQ_LOG_PREFIX} request`, {
         stage: options.stage,
         model,
         attempt: attempt + 1,
@@ -152,7 +153,7 @@ async function groqChat(
 
       if (!response.ok) {
         const message = safeErrorMessage(json as ProviderErrorBody | null);
-        console.error("[dotti:groq] failure", {
+        console.error(`${GROQ_LOG_PREFIX} failure`, {
           stage: options.stage,
           model,
           attempt: attempt + 1,
@@ -178,7 +179,7 @@ async function groqChat(
       const content = cleanText(
         contentToText((json as GroqChatResponse | null)?.choices?.[0]?.message?.content),
       );
-      console.log("[dotti:groq] success", {
+      console.log(`${GROQ_LOG_PREFIX} success`, {
         stage: options.stage,
         model,
         attempt: attempt + 1,
@@ -195,7 +196,7 @@ async function groqChat(
       lastError = error;
 
       if (isAbortError(error)) {
-        console.error("[dotti:groq] timeout", {
+        console.error(`${GROQ_LOG_PREFIX} timeout`, {
           stage: options.stage,
           model,
           attempt: attempt + 1,
@@ -203,7 +204,7 @@ async function groqChat(
           timeoutMs: GROQ_TIMEOUT_MS,
         });
       } else if (!(error instanceof Error && error.message.startsWith("Groq "))) {
-        console.error("[dotti:groq] failure", {
+        console.error(`${GROQ_LOG_PREFIX} failure`, {
           stage: options.stage,
           model,
           attempt: attempt + 1,
