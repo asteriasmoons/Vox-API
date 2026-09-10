@@ -1,4 +1,4 @@
-import { groqChatText } from "./groqAIClient";
+import { groqChatJson } from "./groqAIClient";
 
 const WORKING_TIMING_GROQ_MODEL =
   process.env.WORKING_TIMING_GROQ_MODEL || "qwen/qwen3.6-27b";
@@ -179,11 +179,12 @@ function parseProfile(raw: string): WorkingTimingProfile {
 export async function generateWorkingTimingProfile(
   intention: string,
 ): Promise<WorkingTimingProfile> {
-  const raw = await groqChatText(SYSTEM_PROMPT, userPrompt(intention), {
+  const raw = await groqChatJson(SYSTEM_PROMPT, userPrompt(intention), {
     stage: "working-timing-profile",
     model: WORKING_TIMING_GROQ_MODEL,
     temperature: 0.15,
     maxTokens: 850,
+    reasoningFormat: "hidden",
   });
 
   return parseProfile(raw);

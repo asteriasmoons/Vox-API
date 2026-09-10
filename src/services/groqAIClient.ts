@@ -15,6 +15,7 @@ type GroqChatOptions = {
   maxTokens: number;
   model?: string;
   responseFormat?: "json_object" | "text";
+  reasoningFormat?: "hidden" | "parsed" | "raw";
 };
 
 type GroqChatResponse = {
@@ -124,10 +125,12 @@ async function groqChat(
         attempt: attempt + 1,
       });
 
-      const messages: GroqMessage[] = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ];
+      const messages: GroqMessage[] = model.startsWith("qwen/")
+        ? [{ role: "user", content: `${systemPrompt}\n\n${userPrompt}` }]
+        : [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ];
       const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
         method: "POST",
         headers: {
@@ -140,6 +143,9 @@ async function groqChat(
           max_tokens: options.maxTokens,
           ...(options.responseFormat !== "text"
             ? { response_format: { type: "json_object" } }
+            : {}),
+          ...(options.reasoningFormat
+            ? { reasoning_format: options.reasoningFormat }
             : {}),
           messages,
         }),
