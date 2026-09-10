@@ -1,7 +1,7 @@
 import { groqChatJson } from "./groqAIClient";
 
 const WORKING_TIMING_GROQ_MODEL =
-  process.env.WORKING_TIMING_GROQ_MODEL || "llama-3.1-8b-instant";
+  process.env.WORKING_TIMING_GROQ_MODEL || "qwen/qwen3.6-27b";
 
 export const TIMING_PLANETS = [
   "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
