@@ -1,4 +1,4 @@
-import { groqChatJson } from "./groqAIClient";
+import { groqChatText } from "./groqAIClient";
 
 const WORKING_TIMING_GROQ_MODEL =
   process.env.WORKING_TIMING_GROQ_MODEL || "qwen/qwen3.6-27b";
@@ -136,7 +136,13 @@ function planetPairs(value: unknown): TimingPlanetPair[] {
 }
 
 function parseProfile(raw: string): WorkingTimingProfile {
-  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) {
+    throw new Error(`Timing profile response did not contain JSON: ${raw}`);
+  }
+
+  const parsed = JSON.parse(match[0]) as Record<string, unknown>;
   const interpretedIntention =
     typeof parsed.interpretedIntention === "string" ? parsed.interpretedIntention.trim() : "";
   const primaryIntention =
@@ -173,7 +179,7 @@ function parseProfile(raw: string): WorkingTimingProfile {
 export async function generateWorkingTimingProfile(
   intention: string,
 ): Promise<WorkingTimingProfile> {
-  const raw = await groqChatJson(SYSTEM_PROMPT, userPrompt(intention), {
+  const raw = await groqChatText(SYSTEM_PROMPT, userPrompt(intention), {
     stage: "working-timing-profile",
     model: WORKING_TIMING_GROQ_MODEL,
     temperature: 0.15,
