@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { claimDailyPrompt } from "../services/claimDailyPrompt";
+import { generateDailyIntention } from "../services/generateDailyIntention";
 import { generateJournalPrompt } from "../services/generateJournalPrompt";
 import { generateJournalAnalysis } from "../services/generateJournalAnalysis";
 import { DailyJournalAnalysis } from "../models/DailyJournalAnalysis";
@@ -42,6 +43,24 @@ router.post("/prompt", async (req, res) => {
   } catch (error) {
     console.error("Prompt generation error:", error);
     return res.status(500).json({ error: "Failed to generate prompt" });
+  }
+});
+
+// POST /api/journal/intention
+router.post("/intention", async (req, res) => {
+  try {
+    const context = String(req.body?.context || "").trim();
+
+    if (!context) {
+      return res.status(400).json({ error: "Missing context" });
+    }
+
+    const result = await generateDailyIntention({ context });
+    return res.json(result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to generate daily intention";
+    console.error("Daily intention generation error:", message);
+    return res.status(500).json({ error: message });
   }
 });
 
