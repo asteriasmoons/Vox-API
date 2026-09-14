@@ -1,26 +1,11 @@
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
+import { groqChatJson } from "./groqAIClient";
 
-const RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "journal_analysis",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        themes: {
-          type: "array",
-          items: { type: "string" },
-        },
-        mood: { type: "string" },
-        reflection: { type: "string" },
-      },
-      required: ["themes", "mood", "reflection"],
-      additionalProperties: false,
-    },
-  },
-};
+const MODEL = "openai/gpt-oss-120b";
+const FREE_TIER_TPM_LIMIT = 8_000;
+const FREE_TIER_HEADROOM_TOKENS = 700;
+const MAX_OUTPUT_TOKENS = 1_600;
+const MIN_OUTPUT_TOKENS = 700;
+const MAX_ENTRY_TEXT_CHARS = 18_000;
 
 export interface JournalAnalysisResult {
   themes: string[];
@@ -31,18 +16,6 @@ export interface JournalAnalysisResult {
 interface EntryInput {
   title: string;
   body: string;
-}
-
-interface OpenRouterRequestBody {
-  model: string;
-  temperature: number;
-  max_tokens: number;
-  reasoning?: {
-    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-    exclude?: boolean;
-  };
-  response_format?: unknown;
-  messages: { role: "system" | "user"; content: string }[];
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
@@ -76,42 +49,35 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
-async function postOpenRouter(
-  apiKey: string,
-  body: OpenRouterRequestBody,
-  timeoutMs: number,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+function estimatedTokenCount(value: string): number {
+  return Math.ceil(value.length / 4);
+}
 
-  try {
-    return await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err: any) {
-    if (err?.name === "AbortError") {
-      throw new Error(
-        `OpenRouter request timed out after ${timeoutMs / 1000}s`,
-      );
-    }
+function truncateForFreeTier(value: string): string {
+  if (value.length <= MAX_ENTRY_TEXT_CHARS) return value;
 
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
+  return `${value.slice(0, MAX_ENTRY_TEXT_CHARS).trim()}\n\n[Entry shortened to fit Groq Free Plan token limits.]`;
+}
+
+function freeTierOutputBudget(systemPrompt: string, userPrompt: string): number {
+  const estimatedPromptTokens =
+    estimatedTokenCount(systemPrompt) + estimatedTokenCount(userPrompt) + 250;
+  const available =
+    FREE_TIER_TPM_LIMIT -
+    FREE_TIER_HEADROOM_TOKENS -
+    estimatedPromptTokens;
+
+  return Math.max(
+    MIN_OUTPUT_TOKENS,
+    Math.min(MAX_OUTPUT_TOKENS, available),
+  );
 }
 
 function journalAnalysisFromParsed(
   parsed: Record<string, unknown>,
 ): JournalAnalysisResult {
   const themes = Array.isArray(parsed.themes)
-    ? parsed.themes.map((t: any) => String(t).trim()).filter(Boolean)
+    ? parsed.themes.map((t: unknown) => String(t).trim()).filter(Boolean)
     : [];
 
   const mood = String(parsed.mood || "").trim();
@@ -127,84 +93,63 @@ function journalAnalysisFromParsed(
   );
 
   if (!mood || !reflection || themes.length === 0) {
-    throw new Error("OpenRouter returned incomplete analysis fields");
+    throw new Error("Groq returned incomplete analysis fields");
   }
 
   return {
-    themes,
+    themes: themes.slice(0, 4),
     mood,
     reflection,
   };
 }
 
-export async function generateJournalAnalysis(
-  entries: EntryInput[],
-): Promise<JournalAnalysisResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Missing OPENROUTER_API_KEY");
-  }
-
+function buildEntryText(entries: EntryInput[]): string {
   const entryText = entries
-    .map((e) => `Entry: "${e.title}"\n${e.body.trim()}`)
+    .map((entry) => `Entry: "${entry.title}"\n${entry.body.trim()}`)
     .join("\n\n---\n\n");
 
-  const body: OpenRouterRequestBody = {
-    model: MODEL,
-    temperature: 0.25,
-    max_tokens: 1200,
-    reasoning: {
-      effort: "none",
-      exclude: true,
-    },
-    response_format: RESPONSE_FORMAT,
+  return truncateForFreeTier(entryText);
+}
 
-    messages: [
-      {
-        role: "system",
-        content: `You analyze private journal entries for the wellness app Lunixia.
+function buildSystemPrompt(): string {
+  return `You analyze private journal entries for Lunixia.
 
-Write directly to the user as an intelligent friend who carefully read the entire entry. Use "you," never third person. Be perceptive, conversational, precise, and grounded. Accuracy and relevance matter more than sounding profound.
+Your job is to reflect on the user's thoughts, feelings, reactions, observations, and reasoning as they appear in the entry.
 
-Analyze what is actually written. Do not recap the journal, but acknowledge every major subject, practical event, emotional turn, decision, question, and closing thought so the full entry feels read. Ordinary details may remain ordinary. Go deeper only when the entry clearly supports it.
+Respond like an intelligent, attentive person who has genuinely listened to everything the user said and is now reflecting back what their thoughts seem to express. Write directly to the user using "you."
 
-Notice meaningful patterns, shifts, contradictions, repeated ideas, or connections when they are genuinely present. Never force unrelated subjects together or treat practical events as symbols without clear support.
+Do not search for hidden meanings, lessons, symbolism, personal growth, or profound connections. Do not make the entry deeper than it is. Mundane thoughts deserve analysis just as much as serious or emotional ones.
 
-Do not invent or exaggerate:
-- emotions
-- motivations
-- beliefs
-- personality traits
-- psychological explanations
-- diagnoses
-- trauma
-- symbolism
-- personal growth
-- relationship labels
+Do not summarize the entry or simply restate what happened. Move one step beyond repetition by reflecting what the user's words suggest about their perspective, reactions, priorities, frustrations, enjoyment, uncertainty, reasoning, or experience in that moment.
 
-Never turn an inference into a fact. Match emotional intensity to the user's actual wording.
+If the user writes at length about an ordinary frustration, reflect the actual thought being expressed rather than inventing a deeper theme. If the user discusses several unrelated things, let them remain unrelated and address them naturally.
 
-If a person is named but their relationship to the user is not explicitly stated, use only their name. Never invent labels such as friend, partner, spouse, family member, or coworker. Theme tags follow the same rule.
+When the user is reasoning through something, follow that reasoning and reflect what they appear to be working out. Notice changes of mind, hesitation, certainty, contradictions, or unresolved thoughts when they are actually present.
 
-Do not compliment, praise, reassure, encourage, advise, coach, therapize, or tell the user what they should do.
+Distinguish observation from inference. Never claim to know something the user did not say. Use qualified language when interpreting rather than presenting inference as fact.
 
-Do not sound clinical, academic, literary, motivational, or like a report. Avoid abstract depth-signaling language when a direct observation works better.
+Do not invent emotions, motivations, beliefs, personality traits, relationships, diagnoses, trauma, symbolism, psychological explanations, or personal growth. If a person's relationship to the user is not explicitly stated, use only their name.
 
-Do not repeat an observation in different words.
+Do not praise, reassure, encourage, advise, coach, therapize, correct, or tell the user what they should do.
 
-For a substantive entry, the reflection should usually be 250-450 words and 1-2 natural paragraphs. Use up to 3 paragraphs when several distinct subjects or shifts require it. Short entries may receive shorter reflections.
+Avoid poetic, philosophical, academic, clinical, motivational, report-like, or overly dramatic language. Use plain, specific, conversational language.
 
-Return only the structured JSON requested by the response schema.
+Do not pad the reflection by repeating the same idea in different words, quoting the journal at length, or closely paraphrasing what the user already wrote.
+
+Return only valid JSON with exactly these fields:
+{
+  "themes": ["Theme One", "Theme Two"],
+  "mood": "Mood",
+  "reflection": "One natural conversational reflection."
+}
 
 Field requirements:
 
 themes:
 - 2-4 concise theme tags
 - 1-3 words each
-- grounded in the entry
+- grounded directly in the entry
 - scannable and emotionally neutral
-- never deficit-based
 
 mood:
 - 1-3 words
@@ -212,61 +157,54 @@ mood:
 - never clinical, insulting, or judgmental
 
 reflection:
-- one natural conversational analysis
-- normally 250-450 words for a substantive entry
-- acknowledge the entry from its opening details through its closing thought
+- a natural conversational reflection on what the user's thoughts seem to express
+- respond to the substance of their thinking rather than retelling their journal
+- mundane and serious subjects are equally valid
+- unrelated subjects do not need to be connected
+- include only supported observations or clearly qualified interpretations
 - no headings, labels, bullets, or numbered sections
-- include only supported observations and connections
-- no forced symbolism or hidden meanings
-- no invented relationships or psychological explanations
-- sound like an intelligent friend who genuinely read the whole thing`,
-      },
+- no forced depth, symbolism, lessons, or hidden meanings
+- normally 180-320 words for a substantive entry; short entries may receive shorter reflections`;
+}
 
-      {
-        role: "user",
-        content: `Read this journal entry completely before analyzing it.
+function buildUserPrompt(entryText: string): string {
+  return `Read this journal entry completely before analyzing it.
 
-Give me one grounded conversational analysis that accounts for the whole entry. Include the important practical details and emotional turns, even when they do not require deeper interpretation. Notice meaningful patterns or connections only when they are clearly supported.
+Give me one grounded conversational analysis that accounts for the whole entry. Include important practical details and emotional turns when they matter to the user's thinking.
 
 Do not recap, praise, reassure, advise, therapize, invent relationships, or search for hidden meaning.
 
-${entryText}`,
-      },
-    ],
-  };
+${entryText}`;
+}
 
-  console.log("[analyze] Sending request to OpenRouter...");
+export async function generateJournalAnalysis(
+  entries: EntryInput[],
+): Promise<JournalAnalysisResult> {
+  const entryText = buildEntryText(entries);
+  const systemPrompt = buildSystemPrompt();
+  const userPrompt = buildUserPrompt(entryText);
+  const maxTokens = freeTierOutputBudget(systemPrompt, userPrompt);
 
-  const resp = await postOpenRouter(apiKey, body, 60_000);
+  console.log("[analyze] Sending request to Groq...", {
+    model: MODEL,
+    maxTokens,
+    estimatedPromptTokens:
+      estimatedTokenCount(systemPrompt) + estimatedTokenCount(userPrompt) + 250,
+  });
 
-  console.log("[analyze] OpenRouter status:", resp.status);
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-
-    console.error("[analyze] OpenRouter error body:", text);
-
-    throw new Error(`OpenRouter error ${resp.status}: ${text}`);
-  }
-
-  const json: any = await resp.json();
-
-  const raw = String(
-    json?.choices?.[0]?.message?.content || "",
-  ).trim();
-
-  console.log("[analyze] OpenRouter raw response:", raw);
+  const raw = await groqChatJson(systemPrompt, userPrompt, {
+    stage: "journal-analysis",
+    model: MODEL,
+    temperature: 0.25,
+    maxTokens,
+  });
 
   const parsed = parseJsonObject(raw);
 
   if (!parsed) {
-    console.error(
-      "[analyze] JSON parse error: unable to extract JSON object",
-    );
+    console.error("[analyze] JSON parse error: unable to extract JSON object");
 
-    throw new Error(
-      `Failed to parse OpenRouter JSON response: ${raw}`,
-    );
+    throw new Error(`Failed to parse Groq JSON response: ${raw}`);
   }
 
   console.log("[analyze] Parsed:", JSON.stringify(parsed));
