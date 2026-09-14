@@ -1,34 +1,6 @@
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
+import { groqChatJson } from "./groqAIClient";
 
-const RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "mood_analysis",
-    strict: true,
-    schema: {
-      type: "object",
-      properties: {
-        mindset: { type: "string" },
-        emotionalBalance: { type: "string" },
-        influences: { type: "string" },
-        reflection: { type: "string" },
-        themes: {
-          type: "array",
-          items: { type: "string" },
-        },
-      },
-      required: [
-        "mindset",
-        "emotionalBalance",
-        "influences",
-        "reflection",
-        "themes",
-      ],
-      additionalProperties: false,
-    },
-  },
-};
+const MODEL = "openai/gpt-oss-120b";
 
 export interface MoodAnalysisInput {
   emotions: {
@@ -51,21 +23,6 @@ export interface MoodAnalysisResult {
   influences: string;
   reflection: string;
   themes: string[];
-}
-
-interface OpenRouterRequestBody {
-  model: string;
-  temperature: number;
-  max_tokens: number;
-  reasoning?: {
-    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-    exclude?: boolean;
-  };
-  response_format?: unknown;
-  messages: {
-    role: "system" | "user";
-    content: string;
-  }[];
 }
 
 function parseJsonObject(
@@ -106,40 +63,6 @@ function parseJsonObject(
   }
 }
 
-async function postOpenRouter(
-  apiKey: string,
-  body: OpenRouterRequestBody,
-  timeoutMs: number,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    timeoutMs,
-  );
-
-  try {
-    return await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (err: any) {
-    if (err?.name === "AbortError") {
-      throw new Error(
-        `OpenRouter request timed out after ${timeoutMs / 1000}s`,
-      );
-    }
-
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 function moodAnalysisFromParsed(
   parsed: Record<string, unknown>,
 ): MoodAnalysisResult {
@@ -161,7 +84,7 @@ function moodAnalysisFromParsed(
 
   const themes = Array.isArray(parsed.themes)
     ? parsed.themes
-        .map((t: any) => String(t).trim())
+        .map((t: unknown) => String(t).trim())
         .filter(Boolean)
     : [];
 
@@ -173,7 +96,7 @@ function moodAnalysisFromParsed(
     themes.length === 0
   ) {
     throw new Error(
-      "OpenRouter returned incomplete mood analysis fields",
+      "Groq returned incomplete mood analysis fields",
     );
   }
 
@@ -189,12 +112,6 @@ function moodAnalysisFromParsed(
 export async function analyzeMood(
   input: MoodAnalysisInput,
 ): Promise<MoodAnalysisResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("Missing OPENROUTER_API_KEY");
-  }
-
   const positiveEmotions = input.emotions
     .filter((e) => e.category === "positive")
     .map((e) => e.name);
@@ -280,20 +197,7 @@ ${lifestyleLines.length > 0 ? lifestyleLines.join("\n") : "No lifestyle data rec
 
 ${input.note ? `Note: "${input.note}"` : "No note provided"}`;
 
-  const body: OpenRouterRequestBody = {
-    model: MODEL,
-    temperature: 0.1,
-    max_tokens: 900,
-    reasoning: {
-      effort: "none",
-      exclude: true,
-    },
-    response_format: RESPONSE_FORMAT,
-
-    messages: [
-      {
-        role: "system",
-        content: `You analyze mood logs for the wellness app Lunixia.
+  const systemPrompt = `You analyze mood logs for the wellness app Lunixia.
 
 Write directly to the user using "you." Sound like an intelligent, warm friend who understands the full mood log without exaggerating it.
 
@@ -343,53 +247,25 @@ themes:
 - 2-5 short theme labels
 - Title Case
 - derived from activities and emotional patterns
-- concise and scannable`,
-      },
-      {
-        role: "user",
-        content: `Analyze this mood log as one complete picture. Keep the interpretation grounded in what was actually recorded and return the requested structured JSON.
+- concise and scannable`;
 
-${userContent}`,
-      },
-    ],
-  };
+  const userPrompt = `Analyze this mood log as one complete picture. Keep the interpretation grounded in what was actually recorded and return the requested structured JSON.
+
+${userContent}`;
 
   console.log(
-    "[mood-analysis] Sending request to OpenRouter...",
+    "[mood-analysis] Sending request to Groq...",
   );
 
-  const resp = await postOpenRouter(
-    apiKey,
-    body,
-    30_000,
-  );
+  const raw = await groqChatJson(systemPrompt, userPrompt, {
+    stage: "mood-analysis",
+    model: MODEL,
+    temperature: 0.1,
+    maxTokens: 1_200,
+  });
 
   console.log(
-    "[mood-analysis] OpenRouter status:",
-    resp.status,
-  );
-
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-
-    console.error(
-      "[mood-analysis] OpenRouter error body:",
-      text,
-    );
-
-    throw new Error(
-      `OpenRouter error ${resp.status}: ${text}`,
-    );
-  }
-
-  const json: any = await resp.json();
-
-  const raw = String(
-    json?.choices?.[0]?.message?.content || "",
-  ).trim();
-
-  console.log(
-    "[mood-analysis] OpenRouter raw response:",
+    "[mood-analysis] Groq raw response:",
     raw,
   );
 
@@ -397,7 +273,7 @@ ${userContent}`,
 
   if (!parsed) {
     throw new Error(
-      `Failed to parse OpenRouter JSON response: ${raw}`,
+      `Failed to parse Groq JSON response: ${raw}`,
     );
   }
 
