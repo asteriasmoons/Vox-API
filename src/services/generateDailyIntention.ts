@@ -1,4 +1,4 @@
-import { groqChatText } from "./groqAIClient";
+import { groqChatJson } from "./groqAIClient";
 
 const DAILY_INTENTION_MODEL = "openai/gpt-oss-120b";
 
@@ -10,18 +10,39 @@ export interface DailyIntentionResponse {
   intention: string;
 }
 
+type DailyIntentionParsedResponse = {
+  intention?: unknown;
+};
+
 const SYSTEM_PROMPT = `You write short daily intentions for a wellness app called Lunixia.
 
 Turn the user's context into one grounded first-person daily intention.
 
 Rules:
-- Write exactly one sentence.
+- Write one to two sentences.
 - Use present tense.
 - Start with "I".
-- Do not write "I intend to", "I will", "I'm going to", "I want to", or "I need to".
+- Do not use future-tense or setup phrases such as "I intent to", "I intend to", "I will", "I'm going to", "I want to", or "I need to".
+- Write the intention as if the desired state or action is already happening now.
 - Do not give advice, explanation, title, quotes, bullets, or prefixes.
 - Keep it natural, calm, and specific to the user's context.
-- Keep it under 24 words.`;
+
+Return only valid JSON with exactly this shape:
+{
+  "intention": "I ..."
+}`;
+
+function parseIntention(raw: string): string {
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+
+  if (!match) {
+    throw new Error(`Daily intention response did not contain JSON: ${raw}`);
+  }
+
+  const parsed = JSON.parse(match[0]) as DailyIntentionParsedResponse;
+  return typeof parsed.intention === "string" ? parsed.intention.trim() : "";
+}
 
 function cleanIntention(raw: string): string {
   let value = raw
@@ -30,20 +51,6 @@ function cleanIntention(raw: string): string {
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*\d.)\s]+/, "").trim())
     .find(Boolean) ?? "";
-
-  const replacements: Array<[RegExp, string]> = [
-    [/^i\s+intend\s+to\s+/i, "I "],
-    [/^i\s+will\s+/i, "I "],
-    [/^i(?:'|\u2019)?m\s+going\s+to\s+/i, "I "],
-    [/^i\s+am\s+going\s+to\s+/i, "I "],
-    [/^i\s+want\s+to\s+/i, "I "],
-    [/^i\s+need\s+to\s+/i, "I "],
-    [/^my\s+intention\s+is\s+to\s+/i, "I "],
-  ];
-
-  for (const [pattern, replacement] of replacements) {
-    value = value.replace(pattern, replacement);
-  }
 
   value = value.trim();
   if (!value) return "";
@@ -63,18 +70,18 @@ export async function generateDailyIntention(
     throw new Error("Context is required");
   }
 
-  const raw = await groqChatText(
+  const raw = await groqChatJson(
     SYSTEM_PROMPT,
     `Context:\n${context}`,
     {
       stage: "daily-intention",
-      temperature: 0.45,
-      maxTokens: 80,
+      temperature: 0.25,
+      maxTokens: 1200,
       model: DAILY_INTENTION_MODEL,
     },
   );
 
-  const intention = cleanIntention(raw);
+  const intention = cleanIntention(parseIntention(raw));
 
   if (!intention) {
     throw new Error("Groq returned an empty daily intention");
