@@ -12,13 +12,10 @@ import {
   dedupeStrings,
   pickPartOfSpeech,
 } from "./dictionaryShared";
-import { fetchFreeDictionary } from "./dictionaryFreeDictionaryAdapter";
 import { fetchWiktionary } from "./dictionaryWiktionaryAdapter";
 import { fetchDatamuse } from "./dictionaryDatamuseAdapter";
 import { fetchMerriamWebster } from "./dictionaryMerriamWebsterAdapter";
-import { generateDictionaryUsageNotes } from "./generateDictionaryUsageNotes";
-import { generateDictionaryExampleSentences } from "./generateDictionaryExampleSentences";
-import { generateDictionaryMissingFields } from "./generateDictionaryMissingFields";
+import { groqDictionaryFetch } from "./groqDictionaryFetch";
 
 const MAX_DEFINITIONS = 6;
 const MAX_SYNONYMS = 12;
@@ -57,7 +54,6 @@ export async function aggregateWordDetails(
   // All reference sources are independent. A slow/unavailable provider must not
   // prevent the other sources from contributing to the word record.
   const settled = await Promise.allSettled([
-    fetchFreeDictionary(cleanedWord),
     fetchWiktionary(cleanedWord),
     fetchDatamuse(cleanedWord),
     fetchMerriamWebster(cleanedWord),
@@ -105,72 +101,45 @@ export async function aggregateWordDetails(
   const ipaPronunciation = pickIpa(ipaCandidates);
   const providerWrittenPronunciation = dedupeStrings(writtenCandidates, 1)[0] ?? "";
 
-  // Build the concise context shared with the Groq enrichments.
-  const aiContext = {
+  // One Groq round trip enriches every AI-backed field.
+  const enrichment = await groqDictionaryFetch({
     word: cleanedWord,
     partOfSpeech,
-    definitions,
-  };
-
-  // Space the Groq requests out so they do not all hit the provider at once.
-  // Each enrichment remains best-effort and cannot fail the overall lookup.
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  const usageNotes =
-    definitions.length > 0 || partOfSpeech
-      ? await generateDictionaryUsageNotes(aiContext)
-      : [];
-
-  await sleep(1500);
-
-  const aiExampleSentences =
-    definitions.length > 0 || partOfSpeech
-      ? await generateDictionaryExampleSentences({
-          ...aiContext,
-          existingExamples: dictionaryExamples,
-        })
-      : [];
-
-  await sleep(1500);
-
-  const missingFields = await generateDictionaryMissingFields({
-    word: cleanedWord,
-    partOfSpeech,
-    writtenPronunciation: providerWrittenPronunciation,
+    providerWrittenPronunciation,
     ipaPronunciation,
     definitions,
-    examples: dictionaryExamples,
+    existingExamples: dictionaryExamples,
     synonyms,
     antonyms,
     originEtymology: origin,
     relatedWords,
   });
 
-  if (!synonyms.length) synonyms = missingFields.synonyms;
-  if (!antonyms.length) antonyms = missingFields.antonyms;
-  if (!origin) origin = missingFields.originEtymology;
-  if (!relatedWords.length) relatedWords = missingFields.relatedWords;
+  if (!synonyms.length) synonyms = enrichment.synonyms;
+  if (!antonyms.length) antonyms = enrichment.antonyms;
+  if (!origin) origin = enrichment.originEtymology;
+  if (!relatedWords.length) relatedWords = enrichment.relatedWords;
 
   // Prefer AI-generated example sentences; fall back to genuine dictionary
   // examples if the AI produced none.
   const exampleSentences =
-    aiExampleSentences.length > 0
-      ? aiExampleSentences
+    enrichment.exampleSentences.length > 0
+      ? enrichment.exampleSentences
       : dedupeStrings(dictionaryExamples, 3);
 
   return {
     word: cleanedWord,
     partOfSpeech,
     sources: dedupeSources(sources),
-    writtenPronunciation: missingFields.writtenPronunciation,
-    ipaPronunciation,
+    writtenPronunciation: enrichment.writtenPronunciation,
+    ipaPronunciation: enrichment.ipaPronunciation || ipaPronunciation,
     synonyms,
     antonyms,
     definitions,
     exampleSentences,
     originEtymology: origin,
     relatedWords,
-    usageNotes,
-    tags: missingFields.tags,
+    usageNotes: enrichment.usageNotes,
+    tags: enrichment.tags,
   };
 }
