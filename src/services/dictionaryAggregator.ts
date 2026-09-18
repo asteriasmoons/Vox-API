@@ -101,7 +101,7 @@ export async function aggregateWordDetails(
 
   const partOfSpeech = pickPartOfSpeech(partsOfSpeech);
   const ipaPronunciation = pickIpa(ipaCandidates);
-  const writtenPronunciation = dedupeStrings(writtenCandidates, 1)[0] ?? "";
+  const providerWrittenPronunciation = dedupeStrings(writtenCandidates, 1)[0] ?? "";
 
   // Build the concise context shared with the Groq enrichments.
   const aiContext = {
@@ -134,7 +134,7 @@ export async function aggregateWordDetails(
   const missingFields = await generateDictionaryMissingFields({
     word: cleanedWord,
     partOfSpeech,
-    writtenPronunciation,
+    writtenPronunciation: providerWrittenPronunciation,
     ipaPronunciation,
     definitions,
     examples: dictionaryExamples,
@@ -160,7 +160,7 @@ export async function aggregateWordDetails(
     word: cleanedWord,
     partOfSpeech,
     sources: dedupeSources(sources),
-    writtenPronunciation,
+    writtenPronunciation: missingFields.writtenPronunciation,
     ipaPronunciation,
     synonyms,
     antonyms,
