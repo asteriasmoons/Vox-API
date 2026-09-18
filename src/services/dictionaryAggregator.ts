@@ -18,6 +18,7 @@ import { fetchDatamuse } from "./dictionaryDatamuseAdapter";
 import { fetchMerriamWebster } from "./dictionaryMerriamWebsterAdapter";
 import { generateDictionaryUsageNotes } from "./generateDictionaryUsageNotes";
 import { generateDictionaryExampleSentences } from "./generateDictionaryExampleSentences";
+import { generateDictionaryMissingFields } from "./generateDictionaryMissingFields";
 
 const MAX_DEFINITIONS = 6;
 const MAX_SYNONYMS = 12;
@@ -102,27 +103,51 @@ export async function aggregateWordDetails(
   const ipaPronunciation = pickIpa(ipaCandidates);
   const writtenPronunciation = dedupeStrings(writtenCandidates, 1)[0] ?? "";
 
-  // Build the concise context shared with both AI features. Only what the model
-  // needs to be accurate — no unnecessary payload for the Groq free plan.
+  // Build the concise context shared with the Groq enrichments.
   const aiContext = {
     word: cleanedWord,
     partOfSpeech,
     definitions,
   };
 
-  // Run both AI features in parallel. Each is best-effort and returns [] on
-  // failure so the overall lookup still succeeds.
-  const [usageNotes, aiExampleSentences] = await Promise.all([
+  // Space the Groq requests out so they do not all hit the provider at once.
+  // Each enrichment remains best-effort and cannot fail the overall lookup.
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const usageNotes =
     definitions.length > 0 || partOfSpeech
-      ? generateDictionaryUsageNotes(aiContext)
-      : Promise.resolve([]),
+      ? await generateDictionaryUsageNotes(aiContext)
+      : [];
+
+  await sleep(1500);
+
+  const aiExampleSentences =
     definitions.length > 0 || partOfSpeech
-      ? generateDictionaryExampleSentences({
+      ? await generateDictionaryExampleSentences({
           ...aiContext,
           existingExamples: dictionaryExamples,
         })
-      : Promise.resolve([]),
-  ]);
+      : [];
+
+  await sleep(1500);
+
+  const missingFields = await generateDictionaryMissingFields({
+    word: cleanedWord,
+    partOfSpeech,
+    writtenPronunciation,
+    ipaPronunciation,
+    definitions,
+    examples: dictionaryExamples,
+    synonyms,
+    antonyms,
+    originEtymology: origin,
+    relatedWords,
+  });
+
+  if (!synonyms.length) synonyms = missingFields.synonyms;
+  if (!antonyms.length) antonyms = missingFields.antonyms;
+  if (!origin) origin = missingFields.originEtymology;
+  if (!relatedWords.length) relatedWords = missingFields.relatedWords;
 
   // Prefer AI-generated example sentences; fall back to genuine dictionary
   // examples if the AI produced none.
@@ -144,6 +169,6 @@ export async function aggregateWordDetails(
     originEtymology: origin,
     relatedWords,
     usageNotes,
-    tags: [],
+    tags: missingFields.tags,
   };
 }
