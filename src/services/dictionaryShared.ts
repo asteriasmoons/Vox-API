@@ -143,7 +143,7 @@ export async function fetchWithTimeout(
   options: { timeoutMs?: number; headers?: Record<string, string> } = {},
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 7_000);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000);
   try {
     const init: RequestInit = {
       method: "GET",

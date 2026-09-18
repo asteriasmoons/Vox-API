@@ -55,9 +55,14 @@ export async function fetchFreeDictionary(
   let entries: FreeDictionaryEntry[] = [];
   try {
     const response = await fetchWithTimeout(`${BASE_URL}${encoded}`, {
-      timeoutMs: 7_000,
+      timeoutMs: 20_000,
     });
     if (!response.ok) {
+      console.error("[vox:dictionary] Free Dictionary HTTP failure", {
+        word,
+        status: response.status,
+        statusText: response.statusText,
+      });
       // 404 => word not found at this source; treated as "no contribution".
       return null;
     }

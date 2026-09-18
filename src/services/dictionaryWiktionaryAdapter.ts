@@ -37,13 +37,20 @@ export async function fetchWiktionary(
   let english: WiktionaryUsage[] = [];
   try {
     const response = await fetchWithTimeout(`${BASE_URL}${encoded}`, {
-      timeoutMs: 7_000,
+      timeoutMs: 20_000,
       headers: {
         "User-Agent": USER_AGENT,
         Accept: "application/json",
       },
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error("[vox:dictionary] Wiktionary HTTP failure", {
+        word,
+        status: response.status,
+        statusText: response.statusText,
+      });
+      return null;
+    }
     const json = (await response.json().catch(() => null)) as Record<
       string,
       unknown
