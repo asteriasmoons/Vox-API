@@ -35,9 +35,16 @@ const emptyResult = (): GroqDictionaryResult => ({
   ipaPronunciation: "", tags: [],
 });
 
+function capitalizeWords(value: string): string {
+  return value.replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
+}
+
 function list(value: unknown, limit: number): string[] {
   if (!Array.isArray(value)) return [];
-  return dedupeStrings(value.map(cleanWhitespace).filter(looksLikeTerm), limit);
+  return dedupeStrings(
+    value.map(cleanWhitespace).filter(looksLikeTerm).map(capitalizeWords),
+    limit,
+  );
 }
 
 function parse(raw: string): Record<string, unknown> | null {
