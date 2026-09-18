@@ -40,11 +40,13 @@ function dedupeSources(sources: NormalizedSource[]): NormalizedSource[] {
   return out;
 }
 
-// Prefer an IPA-looking pronunciation (contains slashes/brackets or IPA glyphs).
+// Accept only actual IPA-looking pronunciation candidates. Plain English
+// respellings and provider-specific alphabetic pronunciation codes must never
+// be returned in Markly's IPA field.
 function pickIpa(candidates: string[]): string {
   const cleaned = dedupeStrings(candidates, MAX_IPA_CANDIDATES);
-  const ipaLike = cleaned.find((c) => /[\/\[].*[\/\]]/.test(c) || /[ˈˌːɪəæʃʒθðŋ]/.test(c));
-  return ipaLike ?? cleaned[0] ?? "";
+  const ipaLike = cleaned.find((c) => /[ˈˌːɪʊəɚɝæɑɒɔɛɜʌʃʒθðŋɡɹɾʔ]/.test(c));
+  return ipaLike ?? "";
 }
 
 export async function aggregateWordDetails(
