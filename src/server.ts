@@ -39,6 +39,7 @@ import seeryRoutes from "./routes/seery.routes";
 import journalInsightsRoutes from "./routes/journalInsights";
 import musicLookupRoutes from "./routes/musicLookup";
 import dottiRoutes from "./routes/dotti";
+import dictionaryRoutes from "./routes/dictionary";
 import { createLureliaRouter } from "./routes/lurelia";
 
 import path from "path";
@@ -112,6 +113,7 @@ app.use("/api/seery", seeryRoutes);
 app.use("/api/journal/insights", journalInsightsRoutes);
 app.use("/api/music", musicLookupRoutes);
 app.use("/api/dotti", dottiRoutes);
+app.use("/api/dictionary", dictionaryRoutes);
 app.use("/api/lurelia", createLureliaRouter(io));
 
 io.on("connection", (socket) => {
