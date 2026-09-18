@@ -31,7 +31,10 @@ interface WiktionaryUsage {
 export async function fetchWiktionary(
   word: string,
 ): Promise<AdapterResult | null> {
-  const encoded = encodeURIComponent(word.trim());
+  // The structured definition endpoint is case-sensitive: `literary` returns
+  // data while `Literary` returns 404. Dictionary lookups should therefore
+  // normalize user-entered English words before building the request URL.
+  const encoded = encodeURIComponent(word.trim().toLowerCase());
   if (!encoded) return null;
 
   let english: WiktionaryUsage[] = [];

@@ -14,6 +14,8 @@ import {
 } from "./dictionaryShared";
 import { fetchFreeDictionary } from "./dictionaryFreeDictionaryAdapter";
 import { fetchWiktionary } from "./dictionaryWiktionaryAdapter";
+import { fetchDatamuse } from "./dictionaryDatamuseAdapter";
+import { fetchMerriamWebster } from "./dictionaryMerriamWebsterAdapter";
 import { generateDictionaryUsageNotes } from "./generateDictionaryUsageNotes";
 import { generateDictionaryExampleSentences } from "./generateDictionaryExampleSentences";
 
@@ -49,9 +51,13 @@ export async function aggregateWordDetails(
 ): Promise<NormalizedWordDetails> {
   const cleanedWord = cleanWhitespace(word);
 
+  // All reference sources are independent. A slow/unavailable provider must not
+  // prevent the other sources from contributing to the word record.
   const settled = await Promise.allSettled([
     fetchFreeDictionary(cleanedWord),
     fetchWiktionary(cleanedWord),
+    fetchDatamuse(cleanedWord),
+    fetchMerriamWebster(cleanedWord),
   ]);
 
   const results: AdapterResult[] = [];

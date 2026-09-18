@@ -111,6 +111,20 @@ export function stripHtml(value: unknown): string {
   return cleanWhitespace(decoded);
 }
 
+// Merriam-Webster embeds lightweight formatting/cross-reference tokens such as
+// {bc}, {it}...{/it}, and {sx|word||}. Preserve their readable text while
+// removing the display markup before merging the value into Markly.
+export function stripDictionaryMarkup(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return cleanWhitespace(
+    value
+      .replace(/\{bc\}/g, ": ")
+      .replace(/\{sx\|([^|}]+)(?:\|[^}]*)?\}/g, "$1")
+      .replace(/\{(?:it|b|sc|inf|sup)\}([^{}]*)\{\/(?:it|b|sc|inf|sup)\}/g, "$1")
+      .replace(/\{[^{}]*\}/g, " "),
+  ).replace(/^:\s*/, "");
+}
+
 // Deduplicate a list of strings case-insensitively while preserving the first
 // occurrence's original casing/spelling. Optionally cap the result length.
 export function dedupeStrings(values: string[], limit?: number): string[] {
