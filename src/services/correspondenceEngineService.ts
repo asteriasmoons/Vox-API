@@ -19,7 +19,7 @@ import { toolRules, toolSchema } from "./correspondences/types/tools";
 import { numberRules, numberSchema } from "./correspondences/types/numbers";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const DEFAULT_GROQ_MODEL = "moonshotai/kimi-k2-instruct-0905";
+const CORRESPONDENCE_GROQ_MODEL = "openai/gpt-oss-120b";
 
 export const CORRESPONDENCE_TYPES = [
   "herb",
@@ -249,10 +249,15 @@ export type CorrespondenceEntryResponse = {
 
 type GroqChatCompletionResponse = {
   choices?: Array<{
+    finish_reason?: string;
     message?: {
       content?: string;
     };
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
 };
 
 type GenerateCorrespondenceOptions = {
@@ -440,22 +445,25 @@ function colorArray(value: unknown): ColorCorrespondence[] {
     .filter((item) => item.color.length > 0 && item.meaning.length > 0);
 }
 
-function parseAIResponse(
-  raw: string,
-  type: CorrespondenceType,
-  fallbackName: string,
-): Omit<CorrespondenceEntryResponse, "cached" | "source" | "createdAt" | "updatedAt"> {
+function parseAIObject(raw: string): Record<string, unknown> {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) {
     throw new Error(`AI returned no JSON object: ${raw}`);
   }
 
-  const parsed = JSON.parse(match[0]) as Record<string, unknown>;
+  return JSON.parse(match[0]) as Record<string, unknown>;
+}
+
+function parseAIResponse(
+  parsed: Record<string, unknown>,
+  type: CorrespondenceType,
+  fallbackName: string,
+): Omit<CorrespondenceEntryResponse, "cached" | "source" | "createdAt" | "updatedAt"> {
   const name = String(parsed.name ?? fallbackName).trim() || fallbackName;
   const shortDescription = String(parsed.shortDescription ?? "").trim();
 
   if (!shortDescription) {
-    throw new Error(`AI returned no shortDescription: ${raw}`);
+    throw new Error(`AI returned no shortDescription for ${name}`);
   }
 
   return {
@@ -682,6 +690,80 @@ function parseAIResponse(
   };
 }
 
+type ParsedCorrespondence = ReturnType<typeof parseAIResponse>;
+const ESSENTIAL_OIL_FIELDS = [
+  "sourcePlant",
+  "plantPartUsed",
+  "aromaProfile",
+  "blendingNotes",
+  "complementaryOils",
+  "commonSubstitutions",
+] as const;
+
+function absentEssentialOilFields(raw: Record<string, unknown>): string[] {
+  return ESSENTIAL_OIL_FIELDS.filter(
+    (field) => !Object.prototype.hasOwnProperty.call(raw, field),
+  );
+}
+
+function missingEssentialOilDetails(entry: ParsedCorrespondence): string[] {
+  return (["sourcePlant", "plantPartUsed", "aromaProfile", "blendingNotes"] as const)
+    .filter((field) => !entry[field]?.trim());
+}
+
+async function completeEssentialOilDetails(
+  entry: ParsedCorrespondence,
+  name: string,
+  initialRaw: Record<string, unknown>,
+): Promise<ParsedCorrespondence> {
+  const missingFields = missingEssentialOilDetails(entry);
+  const absentFields = absentEssentialOilFields(initialRaw);
+  if (missingFields.length === 0 && absentFields.length === 0) return entry;
+
+  console.warn("[correspondences] essential oil details missing from initial AI response", {
+    name,
+    missingFields,
+    absentFields,
+  });
+
+  const raw = await callGroq(`
+Complete the essential oil details for ${name}. Return valid JSON only with exactly these fields:
+{${essentialOilSchema.replace(/^,/, "")}
+}
+
+Use concise, factual information. Do not invent associations. Use an empty string or array only when a field truly does not apply. No markdown or preamble.
+`, "essential_oil_details");
+  const supplement = parseAIObject(raw);
+  const stillAbsent = absentFields.filter(
+    (field) => !Object.prototype.hasOwnProperty.call(supplement, field),
+  );
+  if (stillAbsent.length > 0) {
+    throw new Error(`AI omitted essential oil fields: ${stillAbsent.join(", ")}`);
+  }
+
+  const completed: ParsedCorrespondence = {
+    ...entry,
+    sourcePlant: entry.sourcePlant || String(supplement.sourcePlant ?? "").trim(),
+    plantPartUsed: entry.plantPartUsed || String(supplement.plantPartUsed ?? "").trim(),
+    aromaProfile: entry.aromaProfile || String(supplement.aromaProfile ?? "").trim(),
+    blendingNotes: entry.blendingNotes || String(supplement.blendingNotes ?? "").trim(),
+    complementaryOils: entry.complementaryOils?.length
+      ? entry.complementaryOils
+      : stringArray(supplement.complementaryOils),
+    commonSubstitutions: entry.commonSubstitutions?.length
+      ? entry.commonSubstitutions
+      : stringArray(supplement.commonSubstitutions),
+  };
+
+  const stillMissing = missingEssentialOilDetails(completed);
+  if (stillMissing.length > 0) {
+    throw new Error(`AI omitted essential oil details: ${stillMissing.join(", ")}`);
+  }
+
+  console.info("[correspondences] essential oil details completed", { name });
+  return completed;
+}
+
 function buildPrompt(type: CorrespondenceType, name: string): string {
   const typeSpecificSchema =
     type === "sabbat" ? sabbatSchema :
@@ -773,7 +855,7 @@ Rules:
 `;
 }
 
-async function callGroq(prompt: string): Promise<string> {
+async function callGroq(prompt: string, stage: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     throw new Error("Missing GROQ_API_KEY");
@@ -786,10 +868,10 @@ async function callGroq(prompt: string): Promise<string> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL,
+      model: CORRESPONDENCE_GROQ_MODEL,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
-      max_tokens: 2400,
+      max_completion_tokens: 3400,
       response_format: { type: "json_object" },
     }),
   });
@@ -800,6 +882,12 @@ async function callGroq(prompt: string): Promise<string> {
   }
 
   const data = (await response.json()) as GroqChatCompletionResponse;
+  console.info("[correspondences] AI completion", {
+    stage,
+    finishReason: data.choices?.[0]?.finish_reason ?? "unknown",
+    promptTokens: data.usage?.prompt_tokens ?? null,
+    completionTokens: data.usage?.completion_tokens ?? null,
+  });
   return String(data?.choices?.[0]?.message?.content ?? "").trim();
 }
 
@@ -1214,12 +1302,23 @@ export async function getOrGenerateCorrespondence(
     }).lean();
 
     if (existing) {
-      return toResponse(existing, true);
+      const cachedResponse = toResponse(existing, true);
+      if (type !== "essential_oil" || missingEssentialOilDetails(cachedResponse).length === 0) {
+        return cachedResponse;
+      }
+      console.warn("[correspondences] regenerating incomplete cached essential oil", {
+        name,
+        missingFields: missingEssentialOilDetails(cachedResponse),
+      });
     }
   }
 
-  const raw = await callGroq(buildPrompt(type, name));
-  const parsed = parseAIResponse(raw, type, name);
+  const raw = await callGroq(buildPrompt(type, name), type);
+  const rawEntry = parseAIObject(raw);
+  let parsed = parseAIResponse(rawEntry, type, name);
+  if (type === "essential_oil") {
+    parsed = await completeEssentialOilDetails(parsed, name, rawEntry);
+  }
 
   const saved = await CorrespondenceEntry.findOneAndUpdate(
     { type, normalizedName },

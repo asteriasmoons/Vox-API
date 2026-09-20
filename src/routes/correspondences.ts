@@ -52,6 +52,16 @@ router.post("/", async (req, res) => {
       type: correspondence.type,
       name: correspondence.name,
       cached: correspondence.cached,
+      ...(type === "essential_oil" && {
+        essentialOilFields: {
+          sourcePlant: Boolean(correspondence.sourcePlant),
+          plantPartUsed: Boolean(correspondence.plantPartUsed),
+          aromaProfile: Boolean(correspondence.aromaProfile),
+          blendingNotes: Boolean(correspondence.blendingNotes),
+          complementaryOils: correspondence.complementaryOils?.length ?? 0,
+          commonSubstitutions: correspondence.commonSubstitutions?.length ?? 0,
+        },
+      }),
     });
 
     return res.json(correspondence);
@@ -62,6 +72,12 @@ router.post("/", async (req, res) => {
 
     if (message === "Missing GROQ_API_KEY") {
       return res.status(500).json({ error: message });
+    }
+
+    if (message.startsWith("AI omitted essential oil")) {
+      return res.status(502).json({
+        error: "Essential oil details were incomplete. Please try again.",
+      });
     }
 
     return res.status(500).json({
