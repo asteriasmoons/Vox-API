@@ -1288,6 +1288,17 @@ function toResponse(
   };
 }
 
+export async function getCachedCorrespondence(
+  type: CorrespondenceType,
+  name: string,
+): Promise<CorrespondenceEntryResponse | null> {
+  const existing = await CorrespondenceEntry.findOne({
+    type,
+    normalizedName: normalizeName(name),
+  }).lean();
+  return existing ? toResponse(existing, true) : null;
+}
+
 export async function getOrGenerateCorrespondence(
   type: CorrespondenceType,
   name: string,

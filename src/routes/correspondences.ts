@@ -1,11 +1,31 @@
 import { Router } from "express";
 import {
   CORRESPONDENCE_TYPES,
+  getCachedCorrespondence,
   getOrGenerateCorrespondence,
   normalizeCorrespondenceType,
 } from "../services/correspondenceEngineService";
 
 const router = Router();
+
+// Read a saved correspondence without falling through to AI generation.
+router.get("/cached", async (req, res) => {
+  const type = normalizeCorrespondenceType(requiredString(req.query.type));
+  const name = requiredString(req.query.name);
+  if (!type || !name) {
+    return res.status(400).json({ error: "Valid type and name are required" });
+  }
+
+  try {
+    const correspondence = await getCachedCorrespondence(type, name);
+    return correspondence
+      ? res.json(correspondence)
+      : res.status(404).json({ error: "Correspondence not found" });
+  } catch (error) {
+    console.error("[correspondences] cached lookup error:", error);
+    return res.status(500).json({ error: "Failed to load correspondence" });
+  }
+});
 
 function requiredString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
