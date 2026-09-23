@@ -2,21 +2,18 @@
 //  regularRecsCandidates.ts
 //  Multi-provider AI candidate generation + early deduplication.
 //
-//  The six candidate groups are spread across independent provider calls in
-//  parallel so we still get the full multi-pass pool.
+//  The six candidate groups are spread across three independent Groq calls so
+//  we still get the full multi-pass pool without one oversized request.
 //
 
 import { regularGroqChatJson } from "./regularRecsGroq";
-import {
-  regularMistralChatJson,
-  regularSecondaryGroqChatJson,
-} from "./regularRecsProviders";
 import { regularSeedContextBlock } from "./regularRecsRequestProfile";
 import {
   cleanText,
   normalizeKey,
   normalizeTitle,
   parseJsonLoose,
+  sleep,
   toStringArray,
 } from "./regularRecsUtils";
 import {
@@ -35,15 +32,17 @@ type ProviderFn = (
   options: { temperature: number; maxTokens: number },
 ) => Promise<string>;
 
-// Which provider generates which candidate groups (parallel, independent budgets).
+const GROQ_CANDIDATE_CALL_STAGGER_MS = 3_000;
+
+// Which Groq call generates which candidate groups.
 const PROVIDER_JOBS: Array<{
   label: string;
   run: ProviderFn;
   groups: RegularCandidateGroup[];
 }> = [
   { label: "Groq", run: regularGroqChatJson, groups: ["closest", "reader_safe"] },
-  { label: "Mistral", run: regularMistralChatJson, groups: ["hidden_gem", "backlist"] },
-  { label: "Groq", run: regularSecondaryGroqChatJson, groups: ["recent_release", "adjacent"] },
+  { label: "Groq", run: regularGroqChatJson, groups: ["hidden_gem", "backlist"] },
+  { label: "Groq", run: regularGroqChatJson, groups: ["recent_release", "adjacent"] },
 ];
 
 const REGULAR_CANDIDATE_GROUP_SET = new Set<string>(REGULAR_CANDIDATE_GROUPS);
@@ -158,23 +157,25 @@ Return STRICT JSON only:
   }
 }
 
-// Fan out across all three providers in parallel, then merge.
+// Fan out across all three Groq calls, with a small stagger to avoid starting
+// all requests in the same rate-limit window, then merge.
 export async function generateAllRegularCandidates(
   requestText: string,
   seed: RegularSeedBook | null,
   profile: RegularRequestProfile,
 ): Promise<RegularAiCandidate[]> {
   const results = await Promise.all(
-    PROVIDER_JOBS.map((job) =>
-      generateGroupsWithProvider(
+    PROVIDER_JOBS.map(async (job, index) => {
+      if (index > 0) await sleep(index * GROQ_CANDIDATE_CALL_STAGGER_MS);
+      return generateGroupsWithProvider(
         job.run,
         job.label,
         job.groups,
         requestText,
         seed,
         profile,
-      ),
-    ),
+      );
+    }),
   );
   return results.flat();
 }

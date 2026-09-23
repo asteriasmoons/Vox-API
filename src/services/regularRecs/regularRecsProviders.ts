@@ -1,6 +1,6 @@
 //
 //  regularRecsProviders.ts
-//  Mistral + OpenRouter + secondary Groq chat clients for the REGULAR engine.
+//  OpenRouter + secondary Groq chat clients for the REGULAR engine.
 //  (Primary Groq lives in regularRecsGroq.ts.) Self-contained; no collection code.
 //
 //  These let the engine spread candidate generation across independent calls in
@@ -10,12 +10,9 @@
 import { REGULAR_GROQ_TIMEOUT_MS } from "./regularRecsConfig";
 import { cleanText, fetchWithRetry } from "./regularRecsUtils";
 
-const MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions";
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const SECONDARY_GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
 
-export const REGULAR_MISTRAL_MODEL =
-  process.env.MISTRAL_MODEL || "mistral-small-latest";
 export const REGULAR_OPENROUTER_MODEL =
   process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
 export const REGULAR_SECONDARY_GROQ_MODEL =
@@ -50,6 +47,8 @@ async function providerChatJson(
   extraBody: Record<string, unknown> = {},
 ): Promise<string> {
   if (!apiKey) throw new Error(`Missing API key for ${label}`);
+  const isGroq = label === "Groq";
+  const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
   const response = await fetchWithRetry(
     url,
@@ -62,13 +61,17 @@ async function providerChatJson(
       body: JSON.stringify({
         model,
         temperature: options.temperature,
-        max_tokens: options.maxTokens,
+        ...(isGroq
+          ? { max_completion_tokens: options.maxTokens }
+          : { max_tokens: options.maxTokens }),
         response_format: { type: "json_object" },
         ...extraBody,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
+        messages: isGroq
+          ? [{ role: "user", content: prompt }]
+          : [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
       }),
     },
     REGULAR_GROQ_TIMEOUT_MS,
@@ -80,22 +83,6 @@ async function providerChatJson(
   }
   const json = (await response.json().catch(() => null)) as ProviderChatResponse | null;
   return cleanText(contentToText(json?.choices?.[0]?.message?.content));
-}
-
-export async function regularMistralChatJson(
-  systemPrompt: string,
-  userPrompt: string,
-  options: { temperature: number; maxTokens: number },
-): Promise<string> {
-  return providerChatJson(
-    MISTRAL_CHAT_URL,
-    cleanText(process.env.MISTRAL_API_KEY),
-    REGULAR_MISTRAL_MODEL,
-    "Mistral",
-    systemPrompt,
-    userPrompt,
-    options,
-  );
 }
 
 export async function regularOpenRouterChatJson(

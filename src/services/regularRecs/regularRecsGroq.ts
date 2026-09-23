@@ -28,6 +28,7 @@ export async function regularGroqChatJson(
   }
 
   let lastDetail = "";
+  const prompt = `${systemPrompt}\n\n${userPrompt}`;
 
   for (const apiKey of keys) {
     const response = await fetchWithRetry(
@@ -40,13 +41,10 @@ export async function regularGroqChatJson(
         },
         body: JSON.stringify({
           model: REGULAR_GROQ_MODEL,
+          messages: [{ role: "user", content: prompt }],
           temperature: options.temperature,
-          max_tokens: options.maxTokens,
+          max_completion_tokens: options.maxTokens,
           response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
         }),
       },
       REGULAR_GROQ_TIMEOUT_MS,

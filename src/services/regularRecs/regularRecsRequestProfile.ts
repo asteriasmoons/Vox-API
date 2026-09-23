@@ -2,11 +2,10 @@
 //  regularRecsRequestProfile.ts
 //  Request classification + profile for the REGULAR engine.
 //
-//  The AI profile runs on MISTRAL (not Groq) so it never competes with Groq's
-//  per-minute token budget. Falls back to a heuristic profile if Mistral fails.
+//  The AI profile runs on Groq and falls back to a heuristic profile if it fails.
 //
 
-import { regularMistralChatJson } from "./regularRecsProviders";
+import { regularGroqChatJson } from "./regularRecsGroq";
 import {
   cleanText,
   parseJsonLoose,
@@ -147,7 +146,7 @@ function coerceProfile(
   };
 }
 
-// AI profile via Mistral, with a heuristic fallback. Never throws.
+// AI profile via Groq, with a heuristic fallback. Never throws.
 export async function buildRegularRequestProfile(
   requestText: string,
   seed: RegularSeedBook | null,
@@ -173,14 +172,14 @@ Return STRICT JSON only, this exact shape:
 If a verified seed book is provided, base the profile on that actual book. Do NOT recommend books.`;
 
   try {
-    const content = await regularMistralChatJson(
+    const content = await regularGroqChatJson(
       "You analyze books and reading requests for similarity matching and return strict JSON only.",
       prompt,
       { temperature: 0.2, maxTokens: 900 },
     );
     return coerceProfile(parseJsonLoose(content), base);
   } catch (error) {
-    console.error("Request profile analysis failed (using heuristic):", error);
+    console.error("Request profile analysis failed via Groq (using heuristic):", error);
     return base;
   }
 }
