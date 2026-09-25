@@ -2,3 +2,15 @@ node_modules
 .env
 .codex
 dist
+# macOS junk
+.DS_Store
+**/.DS_Store
+Icon
+
+Icon
+**/Icon
+Icon?
+
+# macOS metadata
+.DS_Store
+Icon?
