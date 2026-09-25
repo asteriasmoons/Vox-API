@@ -5,8 +5,8 @@ import { BuddyGroup, IBuddyGroup } from "../models/BuddyGroup";
 import { BuddyMessage, IBuddyMessage } from "../models/BuddyMessage";
 import { Server as SocketIOServer } from "socket.io";
 
-// 30 days TTL for announcements
-const ANNOUNCEMENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// Retain the legacy response field for older app builds without expiring posts.
+const NON_EXPIRING_ANNOUNCEMENT_DATE = new Date("9999-12-31T23:59:59.999Z");
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -94,13 +94,12 @@ function activePendingCount(group: IBuddyGroup): number {
   return group.members.filter((m) => m.status === "pending").length;
 }
 
-function isAnnouncementOpen(announcement: IBuddyAnnouncement, now = new Date()): boolean {
+function isAnnouncementOpen(announcement: IBuddyAnnouncement): boolean {
   return (
     (announcement.status ?? "open") === "open" &&
     !announcement.deletedAt &&
     !announcement.archivedAt &&
-    !announcement.closedAt &&
-    announcement.expiresAt >= now
+    !announcement.closedAt
   );
 }
 
@@ -164,10 +163,8 @@ async function assertOwnedAnnouncement(
 export async function postAnnouncement(
   input: PostAnnouncementInput,
 ): Promise<IBuddyAnnouncement> {
-  const now = new Date();
   const activeCount = await BuddyAnnouncement.countDocuments({
     ownerUserId: input.ownerUserId,
-    expiresAt: { $gte: now },
     status: { $nin: ["closed", "archived", "deleted"] },
     closedAt: null,
     archivedAt: null,
@@ -177,8 +174,6 @@ export async function postAnnouncement(
   if (activeCount >= 3) {
     throw new Error("ANNOUNCEMENT_LIMIT_REACHED");
   }
-
-  const expiresAt = new Date(Date.now() + ANNOUNCEMENT_TTL_MS);
 
   const announcement = await BuddyAnnouncement.create({
     ownerUserId: input.ownerUserId,
@@ -193,7 +188,7 @@ export async function postAnnouncement(
     maxMembers: input.maxMembers ?? 2,
     isActive: true,
     status: "open",
-    expiresAt,
+    expiresAt: NON_EXPIRING_ANNOUNCEMENT_DATE,
   });
 
   return announcement;
@@ -202,15 +197,7 @@ export async function postAnnouncement(
 export async function getBoard(
   currentUserId?: string,
 ): Promise<BuddyAnnouncementDTO[]> {
-  const now = new Date();
-
-  BuddyAnnouncement.updateMany(
-    { isActive: true, expiresAt: { $lt: now } },
-    { isActive: false },
-  ).catch(() => {});
-
   const announcements = await BuddyAnnouncement.find({
-    expiresAt: { $gte: now },
     status: { $nin: ["closed", "archived", "deleted"] },
     closedAt: null,
     archivedAt: null,
@@ -246,10 +233,8 @@ export async function getBoard(
 export async function getMyAnnouncements(
   ownerUserId: string,
 ): Promise<BuddyAnnouncementDTO[]> {
-  const now = new Date();
   const announcements = await BuddyAnnouncement.find({
     ownerUserId,
-    expiresAt: { $gte: now },
     status: { $ne: "deleted" },
     deletedAt: null,
   }).sort({ createdAt: -1 });
@@ -314,7 +299,7 @@ export async function reopenAnnouncement(
   announcement.closedAt = null;
   announcement.archivedAt = null;
   announcement.isActive = true;
-  announcement.expiresAt = new Date(Date.now() + ANNOUNCEMENT_TTL_MS);
+  announcement.expiresAt = NON_EXPIRING_ANNOUNCEMENT_DATE;
   await announcement.save();
   return announcement;
 }
@@ -553,7 +538,6 @@ export async function leaveGroup(
       announcement.closedAt = new Date();
     } else {
       announcement.isActive = joinedCount < group.maxMembers;
-      announcement.expiresAt = new Date(Date.now() + ANNOUNCEMENT_TTL_MS);
     }
     await announcement.save();
   }
