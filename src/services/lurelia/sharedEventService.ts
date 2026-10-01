@@ -275,12 +275,15 @@ export async function duplicateSharedEvent(
 }
 
 export async function listEventsForUser(userID: string) {
-  const asHost = await SharedEvent.find({ hostUserID: userID })
+  const asHost = await SharedEvent.find({ hostUserID: userID, cancelledAt: null })
     .sort({ startDate: -1 })
     .lean();
   const attendeeRows = await Attendee.find({ userID, removedAt: null }).lean();
   const eventIDs = attendeeRows.map((a: any) => a.sharedEventID);
-  const asAttendee = await SharedEvent.find({ _id: { $in: eventIDs } })
+  const asAttendee = await SharedEvent.find({
+    _id: { $in: eventIDs },
+    cancelledAt: null,
+  })
     .sort({ startDate: -1 })
     .lean();
   return { asHost, asAttendee };

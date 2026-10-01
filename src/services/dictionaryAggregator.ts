@@ -67,7 +67,7 @@ export async function aggregateWordDetails(
   }
 
   // Merge raw contributions from every source that returned data.
-  const sources: NormalizedSource[] = [];
+  let sources: NormalizedSource[] = [];
   const partsOfSpeech: string[] = [];
   const ipaCandidates: string[] = [];
   const writtenCandidates: string[] = [];
@@ -97,11 +97,12 @@ export async function aggregateWordDetails(
   antonyms = dedupeStrings(antonyms, MAX_ANTONYMS);
   relatedWords = dedupeStrings(relatedWords, MAX_RELATED);
 
-  const partOfSpeech = pickPartOfSpeech(partsOfSpeech);
+  let partOfSpeech = pickPartOfSpeech(partsOfSpeech);
   const ipaPronunciation = pickIpa(ipaCandidates);
   const providerWrittenPronunciation = dedupeStrings(writtenCandidates, 1)[0] ?? "";
 
-  // One Groq round trip enriches every AI-backed field.
+  // One Groq request enriches every AI-backed field. The enrichment service
+  // performs one focused repair request only when the first result is partial.
   const enrichment = await groqDictionaryFetch({
     word: cleanedWord,
     partOfSpeech,
@@ -115,6 +116,8 @@ export async function aggregateWordDetails(
     relatedWords,
   });
 
+  if (!partOfSpeech) partOfSpeech = enrichment.partOfSpeech;
+  if (!definitions.length) definitions = enrichment.definitions;
   if (!synonyms.length) synonyms = enrichment.synonyms;
   if (!antonyms.length) antonyms = enrichment.antonyms;
   if (!origin) origin = enrichment.originEtymology;
@@ -127,12 +130,42 @@ export async function aggregateWordDetails(
       ? enrichment.exampleSentences
       : dedupeStrings(dictionaryExamples, 3);
 
+  sources = dedupeSources(sources);
+  if (!sources.length) {
+    sources = [{
+      name: "Wiktionary",
+      url: `https://en.wiktionary.org/wiki/${encodeURIComponent(cleanedWord.replace(/ /g, "_"))}`,
+    }];
+  }
+
+  const writtenPronunciation = enrichment.writtenPronunciation;
+  const finalIpaPronunciation = enrichment.ipaPronunciation || ipaPronunciation;
+  const missingFields = [
+    !partOfSpeech && "partOfSpeech",
+    !writtenPronunciation && "writtenPronunciation",
+    !finalIpaPronunciation && "ipaPronunciation",
+    !synonyms.length && "synonyms",
+    !antonyms.length && "antonyms",
+    !definitions.length && "definitions",
+    !exampleSentences.length && "exampleSentences",
+    !origin && "originEtymology",
+    !relatedWords.length && "relatedWords",
+    !enrichment.usageNotes.length && "usageNotes",
+    !enrichment.tags.length && "tags",
+  ].filter((field): field is string => Boolean(field));
+
+  if (missingFields.length) {
+    throw new Error(
+      `Dictionary enrichment was incomplete for "${cleanedWord}": ${missingFields.join(", ")}`,
+    );
+  }
+
   return {
     word: cleanedWord,
     partOfSpeech,
-    sources: dedupeSources(sources),
-    writtenPronunciation: enrichment.writtenPronunciation,
-    ipaPronunciation: enrichment.ipaPronunciation || ipaPronunciation,
+    sources,
+    writtenPronunciation,
+    ipaPronunciation: finalIpaPronunciation,
     synonyms,
     antonyms,
     definitions,
