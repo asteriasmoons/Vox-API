@@ -10,6 +10,7 @@
 export type HostPostCallout = {
   icon: string;
   id?: string | undefined;
+  color?: string | undefined;
   body: string;
 };
 
@@ -41,7 +42,10 @@ export function normalizeHostPostMarkdown(markdown: string): string {
     const attrs = parseAttributes(open[1] || "");
     const icon = normalizeIcon(attrs.icon);
     const id = normalizeIdentifier(attrs.id);
-    out.push(`${CALLOUT_OPEN} icon="${icon}"${id ? ` id="${id}"` : ""}`);
+    const color = normalizeColor(attrs.color);
+    out.push(
+      `${CALLOUT_OPEN} icon="${icon}"${id ? ` id="${id}"` : ""}${color ? ` color="${color}"` : ""}`,
+    );
     index += 1;
 
   while (index < lines.length) {
@@ -76,6 +80,7 @@ export function parseHostPostCallouts(markdown: string): HostPostCallout[] {
     const attrs = parseAttributes(open[1] || "");
     const icon = normalizeIcon(attrs.icon);
     const id = normalizeIdentifier(attrs.id);
+    const color = normalizeColor(attrs.color);
     index += 1;
 
     const bodyLines: string[] = [];
@@ -89,6 +94,7 @@ export function parseHostPostCallouts(markdown: string): HostPostCallout[] {
     callouts.push({
       icon,
       id,
+      color,
       body: bodyLines.join("\n").trim(),
     });
 
@@ -124,5 +130,11 @@ function normalizeIdentifier(id: string | undefined): string | undefined {
   const clean = String(id || "").trim();
   if (!clean) return undefined;
   if (/^[a-zA-Z0-9._-]{1,96}$/.test(clean)) return clean;
+  return undefined;
+}
+
+function normalizeColor(color: string | undefined): string | undefined {
+  const clean = String(color || "").trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(clean)) return clean.toUpperCase();
   return undefined;
 }

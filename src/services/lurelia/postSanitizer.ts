@@ -45,6 +45,7 @@ const CALLOUT_DATA_ATTRS = [
   "data-type",
   "data-icon",
   "data-callout-id",
+  "data-color",
 ];
 
 // Class names we allow — everything the editor emits.
@@ -74,6 +75,7 @@ export function sanitizeHostPostHTML(html: string): string {
       button: ["type", "class", "contenteditable", "data-callout-icon-button", "aria-label"],
       div: ["class", ...CALLOUT_DATA_ATTRS, "contenteditable", "role", "aria-label"],
       span: ["class", ...CALLOUT_DATA_ATTRS],
+      blockquote: ["data-type", "data-color"],
       code: ["class"],
       pre: ["class"],
       p: ["class"],
