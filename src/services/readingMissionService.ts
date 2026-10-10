@@ -1,7 +1,7 @@
 import { regularSecondaryGroqChatJson } from "./regularRecs/regularRecsProviders";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const READING_MISSION_MODEL = "groq/compound";
+const READING_MISSION_MODEL = "openai/gpt-oss-120b";
 const READING_MISSION_TIMEOUT_MS = 60_000;
 
 interface GroqChatResponse {
@@ -100,7 +100,7 @@ export async function generateReadingMissions(
       body: JSON.stringify({
         model: READING_MISSION_MODEL,
         temperature: 0.2,
-        max_tokens: 8192,
+        max_completion_tokens: 8192,
         response_format: { type: "json_object" },
         messages: [
           {
@@ -164,6 +164,7 @@ export async function scoreReadingMission(
   });
 
   const raw = await regularSecondaryGroqChatJson(systemPrompt, userPrompt, {
+    model: READING_MISSION_MODEL,
     temperature: 0.1,
     maxTokens: 8192,
   });

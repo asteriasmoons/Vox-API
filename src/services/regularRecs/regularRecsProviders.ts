@@ -104,12 +104,12 @@ export async function regularOpenRouterChatJson(
 export async function regularSecondaryGroqChatJson(
   systemPrompt: string,
   userPrompt: string,
-  options: { temperature: number; maxTokens: number },
+  options: { temperature: number; maxTokens: number; model?: string },
 ): Promise<string> {
   return providerChatJson(
     SECONDARY_GROQ_CHAT_URL,
     cleanText(process.env.GROQ_API_KEY_ALT) || cleanText(process.env.GROQ_API_KEY),
-    REGULAR_SECONDARY_GROQ_MODEL,
+    options.model ?? REGULAR_SECONDARY_GROQ_MODEL,
     "Groq",
     systemPrompt,
     userPrompt,
