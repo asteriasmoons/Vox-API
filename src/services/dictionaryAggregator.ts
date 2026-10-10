@@ -23,6 +23,29 @@ const MAX_ANTONYMS = 12;
 const MAX_RELATED = 12;
 const MAX_IPA_CANDIDATES = 5;
 
+function normalizeProse(value: string): string {
+  return cleanWhitespace(value).replace(/\s+([.,;:!?])/g, "$1");
+}
+
+function usefulProse(value: string, minimumWords: number): boolean {
+  const cleaned = normalizeProse(value);
+  const words = cleaned.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? [];
+  return words.length >= minimumWords && /\p{L}/u.test(cleaned);
+}
+
+function usefulOrigin(value: string): boolean {
+  return usefulProse(value, 5);
+}
+
+function completeExample(value: string, word: string): boolean {
+  const cleaned = normalizeProse(value);
+  const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return usefulProse(cleaned, 5) &&
+    /^[\p{Lu}\d“"']/u.test(cleaned) &&
+    /[.!?][”"']?$/u.test(cleaned) &&
+    new RegExp(`\\b${escapedWord}\\b`, "iu").test(cleaned);
+}
+
 function dedupeSources(sources: NormalizedSource[]): NormalizedSource[] {
   const seen = new Set<string>();
   const out: NormalizedSource[] = [];
@@ -88,11 +111,13 @@ export async function aggregateWordDetails(
     synonyms.push(...result.synonyms);
     antonyms.push(...result.antonyms);
     relatedWords.push(...result.relatedWords);
-    if (!origin && result.origin) origin = result.origin;
+    if (!origin && usefulOrigin(result.origin)) origin = normalizeProse(result.origin);
   }
 
-  definitions = dedupeStrings(definitions, MAX_DEFINITIONS);
-  dictionaryExamples = dedupeStrings(dictionaryExamples, 6);
+  definitions = dedupeStrings(definitions.map(normalizeProse), MAX_DEFINITIONS)
+    .filter((value) => usefulProse(value, 3));
+  dictionaryExamples = dedupeStrings(dictionaryExamples.map(normalizeProse), 6)
+    .filter((value) => completeExample(value, cleanedWord));
   synonyms = dedupeStrings(synonyms, MAX_SYNONYMS);
   antonyms = dedupeStrings(antonyms, MAX_ANTONYMS);
   relatedWords = dedupeStrings(relatedWords, MAX_RELATED);
@@ -146,9 +171,9 @@ export async function aggregateWordDetails(
     !finalIpaPronunciation && "ipaPronunciation",
     !synonyms.length && "synonyms",
     !antonyms.length && "antonyms",
-    !definitions.length && "definitions",
-    !exampleSentences.length && "exampleSentences",
-    !origin && "originEtymology",
+    !definitions.some((value) => usefulProse(value, 3)) && "definitions",
+    exampleSentences.filter((value) => completeExample(value, cleanedWord)).length < 2 && "exampleSentences",
+    !usefulOrigin(origin) && "originEtymology",
     !relatedWords.length && "relatedWords",
     !enrichment.usageNotes.length && "usageNotes",
     !enrichment.tags.length && "tags",

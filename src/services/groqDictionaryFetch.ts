@@ -58,7 +58,23 @@ function list(value: unknown, limit: number): string[] {
 
 function textList(value: unknown, limit: number): string[] {
   if (!Array.isArray(value)) return [];
-  return dedupeStrings(value.map(cleanWhitespace).filter(Boolean), limit);
+  return dedupeStrings(
+    value
+      .map(cleanWhitespace)
+      .map((item) => item.replace(/\s+([.,;:!?])/g, "$1"))
+      .filter(Boolean),
+    limit,
+  );
+}
+
+function completeExample(value: string, word: string): boolean {
+  const cleaned = cleanWhitespace(value);
+  const words = cleaned.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? [];
+  const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return words.length >= 5 &&
+    /^[\p{Lu}\d“"']/u.test(cleaned) &&
+    /[.!?][”"']?$/u.test(cleaned) &&
+    new RegExp(`\\b${escapedWord}\\b`, "iu").test(cleaned);
 }
 
 function parse(raw: string): Record<string, unknown> | null {
@@ -87,7 +103,7 @@ function missingRequiredFields(
   const missing: string[] = [];
   if (!context.partOfSpeech && !result.partOfSpeech) missing.push("partOfSpeech");
   if (!context.definitions.length && !result.definitions.some((value) => value.length >= 12)) missing.push("definitions");
-  if (result.exampleSentences.filter((value) => value.length >= 20).length < 2) missing.push("exampleSentences");
+  if (result.exampleSentences.filter((value) => completeExample(value, context.word)).length < 2) missing.push("exampleSentences");
   if (!result.usageNotes.some((note) => note.label.length >= 3 && note.value.length >= 20)) missing.push("usageNotes");
   if (!context.synonyms.length && result.synonyms.length < 3) missing.push("synonyms");
   if (!context.antonyms.length && result.antonyms.length < 2) missing.push("antonyms");
@@ -179,8 +195,8 @@ export async function groqDictionaryFetch(c: GroqDictionaryContext): Promise<Gro
       const rawWritten = cleanWhitespace(p.writtenPronunciation).toLowerCase();
       const writtenPronunciation = /^[a-z]+(?:-[a-z]+)*$/.test(rawWritten) ? rawWritten : "";
       const ipaPronunciation = cleanWhitespace(p.ipaPronunciation);
-      const examples = Array.isArray(p.exampleSentences)
-        ? dedupeStrings(p.exampleSentences.map(cleanWhitespace), 3) : [];
+      const examples = textList(p.exampleSentences, 3)
+        .filter((value) => completeExample(value, c.word));
 
       lastResult = {
         partOfSpeech: c.partOfSpeech || mapPartOfSpeech(cleanWhitespace(p.partOfSpeech)),
