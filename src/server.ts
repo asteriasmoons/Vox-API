@@ -41,6 +41,7 @@ import musicLookupRoutes from "./routes/musicLookup";
 import dottiRoutes from "./routes/dotti";
 import dictionaryRoutes from "./routes/dictionary";
 import { createLureliaRouter } from "./routes/lurelia";
+import vellixPhotoRoutes from "./routes/vellixPhotos";
 
 import path from "path";
 dotenv.config();
@@ -115,6 +116,7 @@ app.use("/api/music", musicLookupRoutes);
 app.use("/api/dotti", dottiRoutes);
 app.use("/api/dictionary", dictionaryRoutes);
 app.use("/api/lurelia", createLureliaRouter(io));
+app.use("/api/vellix/photos", vellixPhotoRoutes);
 
 io.on("connection", (socket) => {
   socket.on("buddy:join_room", (groupId: string) => {
