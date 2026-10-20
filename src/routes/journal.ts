@@ -3,6 +3,10 @@ import { claimDailyPrompt } from "../services/claimDailyPrompt";
 import { generateDailyIntention } from "../services/generateDailyIntention";
 import { generateJournalPrompt } from "../services/generateJournalPrompt";
 import { generateJournalAnalysis } from "../services/generateJournalAnalysis";
+import {
+  generateJournalReflectionPerspective,
+  generateJournalReflectionQuestions,
+} from "../services/generateJournalReflection";
 import { DailyJournalAnalysis } from "../models/DailyJournalAnalysis";
 import { chicagoDateKey } from "../utils/chicagoDateKey";
 
@@ -61,6 +65,68 @@ router.post("/intention", async (req, res) => {
     const message = error instanceof Error ? error.message : "Failed to generate daily intention";
     console.error("Daily intention generation error:", message);
     return res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/journal/reflections/questions
+router.post("/reflections/questions", async (req, res) => {
+  try {
+    const entryTitle = String(req.body?.entryTitle || "").trim();
+    const entryContent = String(req.body?.entryContent || "").trim();
+
+    if (!entryContent) {
+      return res.status(400).json({ error: "Missing journal entry content" });
+    }
+
+    const questions = await generateJournalReflectionQuestions({
+      entryTitle,
+      entryContent,
+    });
+    return res.json({ questions });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Journal reflection question error:", message);
+    return res.status(500).json({ error: message || "Failed to generate reflection questions" });
+  }
+});
+
+// POST /api/journal/reflections/perspective
+router.post("/reflections/perspective", async (req, res) => {
+  try {
+    const entryTitle = String(req.body?.entryTitle || "").trim();
+    const entryContent = String(req.body?.entryContent || "").trim();
+    const responses = Array.isArray(req.body?.responses)
+      ? req.body.responses.map((response: unknown) => {
+          const value = response && typeof response === "object"
+            ? (response as Record<string, unknown>)
+            : {};
+          return {
+            question: String(value.question || "").trim(),
+            answer: String(value.answer || "").trim(),
+          };
+        })
+      : [];
+
+    if (!entryContent) {
+      return res.status(400).json({ error: "Missing journal entry content" });
+    }
+    if (responses.length !== 4) {
+      return res.status(400).json({ error: "Exactly four reflection questions are required" });
+    }
+    if (!responses.some((response) => response.answer)) {
+      return res.status(400).json({ error: "Answer at least one question before requesting a perspective" });
+    }
+
+    const perspective = await generateJournalReflectionPerspective({
+      entryTitle,
+      entryContent,
+      responses,
+    });
+    return res.json({ perspective });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Journal reflection perspective error:", message);
+    return res.status(500).json({ error: message || "Failed to generate reflection perspective" });
   }
 });
 
