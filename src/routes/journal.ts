@@ -6,6 +6,7 @@ import { generateJournalAnalysis } from "../services/generateJournalAnalysis";
 import {
   generateJournalReflectionPerspective,
   generateJournalReflectionQuestions,
+  type ReflectionResponseInput,
 } from "../services/generateJournalReflection";
 import { DailyJournalAnalysis } from "../models/DailyJournalAnalysis";
 import { chicagoDateKey } from "../utils/chicagoDateKey";
@@ -95,7 +96,7 @@ router.post("/reflections/perspective", async (req, res) => {
   try {
     const entryTitle = String(req.body?.entryTitle || "").trim();
     const entryContent = String(req.body?.entryContent || "").trim();
-    const responses = Array.isArray(req.body?.responses)
+    const responses: ReflectionResponseInput[] = Array.isArray(req.body?.responses)
       ? req.body.responses.map((response: unknown) => {
           const value = response && typeof response === "object"
             ? (response as Record<string, unknown>)
