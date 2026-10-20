@@ -74,6 +74,9 @@ router.post("/reflections/questions", async (req, res) => {
   try {
     const entryTitle = String(req.body?.entryTitle || "").trim();
     const entryContent = String(req.body?.entryContent || "").trim();
+    const entryDate = String(req.body?.entryDate || "").trim();
+    const reflectionDate = String(req.body?.reflectionDate || "").trim();
+    const timeZone = String(req.body?.timeZone || "").trim();
 
     if (!entryContent) {
       return res.status(400).json({ error: "Missing journal entry content" });
@@ -82,6 +85,9 @@ router.post("/reflections/questions", async (req, res) => {
     const questions = await generateJournalReflectionQuestions({
       entryTitle,
       entryContent,
+      entryDate,
+      reflectionDate,
+      timeZone,
     });
     return res.json({ questions });
   } catch (error) {
@@ -96,6 +102,9 @@ router.post("/reflections/perspective", async (req, res) => {
   try {
     const entryTitle = String(req.body?.entryTitle || "").trim();
     const entryContent = String(req.body?.entryContent || "").trim();
+    const entryDate = String(req.body?.entryDate || "").trim();
+    const reflectionDate = String(req.body?.reflectionDate || "").trim();
+    const timeZone = String(req.body?.timeZone || "").trim();
     const responses: ReflectionResponseInput[] = Array.isArray(req.body?.responses)
       ? req.body.responses.map((response: unknown) => {
           const value = response && typeof response === "object"
@@ -121,6 +130,9 @@ router.post("/reflections/perspective", async (req, res) => {
     const perspective = await generateJournalReflectionPerspective({
       entryTitle,
       entryContent,
+      entryDate,
+      reflectionDate,
+      timeZone,
       responses,
     });
     return res.json({ perspective });
