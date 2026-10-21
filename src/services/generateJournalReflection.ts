@@ -14,7 +14,7 @@ interface ReflectionTimingInput {
   timeZone: string;
 }
 
-type ReflectionTimingKind = "unknown" | "same-day" | "very-recent" | "older";
+type ReflectionTimingKind = "same-day" | "very-recent" | "older";
 
 interface ReflectionTimingContext {
   kind: ReflectionTimingKind;
@@ -76,10 +76,7 @@ function timingContext(input: ReflectionTimingInput): ReflectionTimingContext {
     Number.isFinite(entryDate.getTime()) && Number.isFinite(reflectionDate.getTime());
 
   if (!datesAreValid || reflectionDate.getTime() < entryDate.getTime()) {
-    return {
-      kind: "unknown",
-      prompt: `Timing information is unavailable or inconsistent. Do not assume that time has passed, that the writer's feelings changed, or that this is a past-versus-present comparison.`,
-    };
+    throw new Error("Valid entry and reflection dates are required");
   }
 
   const timeZone = validTimeZone(input.timeZone);
@@ -97,7 +94,7 @@ function timingContext(input: ReflectionTimingInput): ReflectionTimingContext {
     ? `This is a SAME-DAY reflection. Treat the entry as current. Do not ask about the writer's past self, what has changed since writing, whether an answer shifted, what remains unchanged, or how the experience looks "now" compared with "then."`
     : kind === "very-recent"
       ? `This reflection is VERY RECENT. Do not manufacture hindsight or assume that feelings, circumstances, or understanding have changed.`
-      : `Time has passed, so a question may invite comparison with the present, but it must never assume that anything changed. Unchanged feelings, uncertainty, and unanswered questions are valid.`;
+      : `This is an OLDER, HISTORICAL entry. Every question must clearly distinguish what the writer described at entry-time from the writer's life at reflection-time. Never phrase an entry-time feeling, circumstance, desire, difficulty, or event as though it is happening today. A question may invite comparison with the present, but it must never assume that anything changed or stayed the same. Unchanged feelings, uncertainty, and unanswered questions are valid.`;
 
   return {
     kind,
@@ -177,6 +174,30 @@ function validatedQuestions(
     /\bhas (?:your|the|this|that|anything)[^?]{0,80}\b(?:changed|shifted|evolved)\b/i,
     /\bcompared (?:with|to) (?:then|when you wrote)\b/i,
   ];
+  const olderEntryAnchor = [
+    /\bwhen you (?:wrote|recorded) (?:this|the entry)\b/i,
+    /\bwhen (?:this|the) entry was written\b/i,
+    /\bin (?:this|the) entry\b/i,
+    /\bat the time (?:you wrote|of (?:this|the) entry)\b/i,
+    /\bat that time\b/i,
+    /\bback then\b/i,
+    /\blook(?:ing)? back (?:at|on)\b/i,
+    /\bsince you (?:wrote|recorded) (?:this|the entry)\b/i,
+    /\byou wrote (?:that|about)\b/i,
+    /\byou (?:described|mentioned|recorded)\b/i,
+    /\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+\d{4}\b/i,
+  ];
+  const olderEntryTreatedAsCurrent = [
+    /\bright now\b/i,
+    /\bcurrently\b/i,
+    /\bat (?:this|the) moment\b/i,
+    /\bwhat (?:is|are) (?:making|keeping|stopping|preventing)\b/i,
+    /\bwhat makes\b/i,
+    /\bwhat keeps you\b/i,
+    /\bwhat is stopping you\b/i,
+  ];
+  const temporalOutcome = /\b(?:changed|different|shifted|evolved|same|unchanged|still)\b/i;
+  const outcomeUncertainty = /\b(?:if anything|if at all|whether|or not)\b/i;
   const questionsAreUsable = questions.every(
     (question) =>
       question.length >= 15 &&
@@ -189,6 +210,14 @@ function validatedQuestions(
       (
         timingKind === "older" ||
         !falseHindsight.some((pattern) => pattern.test(question))
+      ) &&
+      (
+        timingKind !== "older" ||
+        (
+          olderEntryAnchor.some((pattern) => pattern.test(question)) &&
+          !olderEntryTreatedAsCurrent.some((pattern) => pattern.test(question)) &&
+          (!temporalOutcome.test(question) || outcomeUncertainty.test(question))
+        )
       ),
   );
 
@@ -215,7 +244,10 @@ Return exactly four clear, conversational questions that help the user explore t
 TIMING RULES:
 - The request includes the exact entry date, reflection date, elapsed time, and a timing classification. Treat that timing as fact.
 - For a same-day reflection, ask about what is happening, wanted, difficult, uncertain, or important right now. Never pretend the user has months of hindsight.
-- For an older reflection, comparison with the present is allowed only as an open possibility. Never assume that feelings, circumstances, answers, or priorities changed.
+- For an older reflection, treat the entry as a historical record rather than a description of today. Every question must explicitly anchor the old material with wording such as "when you wrote this entry," "in this entry," "looking back at," or "you described."
+- For an older reflection, never ask what is happening "right now" or "currently" based on the entry. Never carry an old feeling, circumstance, desire, difficulty, or event into the present tense.
+- A question about the present must clearly separate today from entry-time, such as "How do you view that wish today?" It must not presume that the old situation continues.
+- For an older reflection, comparison with the present is allowed only as an open possibility. If asking about change or continuity, use uncertainty such as "if anything," "if at all," or "whether." Never assume that feelings, circumstances, answers, or priorities changed or stayed the same.
 - Unchanged feelings, uncertainty, and not knowing are valid outcomes. A reflection does not need to prove growth, change, resolution, or a lesson.
 
 NON-NEGOTIABLE GROUNDING RULES:
@@ -245,25 +277,41 @@ QUESTION SET RULES:
 
 Return only valid JSON in this exact shape:
 {"questions":["Question one?","Question two?","Question three?","Question four?"]}`;
-  const userPrompt = `Create exactly four grounded reflection questions for this entry. Check every premise against the supplied writing, keep unrelated subjects separate, and verify that every question is clear on its first reading before returning the JSON.
+  const baseUserPrompt = `Create exactly four grounded reflection questions for this entry. Check every premise against the supplied writing, keep unrelated subjects separate, and verify that every question is clear on its first reading before returning the JSON.
 
 TIMING CONTEXT:
 ${timing.prompt}
 
 ${entry}`;
 
-  const raw = await groqChatJson(systemPrompt, userPrompt, {
-    stage: "journal-reflection-questions",
-    model: MODEL,
-    temperature: 0.05,
-    maxTokens: 1_100,
-  });
-  const parsed = parseJsonObject(raw);
-  if (!parsed) {
-    throw new Error("Failed to parse the reflection questions response");
+  let validationError: Error | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const userPrompt = attempt === 0
+      ? baseUserPrompt
+      : `${baseUserPrompt}
+
+Your previous question set was rejected because it violated the required structure, grounding, or temporal framing. Generate a completely revised set. For an older entry, every question must explicitly identify the journaled material as historical and must not phrase it as a current situation.`;
+    const raw = await groqChatJson(systemPrompt, userPrompt, {
+      stage: attempt === 0
+        ? "journal-reflection-questions"
+        : "journal-reflection-questions-repair",
+      model: MODEL,
+      temperature: 0.05,
+      maxTokens: 1_100,
+    });
+    const parsed = parseJsonObject(raw);
+
+    try {
+      if (!parsed) {
+        throw new Error("Failed to parse the reflection questions response");
+      }
+      return validatedQuestions(parsed, timing.kind);
+    } catch (error) {
+      validationError = error instanceof Error ? error : new Error(String(error));
+    }
   }
 
-  return validatedQuestions(parsed, timing.kind);
+  throw validationError ?? new Error("Failed to generate valid reflection questions");
 }
 
 function validatedPerspective(

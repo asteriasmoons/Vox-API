@@ -81,6 +81,9 @@ router.post("/reflections/questions", async (req, res) => {
     if (!entryContent) {
       return res.status(400).json({ error: "Missing journal entry content" });
     }
+    if (!entryDate || !reflectionDate) {
+      return res.status(400).json({ error: "Missing journal entry or reflection date" });
+    }
 
     const questions = await generateJournalReflectionQuestions({
       entryTitle,
@@ -119,6 +122,9 @@ router.post("/reflections/perspective", async (req, res) => {
 
     if (!entryContent) {
       return res.status(400).json({ error: "Missing journal entry content" });
+    }
+    if (!entryDate || !reflectionDate) {
+      return res.status(400).json({ error: "Missing journal entry or reflection date" });
     }
     if (responses.length !== 4) {
       return res.status(400).json({ error: "Exactly four reflection questions are required" });
