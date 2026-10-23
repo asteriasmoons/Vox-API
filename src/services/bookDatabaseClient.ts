@@ -94,7 +94,9 @@ export class BookDatabaseClient {
     if (existing) { catalogLog("provider.coalesced", providerRequestFields(url), this.traceID); return existing; }
     const pending = this.load(url, Math.min(ttlMs, 86_400_000));
     this.inFlight.set(cacheKey, pending);
-    try { return await pending; } finally { this.inFlight.delete(cacheKey); }
+    try { return await pending; }
+    catch (error) { catalogLog("provider.failed", { ...providerRequestFields(url), ...catalogFailure(error) }, this.traceID); throw error; }
+    finally { this.inFlight.delete(cacheKey); }
   }
 
   private async load(url: URL, ttl: number): Promise<any> {
@@ -169,7 +171,8 @@ export class BookDatabaseClient {
     let next: string | undefined = url.href;
     const seen = new Set<string>();
     const items = new Set<string>();
-    for (let i = 0; i < Math.min(maxPages, 3) && next && !seen.has(next); i++) {
+    const limit = collection === "languages" ? Math.min(maxPages, 80) : Math.min(maxPages, 3);
+    for (let i = 0; i < limit && next && !seen.has(next); i++) {
       seen.add(next);
       const page = parsePage(await this.get(next), collection);
       catalogLog("provider.page", { collection, page: i + 1, records: page.items.length, hasNext: !!page.next }, this.traceID);
