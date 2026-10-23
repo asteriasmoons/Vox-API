@@ -11,7 +11,7 @@ export function createAutomaticCatalogRouter(dependencies = {
   const fail = (res: Response, error: unknown) => {
     const failure = error instanceof CatalogError ? error : new CatalogError("CATALOG_UNAVAILABLE");
     res.setHeader("Cache-Control", "private, no-store");
-    if (failure.status === 429 || failure.status === 503) res.setHeader("Retry-After", String(failure.retryAfter));
+    if ([429, 503, 504].includes(failure.status)) res.setHeader("Retry-After", String(failure.retryAfter));
     return res.status(failure.status).json({ error: failure.code });
   };
   router.use(async (req: Request, res: Response, next) => {
@@ -24,7 +24,16 @@ export function createAutomaticCatalogRouter(dependencies = {
     } catch (error) { fail(res, error); }
   });
   router.post("/", async (req, res) => {
-    try { res.json(await dependencies.service.catalogs(parseLibrary(req.body))); }
+    try {
+      const library = parseLibrary(req.body);
+      if (req.body?.progressive !== true) {
+        res.json(await dependencies.service.catalogs(library));
+        return;
+      }
+      const result = await dependencies.service.requestCatalogs(library, req.body?.forceRefresh === true);
+      if (result.state === "building") res.setHeader("Retry-After", String(result.retryAfter ?? 4));
+      res.status(result.state === "building" ? 202 : 200).json(result);
+    }
     catch (error) { fail(res, error); }
   });
   router.get("/books/:id", async (req, res) => {

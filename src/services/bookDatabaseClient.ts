@@ -59,16 +59,22 @@ export function validateProviderPayload(value: any, url: URL): void {
 
 export class BookDatabaseClient {
   private inFlight = new Map<string, Promise<any>>();
-  private blockedUntil = 0;
   constructor(
     private key: () => string = () => process.env.BOOKDATABASE_API_KEY ?? "",
     private store: CatalogStore = mongoCatalogStore(digest(process.env.BOOKDATABASE_API_KEY ?? "unconfigured")),
     private transport: typeof fetch = fetch,
     private activeUntil: () => number = () => process.env.BOOKDATABASE_SUBSCRIPTION_EXPIRES_AT
       ? Date.parse(process.env.BOOKDATABASE_SUBSCRIPTION_EXPIRES_AT) : Infinity,
+    private signal?: AbortSignal,
+    private quota = { blockedUntil: 0 },
   ) {}
 
+  withSignal(signal: AbortSignal): BookDatabaseClient {
+    return new BookDatabaseClient(this.key, this.store, this.transport, this.activeUntil, signal, this.quota);
+  }
+
   async assertActive(): Promise<number> {
+    this.signal?.throwIfAborted();
     const expiry = this.activeUntil();
     if (!this.key() || Number.isNaN(expiry) || expiry <= Date.now() || process.env.BOOKDATABASE_DISABLED === "true") {
       await this.store.purge();
@@ -95,8 +101,9 @@ export class BookDatabaseClient {
     const owner = randomUUID();
     const deadline = Date.now() + 25_000;
     while (!(await this.store.claim(cacheKey, owner))) {
+      this.signal?.throwIfAborted();
       if (Date.now() > deadline) throw new CatalogError("PROVIDER_BUSY", 429, 15);
-      await delay(150);
+      await delay(150, this.signal);
       const shared = await this.store.get(cacheKey);
       if (shared !== undefined) return shared;
     }
@@ -104,15 +111,19 @@ export class BookDatabaseClient {
       const shared = await this.store.get(cacheKey);
       if (shared !== undefined) return shared;
       const expiry = await this.assertActive();
-      if (this.blockedUntil > Date.now()) throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.blockedUntil - Date.now()) / 1000));
+      if (this.quota.blockedUntil > Date.now()) throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.quota.blockedUntil - Date.now()) / 1000));
       let response: Response | undefined;
       for (let attempt = 0; attempt < 2; attempt++) {
-        await this.store.reserve();
+        await this.store.reserve(this.signal);
+        this.signal?.throwIfAborted();
         try {
-          response = await this.transport(url, { headers: { "X-API-Key": this.key(), Accept: "application/json" }, redirect: "manual", signal: AbortSignal.timeout(15_000) });
+          const timeout = AbortSignal.timeout(15_000);
+          const signal = this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
+          response = await this.transport(url, { headers: { "X-API-Key": this.key(), Accept: "application/json" }, redirect: "manual", signal });
           if (response.status < 500 || attempt === 1) break;
           await response.arrayBuffer();
         } catch {
+          this.signal?.throwIfAborted();
           if (attempt === 1) throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
         }
       }
@@ -122,6 +133,7 @@ export class BookDatabaseClient {
         return null;
       }
       const value: any = response.status === 302 ? { contentUrl: response.headers.get("Location") } : await response.json().catch(() => null);
+      this.signal?.throwIfAborted();
       if (!response.ok && response.status !== 302) {
         if (response.status === 401 || response.status === 403 || ["INVALID_API_KEY", "MISSING_API_KEY"].includes(value?.errorCode)) {
           await this.store.purge();
@@ -129,8 +141,8 @@ export class BookDatabaseClient {
         }
         if (value?.errorCode === "NO_API_CALLS_REMAINING" || response.status === 429) {
           const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0);
-          this.blockedUntil = value?.errorCode === "NO_API_CALLS_REMAINING" ? midnight.getTime() : Date.now() + 60_000;
-          throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.blockedUntil - Date.now()) / 1000));
+          this.quota.blockedUntil = value?.errorCode === "NO_API_CALLS_REMAINING" ? midnight.getTime() : Date.now() + 60_000;
+          throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.quota.blockedUntil - Date.now()) / 1000));
         }
         throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
       }
@@ -142,18 +154,28 @@ export class BookDatabaseClient {
     } finally { await this.store.release(cacheKey, owner); }
   }
 
-  async page(collection: string, query: Record<string, string>, maxPages = 1): Promise<Resource[]> {
+  async *pages(collection: string, query: Record<string, string>, maxPages = 1): AsyncGenerator<Resource[]> {
     const url = new URL(collection, BASE);
     Object.entries({ pageSize: "30", ...query }).forEach(([key, value]) => url.searchParams.set(key, value));
     let next: string | undefined = url.href;
     const seen = new Set<string>();
-    const items = new Map<string, Resource>();
+    const items = new Set<string>();
     for (let i = 0; i < Math.min(maxPages, 3) && next && !seen.has(next); i++) {
       seen.add(next);
       const page = parsePage(await this.get(next), collection);
-      page.items.forEach(item => items.set(item.id, item));
+      const fresh = page.items.filter(item => {
+        if (items.has(item.id)) return false;
+        items.add(item.id);
+        return true;
+      });
+      yield fresh;
       next = page.next;
     }
-    return [...items.values()];
+  }
+
+  async page(collection: string, query: Record<string, string>, maxPages = 1): Promise<Resource[]> {
+    const items: Resource[] = [];
+    for await (const page of this.pages(collection, query, maxPages)) items.push(...page);
+    return items;
   }
 }

@@ -13,7 +13,13 @@ const controlSchema = new Schema({
 const Cache = mongoose.model("AutomaticCatalogCache", cacheSchema);
 const Control = mongoose.model("AutomaticCatalogControl", controlSchema);
 export const digest = (value: string) => createHash("sha256").update(value).digest("hex");
-export const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+export const delay = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  signal?.throwIfAborted();
+  const complete = () => { signal?.removeEventListener("abort", abort); resolve(); };
+  const abort = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); reject(signal?.reason); };
+  const timer = setTimeout(complete, ms);
+  signal?.addEventListener("abort", abort, { once: true });
+});
 
 export class CatalogError extends Error {
   constructor(public code: string, public status = 503, public retryAfter = 60) { super(code); }
@@ -39,9 +45,9 @@ export async function limitCatalogRequests(subject: string, limit: number): Prom
 export interface CatalogStore {
   get(key: string): Promise<unknown | undefined>;
   set(key: string, value: unknown, expiresAt: Date): Promise<void>;
-  claim(key: string, owner: string): Promise<boolean>;
+  claim(key: string, owner: string, leaseMs?: number): Promise<boolean>;
   release(key: string, owner: string): Promise<void>;
-  reserve(): Promise<void>;
+  reserve(signal?: AbortSignal): Promise<void>;
   purge(): Promise<void>;
 }
 
@@ -67,19 +73,20 @@ export function mongoCatalogStore(scope: string, models = { Cache, Control }, is
       ready();
       await Cache.updateOne({ _id: id(key) }, { $set: { scope, value, expiresAt } }, { upsert: true });
     },
-    async claim(key, owner) {
+    async claim(key, owner, leaseMs = 120_000) {
       ready();
       const now = new Date();
       try {
         const doc = await Cache.findOneAndUpdate({
           _id: id(`lock:${key}`), $or: [{ leaseUntil: { $lte: now } }, { leaseUntil: { $exists: false } }],
-        }, { $set: { scope, owner, leaseUntil: new Date(Date.now() + 120_000), expiresAt: new Date(Date.now() + 120_000) } }, { upsert: true, new: true }).lean();
+        }, { $set: { scope, owner, leaseUntil: new Date(Date.now() + leaseMs), expiresAt: new Date(Date.now() + leaseMs) } }, { upsert: true, new: true }).lean();
         return doc?.owner === owner;
       } catch (error: any) { if (error?.code === 11000) return false; throw error; }
     },
     async release(key, owner) { await Cache.deleteOne({ _id: id(`lock:${key}`), owner }); },
     async purge() { ready(); await Cache.deleteMany({ scope }); },
-    async reserve() {
+    async reserve(signal) {
+      signal?.throwIfAborted();
       // Mongo CAS enforces the same provider budget across workers and restarts.
       const day = new Date().toISOString().slice(0, 10);
       const tomorrow = new Date(`${day}T00:00:00Z`).getTime() + 86_400_000;
@@ -89,6 +96,7 @@ export function mongoCatalogStore(scope: string, models = { Cache, Control }, is
       await initialize(rateKey, new Date(Date.now() + 7 * 86_400_000));
       const deadline = Date.now() + 15_000;
       while (Date.now() < deadline) {
+        signal?.throwIfAborted();
         const slot = await Control.findOneAndUpdate({ _id: rateKey, nextAt: { $lte: new Date() } },
           { $set: { nextAt: new Date(Date.now() + 1100), expiresAt: new Date(Date.now() + 7 * 86_400_000) } }, { new: true });
         if (slot) {
@@ -96,7 +104,7 @@ export function mongoCatalogStore(scope: string, models = { Cache, Control }, is
           if (!daily) throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((tomorrow - Date.now()) / 1000));
           return;
         }
-        await delay(150);
+        await delay(150, signal);
       }
       throw new CatalogError("PROVIDER_BUSY", 429, 15);
     },

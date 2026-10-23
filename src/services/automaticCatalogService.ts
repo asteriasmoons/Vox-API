@@ -1,5 +1,6 @@
 import { BookDatabaseClient, Reference, Resource, refs } from "./bookDatabaseClient";
 import { CatalogError, CatalogStore, digest, mongoCatalogStore } from "./automaticCatalogStore";
+import { randomUUID } from "node:crypto";
 
 export type LibrarySignal = {
   id: string; title: string; author: string; isbn?: string; genres: string[]; subjects: string[];
@@ -11,9 +12,12 @@ export type CatalogBook = {
   coverUrl: string | null; imageID: string | null; genres: string[]; subjects: string[];
   authorIDs: string[]; subjectIDs: string[]; genreIDs: string[]; source: string;
   authorNames?: string[];
+  metadataIncomplete?: boolean;
 };
 export type AutomaticCatalog = { id: string; title: string; books: CatalogBook[] };
 export type CatalogResponse = { catalogs: AutomaticCatalog[]; generatedAt: string; expiresAt: string; partial: boolean };
+export type CatalogJobResponse = CatalogResponse & { state: "building" | "ready" | "failed"; errorCode?: string; retryAfter?: number };
+const catalogKey = (library: LibrarySignal[]) => `catalog-v7:${digest(JSON.stringify(library))}`;
 export const normalize = (s: string) => s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 export const bookKey = (title: string, author: string) => `${normalize(title)}|${normalize(author)}`;
 export const normalizeISBN = (s: string) => s.replace(/[^\dX]/gi, "").toUpperCase();
@@ -83,31 +87,80 @@ export function similarity(candidate: CatalogBook, seeds: CatalogBook[]): Simila
 
 export class AutomaticCatalogService {
   private inFlight = new Map<string, Promise<CatalogResponse>>();
-  constructor(private client: BookDatabaseClient, private store: CatalogStore) {}
+  constructor(private client: BookDatabaseClient, private store: CatalogStore, private buildTimeoutMs = 120_000) {}
 
-  async catalogs(library: LibrarySignal[]): Promise<CatalogResponse> {
+  async requestCatalogs(library: LibrarySignal[], forceRefresh = false): Promise<CatalogJobResponse> {
     const activeUntil = await this.client.assertActive();
-    // Refresh proof of subscription even when all metadata is already cached.
-    await this.client.get("books/random?includeRelationships=None", 15 * 60_000);
-    const key = `catalog-v4:${digest(JSON.stringify(library))}:${Math.floor(Date.now() / 86_400_000)}`;
+    const key = catalogKey(library);
+    const jobKey = `job:${key}`;
+    const previous = await this.store.get(jobKey) as CatalogJobResponse | undefined;
+    if (previous?.state === "building" || (previous?.state === "failed" && !forceRefresh)) return previous;
     const cached = await this.store.get(key) as CatalogResponse | undefined;
-    if (cached) return cached;
+    if (cached && !forceRefresh) return { ...cached, state: "ready" };
+    if (previous && !forceRefresh) return previous;
+    const expiresAt = new Date(Math.min(Date.now() + this.buildTimeoutMs + 15_000, activeUntil));
+    let snapshot: CatalogJobResponse = {
+      catalogs: [], generatedAt: new Date().toISOString(), expiresAt: expiresAt.toISOString(),
+      partial: true, state: "building", retryAfter: 4,
+    };
+    const owner = randomUUID();
+    if (!await this.store.claim(jobKey, owner, this.buildTimeoutMs + 30_000)) return previous ?? snapshot;
+    try { await this.store.set(jobKey, snapshot, expiresAt); }
+    catch (error) { await this.store.release(jobKey, owner); throw error; }
+    // The existing server process completes the metadata fetch; HTTP callers only read snapshots.
+    void this.catalogs(library, async response => {
+      snapshot = { ...response, state: "building", retryAfter: 4 };
+      await this.store.set(jobKey, snapshot, expiresAt);
+    }, forceRefresh).then(async response => {
+      await this.store.set(jobKey, { ...response, state: "ready" }, new Date(response.expiresAt));
+    }).catch(async (error: unknown) => {
+      const failure = error instanceof CatalogError ? error : new CatalogError("CATALOG_UNAVAILABLE");
+      if (["PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED"].includes(failure.code)) snapshot = { ...snapshot, catalogs: [] };
+      await this.store.set(jobKey, { ...snapshot, state: "failed", errorCode: failure.code }, new Date(Date.now() + 30_000));
+    }).finally(() => this.store.release(jobKey, owner)).catch(() => {
+      console.warn("Automatic catalog job storage unavailable");
+    });
+    return snapshot;
+  }
+
+  async catalogs(library: LibrarySignal[], publish?: (response: CatalogResponse) => Promise<void>, forceRefresh = false): Promise<CatalogResponse> {
+    const activeUntil = await this.client.assertActive();
+    // Periodic maintenance validates subscription access without blocking cached catalogs.
+    const key = catalogKey(library);
+    const cached = await this.store.get(key) as CatalogResponse | undefined;
+    if (cached && !forceRefresh) return cached;
     const existing = this.inFlight.get(key);
     if (existing) return existing;
-    const pending = this.build(library, activeUntil).then(async result => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new CatalogError("CATALOG_TIMED_OUT", 504, 30)), this.buildTimeoutMs);
+    const pending = this.build(library, activeUntil, this.client.withSignal(controller.signal), publish).then(async result => {
       // Personal signals are never stored; only a hashed key and expiring output.
       await this.store.set(key, result, new Date(result.expiresAt)); return result;
     });
     this.inFlight.set(key, pending);
-    try { return await pending; } finally { this.inFlight.delete(key); }
+    try { return await pending; } finally { clearTimeout(timer); this.inFlight.delete(key); }
   }
 
-  async work(id: string): Promise<CatalogBook | null> {
-    const resource: Resource | null = await this.client.get(path("books", id));
+  async work(id: string, client = this.client): Promise<CatalogBook | null> {
+    const resource: Resource | null = await client.get(path("books", id));
     if (!resource) return null;
-    const editions = await this.client.page("editions", { bookId: id, includeRelationships: "All", pageSize: "3" });
-    const edition = editions.find(e => (e.isbns ?? []).some(validISBN)) ?? editions[0];
-    return this.map(resource, edition);
+    let edition: Resource | undefined;
+    // Work responses already link their editions. Avoid another expanded result page.
+    for (const reference of refs(resource, "editions").slice(0, 3)) {
+      let value: Resource | null;
+      try { value = await client.get(path("editions", reference.id)); }
+      catch (error) {
+        if (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED"].includes(error.code)) throw error;
+        // A missing edition must not discard a usable work with real author/subject data.
+        break;
+      }
+      if (value && refs(value, "books").some(book => book.id === id) && normalize(value.title ?? "") === normalize(resource.title ?? "")) {
+        edition = value;
+        break;
+      }
+    }
+    const mapped = this.map(resource, edition);
+    return mapped && !edition && refs(resource, "editions").length ? { ...mapped, metadataIncomplete: true } : mapped;
   }
 
   private map(work: Resource, edition?: Resource): CatalogBook | null {
@@ -129,42 +182,54 @@ export class AutomaticCatalogService {
       subjectIDs: subjects.map(s => s.id), genreIDs: genres.map(g => g.id), source: "bookdatabase.io" };
   }
 
-  async match(seed: LibrarySignal): Promise<CatalogBook | null> {
+  async match(seed: LibrarySignal, client = this.client): Promise<CatalogBook | null> {
     if (seed.isbn && validISBN(seed.isbn)) {
-      const editions = await this.client.page("editions", { isbn: normalizeISBN(seed.isbn), includeRelationships: "All" });
+      const editions = await client.page("editions", { isbn: normalizeISBN(seed.isbn), includeRelationships: "All", pageSize: "3" });
       const edition = editions.find(e => (e.isbns ?? []).some(i => canonicalISBN(i) === canonicalISBN(seed.isbn!)));
       const works = edition ? refs(edition, "books") : [];
       if (edition && works.length === 1) {
-        const work = await this.client.get(path("books", works[0]!.id));
+        const work = await client.get(path("books", works[0]!.id));
         if (work && matchesIdentity(seed, work)) return this.map(work, edition);
       }
     }
     let workSearchError: unknown;
     try {
-      const works = await this.client.page("books", { searchQuery: seed.title.slice(0, 128), searchMode: "Exact", includeRelationships: "All" });
+      const results = await client.page("books", { searchQuery: seed.title.slice(0, 128), searchMode: "Exact", sortOrder: "SearchRelevanceDescending", includeRelationships: "None", pageSize: "3" });
+      const works: Resource[] = [];
+      for (const result of results) {
+        if (normalize(result.title ?? "") !== normalize(seed.title)) continue;
+        const work = await client.get(path("books", result.id));
+        if (work) works.push(work);
+      }
       const exact = works.filter(work => matchesIdentity(seed, work));
       // A same-title/same-author ambiguity is not safe to resolve by result order.
       if (exact.length > 1) return null;
-      if (exact.length === 1) return this.work(exact[0]!.id);
+      if (exact.length === 1) return this.work(exact[0]!.id, client);
     } catch (error) {
-      if (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED"].includes(error.code)) throw error;
+      if (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED", "CATALOG_TIMED_OUT"].includes(error.code)) throw error;
       workSearchError = error;
     }
     // Editions have their own documented title index. Do not depend solely on
     // the work-title index when it is incomplete or returning invalid results.
-    const editions = await this.client.page("editions", { searchQuery: seed.title.slice(0, 128), searchMode: "Exact", includeRelationships: "All" });
+    const results = await client.page("editions", { searchQuery: seed.title.slice(0, 128), searchMode: "Exact", sortOrder: "SearchRelevanceDescending", includeRelationships: "None", pageSize: "3" });
+    const editions: Resource[] = [];
+    for (const result of results) {
+      const edition = await client.get(path("editions", result.id));
+      if (edition) editions.push(edition);
+    }
     const exactEditions = editions.filter(edition => matchesIdentity(seed, edition));
     const workIDs = unique(exactEditions.flatMap(edition => refs(edition, "books").map(work => work.id)));
     if (workIDs.length !== 1) {
       if (workSearchError && !editions.length) throw workSearchError;
       return null;
     }
-    const work = await this.client.get(path("books", workIDs[0]!));
+    const work = await client.get(path("books", workIDs[0]!));
     return work && matchesIdentity(seed, work) ? this.map(work, exactEditions[0]) : null;
   }
 
-  private async build(library: LibrarySignal[], activeUntil: number): Promise<CatalogResponse> {
+  private async build(library: LibrarySignal[], activeUntil: number, client: BookDatabaseClient, publish?: (response: CatalogResponse) => Promise<void>): Promise<CatalogResponse> {
     let partial = false;
+    let exhausted = false;
     let remaining = 22;
     const seedPriority = (b: LibrarySignal) => Number(b.favorite) * 20 + b.rating * 3 + Math.log1p(b.activity)
       + (b.status === "Reading" ? 6 : b.status === "Finished" ? 4 : 0);
@@ -172,45 +237,44 @@ export class AutomaticCatalogService {
       .sort((a, b) => seedPriority(b) - seedPriority(a))
       .slice(0, 4);
     const seeds: CatalogBook[] = [];
-    for (const signal of seedSignals) {
-      try { const book = await this.match(signal); if (book && !seeds.some(s => s.id === book.id)) seeds.push(book); }
-      catch (error) {
-        if (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED"].includes(error.code)) throw error;
-        console.warn("Automatic catalog provider failure:", { stage: "seed", code: error instanceof CatalogError ? error.code : "UNAVAILABLE" });
-        partial = true;
-      }
-    }
-    if (!seeds.length && partial) throw new CatalogError("PROVIDER_UNAVAILABLE");
     const candidates = new Map<string, CatalogBook>();
     const excludedKeys = new Set(library.map(b => bookKey(b.title, b.author)));
     const excludedISBNs = new Set(library.map(b => canonicalISBN(b.isbn ?? "")).filter(Boolean));
-    const excludedIDs = new Set(seeds.map(s => s.id));
+    const excludedIDs = new Set<string>();
     const plans: { collection: string; query: Record<string, string> }[] = [];
-    for (const seed of seeds) {
-      refsForSeed(seed).forEach(p => { if (!plans.some(existing => JSON.stringify(existing) === JSON.stringify(p))) plans.push(p); });
-    }
-    // Bound fanout: no crawling entire genres or mirroring the provider database.
-    for (const plan of plans.slice(0, 8)) {
+    const completed = new Set<string>();
+    const expand = async (plan: typeof plans[number]) => {
+      const key = JSON.stringify(plan);
+      if (exhausted || completed.has(key) || completed.size >= 8 || remaining <= 0) return;
+      completed.add(key);
       try {
-        const results = await this.client.page(plan.collection, { ...plan.query, includeRelationships: "All", pageSize: "20" }, 2);
         let accepted = 0;
-        for (const result of results.slice(0, 5)) {
-          const workIDs = plan.collection === "editions" ? refs(result, "books").map(r => r.id) : [result.id];
-          for (const id of workIDs) {
-            if (excludedIDs.has(id) || candidates.has(id) || remaining <= 0) continue;
-            remaining--;
-            let mapped: CatalogBook | null;
-            if (plan.collection === "editions") {
-              const work = await this.client.get(path("books", id));
-              mapped = work ? this.map(work, result) : null;
-            } else {
-              const editions = await this.client.page("editions", { bookId: id, includeRelationships: "All", pageSize: "1" });
-              mapped = this.map(result, editions[0]);
+        for await (const results of client.pages(plan.collection, { ...plan.query, includeRelationships: "None", pageSize: "6" }, 2)) {
+          for (const result of results) {
+            const edition: Resource | null = plan.collection === "editions" ? await client.get(path("editions", result.id)) : null;
+            if (plan.collection === "editions" && !edition) continue;
+            if (edition && plan.query.genreId && !refs(edition, "genres").some(genre => genre.id === plan.query.genreId)) continue;
+            const workIDs = edition ? refs(edition, "books").map(r => r.id) : [result.id];
+            for (const id of workIDs) {
+              if (excludedIDs.has(id) || candidates.has(id) || remaining <= 0) continue;
+              remaining--;
+              let mapped: CatalogBook | null;
+              if (plan.collection === "editions") {
+                const work = await client.get(path("books", id));
+                mapped = work ? this.map(work, edition ?? undefined) : null;
+              } else {
+                mapped = await this.work(id, client);
+              }
+              if (mapped && plan.query.authorId && !mapped.authorIDs.includes(plan.query.authorId)) continue;
+              if (mapped && plan.query.subjectId && !mapped.subjectIDs.includes(plan.query.subjectId)) continue;
+              if (mapped && !excludedKeys.has(bookKey(mapped.title, mapped.author)) && !(mapped.isbn && excludedISBNs.has(canonicalISBN(mapped.isbn)))) {
+                candidates.set(id, mapped);
+                if (mapped.metadataIncomplete) partial = true;
+                accepted++;
+                if (publish && candidates.size >= 2) await publish(this.assemble(library, seeds, [...candidates.values()], true, activeUntil));
+              }
             }
-            if (mapped && !excludedKeys.has(bookKey(mapped.title, mapped.author)) && !(mapped.isbn && excludedISBNs.has(canonicalISBN(mapped.isbn)))) {
-              candidates.set(id, mapped);
-              accepted++;
-            }
+            if (remaining <= 0 || accepted >= 4) break;
           }
           if (remaining <= 0 || accepted >= 4) break;
         }
@@ -218,9 +282,47 @@ export class AutomaticCatalogService {
         if (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED"].includes(error.code)) throw error;
         console.warn("Automatic catalog provider failure:", { stage: "candidates", collection: plan.collection, code: error instanceof CatalogError ? error.code : "UNAVAILABLE" });
         partial = true;
+        if (error instanceof CatalogError && error.code === "CATALOG_TIMED_OUT") {
+          if (candidates.size < 2) throw error;
+          exhausted = true;
+        }
       }
-      if (remaining <= 0) { partial = true; break; }
+    };
+    // Publish useful results from the first matched seed while matching the rest continues.
+    for (const signal of seedSignals) {
+      try {
+        const book = await this.match(signal, client);
+        if (book && !seeds.some(s => s.id === book.id)) {
+          seeds.push(book);
+          if (book.metadataIncomplete) partial = true;
+          excludedIDs.add(book.id);
+          candidates.delete(book.id);
+          refsForSeed(book).forEach(plan => {
+            if (!plans.some(existing => JSON.stringify(existing) === JSON.stringify(plan))) plans.push(plan);
+          });
+          const authorPlan = refsForSeed(book).find(plan => plan.query.authorId);
+          if (authorPlan) await expand(authorPlan);
+        }
+      } catch (error) {
+        if (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED"].includes(error.code)) throw error;
+        console.warn("Automatic catalog provider failure:", { stage: "seed", code: error instanceof CatalogError ? error.code : "UNAVAILABLE" });
+        partial = true;
+        if (error instanceof CatalogError && error.code === "CATALOG_TIMED_OUT") {
+          if (candidates.size < 2) throw error;
+          break;
+        }
+      }
+      if (exhausted) break;
     }
+    if (!seeds.length && partial) throw new CatalogError("PROVIDER_UNAVAILABLE");
+    for (const plan of plans) await expand(plan);
+    if (remaining <= 0) partial = true;
+    const response = this.assemble(library, seeds, [...candidates.values()], partial, activeUntil);
+    if (!response.catalogs.length && partial) throw new CatalogError("PROVIDER_UNAVAILABLE");
+    return response;
+  }
+
+  private assemble(library: LibrarySignal[], seeds: CatalogBook[], candidates: CatalogBook[], partial: boolean, activeUntil: number): CatalogResponse {
     const preferences = new Map<string, number>();
     library.filter(b => !["did not finish", "archived"].includes(b.status.toLowerCase()) && !(b.rating > 0 && b.rating < 3)).forEach(b => {
       specific([...b.genres, ...b.subjects]).forEach(value => {
@@ -228,7 +330,7 @@ export class AutomaticCatalogService {
         preferences.set(key, (preferences.get(key) ?? 0) + 1 + Number(b.favorite) * 2 + (b.rating >= 4 ? 1 : 0));
       });
     });
-    const ranked = [...candidates.values()].map(book => {
+    const ranked = candidates.map(book => {
       const match = similarity(book, seeds);
       const preferenceBonus = Math.min(4, specific([...book.genres, ...book.subjects]).reduce((sum, v) => sum + (preferences.get(normalize(v)) ?? 0), 0));
       return { book, ...match, score: match.score > 0 ? match.score + preferenceBonus : 0 };
@@ -257,7 +359,6 @@ export class AutomaticCatalogService {
     add("discovery", "Discover Something New", r => r.subjects >= 1 || r.genres >= 2);
     const order = ["similar", "genres", "themes", "new-authors", "authors-read", "related", "discovery"];
     catalogs.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-    if (!catalogs.length && partial) throw new CatalogError("PROVIDER_UNAVAILABLE");
     return { catalogs, generatedAt: new Date().toISOString(), expiresAt: new Date(Math.min(Date.now() + (partial ? 300_000 : 3_600_000), activeUntil)).toISOString(), partial };
   }
 }
@@ -274,7 +375,7 @@ function refsForSeed(seed: CatalogBook) {
     .forEach(subjectId => plans.push({ collection: "books", query: { subjectId } }));
   seed.genreIDs.filter((_, index) => specific([seed.genres[index] ?? ""]).length > 0).slice(0, 1)
     .forEach(genreId => plans.push({ collection: "editions", query: { genreId } }));
-  seed.authorIDs.slice(0, 1).forEach(authorId => plans.push({ collection: "editions", query: { authorId } }));
+  seed.authorIDs.slice(0, 1).forEach(authorId => plans.unshift({ collection: "books", query: { authorId } }));
   return plans;
 }
 
