@@ -12,17 +12,15 @@ Optional configuration:
 
 - `BOOKDATABASE_DISABLED=true`: disable all provider reads, purge temporary catalogs at startup and maintenance, and reject catalog data requests.
 - `BOOKDATABASE_SUBSCRIPTION_EXPIRES_AT`: optional ISO paid-through bound. Not required. Without it, provider access is revalidated every 15 minutes.
-- `LOOMEY_APPLE_AUDIENCE`: defaults to the existing app bundle ID, `im.lystaria.Lumey`.
 
-New catalogs require authenticated Apple Sign In. Existing Loomey sign-in records contain an Apple subject but no backend-verifiable token. Existing users may therefore see an Apple Continue button in the catalog section once. New sign-ins retain Apple's short-lived identity token in Keychain only until it can be exchanged. The backend validates Apple signature/issuer/audience, then issues a scoped 30-day session. The signing key is domain-separated from the provider secret using HMAC; rotating the provider key invalidates these sessions. Nothing embeds the provider credential in iOS. Existing user/library/Collections APIs are unchanged.
+Catalogs do not require Sign in with Apple or any catalog-specific credentials. There is no catalog token exchange. The provider key remains exclusively on this backend. Existing app authentication and user/library/Collections APIs are unchanged.
 
 ## Endpoints
 
-All responses are `private, no-store`. All routes except the session exchange require the scoped bearer token. User identity comes exclusively from the verified token, never a submitted user ID.
+All responses are `private, no-store`. These routes accept requests without an Authorization header and apply per-address request limits independently of shared provider quotas. Recommendations depend on the submitted library signals, not an Apple identity or submitted account ID. There is no endpoint to retrieve another library's cached catalogs by identifier.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/api/books/automatic-catalogs/session` | Exchange `{ identityToken }` for `{ token, userID }`. |
 | POST | `/api/books/automatic-catalogs` | Accept `{ books: [...] }`, return expiring personalized catalogs. |
 | GET | `/api/books/automatic-catalogs/books/:id` | Full metadata for a provider work and a compatible edition. |
 | GET | `/api/books/automatic-catalogs/books/:id/library-metadata` | Independently sourced Google Books/Open Library metadata suitable for saving to the user's library. |
@@ -57,13 +55,13 @@ Catalog types are similar books, favorite genres, similar themes, new authors, f
 
 - Existing MongoDB/Mongoose infrastructure stores only expiring feature-specific documents, not a permanent catalog mirror.
 - Metadata TTL is six hours by default, never more than 24 hours; negative lookups last 15 minutes; image URLs last four minutes because provider URLs are valid for five.
-- Personalized outputs last one hour, or five minutes when partial. Cache keys hash the verified subject and complete normalized input, so library/rating/status/reading changes invalidate output. No raw personal input profile is persisted.
+- Personalized outputs last one hour, or five minutes when partial. Cache keys hash the complete normalized library input, including local opaque book IDs, so library/rating/status/reading changes invalidate output. No raw personal input profile is persisted.
 - Identical fetches coalesce in-process and through owner-checked Mongo leases across workers.
 - Atomic Mongo rate reservations enforce at least 1,100 ms between provider request starts across all workers, including midnight. A durable UTC daily counter caps requests at 5,000 even after a restart. Conservative reservations count failed calls too; the provider may refund 5xx against its own count.
 - Timeouts and 5xx receive one bounded retry, with a new rate/quota reservation. Auth/quota/invalid-record errors are not blindly retried. Missing records are negative-cached. Provider responses are validated before caching.
-- User requests are rate-limited independently of the shared subscription budget. Health checks run every 15 minutes and use the same cached/rate-limited client, consuming at most about 96 daily calls.
-- Provider `NO_API_CALLS_REMAINING` (documented HTTP 400) and HTTP 429 are handled explicitly with retry information. Access-denied responses purge provider-derived caches. Mongo outages fail closed rather than bypassing quota or auth.
-- iOS stores catalog responses and cover bytes only in bounded, expiring memory caches. Auth/session credentials use existing Keychain conventions. Offline unexpired responses can be reused; other offline/error/empty states offer retry.
+- Requests are rate-limited by server-observed client address independently of the shared subscription budget. Catalog/data requests allow 20 per minute and image resolution allows 90 per minute. Existing proxy configuration is unchanged; clients sharing a server-observed proxy address share that limit. Health checks run every 15 minutes and use the same cached/rate-limited client, consuming at most about 96 daily calls.
+- Provider `NO_API_CALLS_REMAINING` (documented HTTP 400) and HTTP 429 are handled explicitly with retry information. Access-denied responses purge provider-derived caches. Mongo outages fail closed rather than bypassing quota controls.
+- iOS stores catalog responses and cover bytes only in bounded, expiring memory caches. No catalog credentials are stored. Offline unexpired responses can be reused; other offline/error/empty states offer retry.
 
 ## Subscription cancellation
 
@@ -78,7 +76,7 @@ Only AutomaticCatalogCache is purged. Collections, user libraries, reading histo
 
 ## Verification and live limitation
 
-The deterministic suite is `npm run build && node --test tests/automatic-catalogs.test.mjs`. It covers HAL parsing/pagination, link safety, header authentication, ISBN/work matching, conflicting metadata, multi-signal scoring, deduplication, cache TTL and coalescing, cross-worker rate/daily quota controls, errors, auth scope/expiry, and independent library metadata.
+The deterministic suite is `npm run build && node --test tests/automatic-catalogs.test.mjs`. It covers HAL parsing/pagination, link safety, provider-key header authentication, ISBN/work matching, conflicting metadata, multi-signal scoring, deduplication, cache TTL and coalescing, cross-worker rate/daily quota controls, errors, sign-in-free catalog/detail/image endpoints, request throttling, and independent library metadata. No build was run for the catalog sign-in removal; the updated suite requires a refreshed compilation before running against `dist`.
 
 On 2026-10-22 local live checks authenticated successfully and read edition/work responses. However, `/books?searchQuery=QzxNoSuchBookTitle88492&pageSize=1&includeRelationships=None` returned a record titled `George Eliot`, despite echoing the nonsense query in `_links.self`. A Fantastic Mr. Fox title query returned the same unrelated George results. The separate documented edition-title search successfully resolved Dune to Frank Herbert, so that fallback is implemented and tested. The subsequent live relationship expansion still failed to produce trustworthy catalog rows; live personalized output remains unverified. Matching/filter checks reject unrelated records rather than treating a 200 response as recommendation success. This behavior needs resolution/clarification from the provider; no invented alternate endpoint or unrelated filler is used. Logs expose stage/error code only, not reader inputs or API credentials.
 
@@ -90,10 +88,9 @@ New:
 - `src/services/bookDatabaseClient.ts`: documented API, HAL, validation, request coalescing and temporary cache access.
 - `src/services/automaticCatalogStore.ts`: feature-only Mongo TTL caches, leases, quota/rate controls and purge.
 - `src/services/automaticCatalogService.ts`: library validation, reliable matching, ranking and catalog allocation.
-- `src/services/catalogAuth.ts`: Apple verification and scoped sessions using existing jose dependency.
 - `src/services/catalogLibraryMetadata.ts`: independent metadata for permanent library saves, no AI.
 - `src/services/automaticCatalogMaintenance.ts`: existing-process periodic access checks and disabled-state cleanup.
-- `src/routes/automaticCatalogs.ts`: authenticated feature routes and consistent safe errors.
+- `src/routes/automaticCatalogs.ts`: sign-in-free feature routes, per-address throttling and consistent safe errors.
 - `scripts/purge-automatic-catalogs.mjs`: operator cleanup of feature caches only.
 - `tests/automatic-catalogs.test.mjs`: deterministic feature coverage.
 - `AUTOMATIC_BOOK_CATALOGS.md`: this setup, contract, licensing and operational record.

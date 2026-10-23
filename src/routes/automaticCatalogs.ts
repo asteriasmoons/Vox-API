@@ -1,12 +1,11 @@
 import { Router, Request, Response } from "express";
 import { automaticCatalogService, bookDatabaseClient, parseLibrary } from "../services/automaticCatalogService";
-import { exchangeCatalogSession, verifyCatalogSession } from "../services/catalogAuth";
 import { CatalogError, limitCatalogRequests } from "../services/automaticCatalogStore";
 import { independentLibraryMetadata } from "../services/catalogLibraryMetadata";
 
 export function createAutomaticCatalogRouter(dependencies = {
   service: automaticCatalogService, client: bookDatabaseClient,
-  verify: verifyCatalogSession, exchange: exchangeCatalogSession, limit: limitCatalogRequests,
+  limit: limitCatalogRequests,
 }) {
   const router = Router();
   const fail = (res: Response, error: unknown) => {
@@ -15,28 +14,17 @@ export function createAutomaticCatalogRouter(dependencies = {
     if (failure.status === 429 || failure.status === 503) res.setHeader("Retry-After", String(failure.retryAfter));
     return res.status(failure.status).json({ error: failure.code });
   };
-  router.post("/session", async (req, res) => {
-    try {
-      if (typeof req.body?.identityToken !== "string" || req.body.identityToken.length > 10_000) throw new CatalogError("UNAUTHORIZED", 401);
-      await dependencies.limit(`session:${req.ip}`, 10);
-      let session;
-      try { session = await dependencies.exchange(req.body.identityToken); }
-      catch (error) { if (error instanceof CatalogError && error.status === 503) throw error; throw new CatalogError("UNAUTHORIZED", 401); }
-      res.setHeader("Cache-Control", "no-store");
-      res.json(session);
-    } catch (error) { fail(res, error); }
-  });
   router.use(async (req: Request, res: Response, next) => {
     try {
-      res.locals.catalogUser = await dependencies.verify(req.headers.authorization);
       const isImage = req.path.startsWith("/images/");
-      await dependencies.limit(`${res.locals.catalogUser}:${isImage ? "images" : "catalogs"}`, isImage ? 90 : 20);
+      const address = req.ip ?? req.socket.remoteAddress ?? "unknown";
+      await dependencies.limit(`${address}:${isImage ? "images" : "catalogs"}`, isImage ? 90 : 20);
       res.setHeader("Cache-Control", "private, no-store");
       next();
     } catch (error) { fail(res, error); }
   });
   router.post("/", async (req, res) => {
-    try { res.json(await dependencies.service.catalogs(res.locals.catalogUser, parseLibrary(req.body))); }
+    try { res.json(await dependencies.service.catalogs(parseLibrary(req.body))); }
     catch (error) { fail(res, error); }
   });
   router.get("/books/:id", async (req, res) => {

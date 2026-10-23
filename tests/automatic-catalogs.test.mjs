@@ -2,13 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import express from "express";
 import { once } from "node:events";
-import { createHmac } from "node:crypto";
-import { SignJWT } from "jose";
 import { BookDatabaseClient, parsePage, providerURL } from "../dist/services/bookDatabaseClient.js";
 import { AutomaticCatalogService, canonicalISBN, matchesIdentity, parseLibrary, similarity, validISBN } from "../dist/services/automaticCatalogService.js";
 import { CatalogError, mongoCatalogStore } from "../dist/services/automaticCatalogStore.js";
 import { createAutomaticCatalogRouter } from "../dist/routes/automaticCatalogs.js";
-import { verifyCatalogSession, exchangeCatalogSession } from "../dist/services/catalogAuth.js";
 import { independentLibraryMetadata } from "../dist/services/catalogLibraryMetadata.js";
 
 class MemoryStore {
@@ -180,7 +177,7 @@ test("specific multi-signal similarity outranks broad categories and author alon
   assert.equal(similarity(redundant, [redundant]).subjects, 1);
 });
 
-test("catalog output caches per verified account and library fingerprint", async () => {
+test("catalog output caches by library fingerprint without an account", async () => {
   let builds = 0;
   const c = {
     assertActive: async () => Date.now() + 3600_000,
@@ -190,12 +187,12 @@ test("catalog output caches per verified account and library fingerprint", async
   const service = new AutomaticCatalogService(c, store);
   service.build = async () => { builds++; return { catalogs: [], generatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 3600_000).toISOString(), partial: false }; };
   const books = parseLibrary({ books: [{ id: "one", title: "Book", author: "Author", rating: 5 }] });
-  await Promise.all([service.catalogs("alice", books), service.catalogs("alice", books)]);
+  await Promise.all([service.catalogs(books), service.catalogs(books)]);
   assert.equal(builds, 1);
-  await service.catalogs("alice", books); assert.equal(builds, 1);
-  await service.catalogs("bob", books); assert.equal(builds, 2);
-  await service.catalogs("alice", [{ ...books[0], rating: 1 }]); assert.equal(builds, 3);
-  assert.equal([...store.values.keys()].some(k => k.includes("alice") || k.includes("Author")), false);
+  await service.catalogs(books); assert.equal(builds, 1);
+  await service.catalogs([{ ...books[0], id: "another-library-book" }]); assert.equal(builds, 2);
+  await service.catalogs([{ ...books[0], rating: 1 }]); assert.equal(builds, 3);
+  assert.equal([...store.values.keys()].some(k => k.includes("another-library-book") || k.includes("Author")), false);
 });
 
 test("conflicting ISBN-to-work relationships fall back to exact title and author", async () => {
@@ -238,7 +235,7 @@ test("real catalog assembly excludes source and duplicate editions across shelve
   };
   const service = new AutomaticCatalogService(c, new MemoryStore());
   service.match = async () => seed;
-  const result = await service.catalogs("reader", [{ id: "local", title: "Source", author: "Author", genres: [], subjects: [], rating: 5, favorite: true, status: "Finished", activity: 10 }]);
+  const result = await service.catalogs([{ id: "local", title: "Source", author: "Author", genres: [], subjects: [], rating: 5, favorite: true, status: "Finished", activity: 10 }]);
   const books = result.catalogs.flatMap(c => c.books);
   assert.ok(books.length >= 2);
   assert.ok(books.every(b => b.id !== "source"));
@@ -246,41 +243,48 @@ test("real catalog assembly excludes source and duplicate editions across shelve
   assert.equal(books.length, new Set(books.map(b => `${b.title}|${b.author}`)).size);
 });
 
-test("new catalog endpoints reject missing or forged authentication", async () => {
-  await assert.rejects(verifyCatalogSession(undefined), /UNAUTHORIZED/);
-  await assert.rejects(verifyCatalogSession("Bearer forged"), /UNAUTHORIZED/);
-  await assert.rejects(exchangeCatalogSession("not-a-token"));
+test("catalogs, details, and covers load without sign-in or a token exchange", async () => {
+  const limits = [];
   const app = express(); app.use(express.json());
   app.use("/catalogs", createAutomaticCatalogRouter({
-    service: { catalogs: async (user, library) => ({ user, count: library.length }) }, client: {},
-    verify: async header => { if (header !== "Bearer verified") throw new CatalogError("UNAUTHORIZED", 401); return "trusted-subject"; },
-    exchange: async () => { throw new CatalogError("UNAUTHORIZED", 401); }, limit: async () => {},
+    service: { catalogs: async library => ({ count: library.length }), work: async id => id === "missing" ? null : { id } },
+    client: { get: async () => ({ contentUrl: "https://images.example.test/cover.jpg" }) },
+    limit: async (key, limit) => { limits.push({ key, limit }); },
   }));
   const server = app.listen(0, "127.0.0.1"); await once(server, "listening");
   try {
     const url = `http://127.0.0.1:${server.address().port}/catalogs`;
-    assert.equal((await fetch(url, { method: "POST" })).status, 401);
-    const result = await fetch(url, { method: "POST", headers: { Authorization: "Bearer verified", "Content-Type": "application/json" }, body: JSON.stringify({ userId: "spoofed", books: [] }) });
-    assert.deepEqual(await result.json(), { user: "trusted-subject", count: 0 });
-    assert.equal((await fetch(url, { method: "POST", headers: { Authorization: "Bearer verified", "Content-Type": "application/json" }, body: "{}" })).status, 400);
+    const result = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ books: [] }) });
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("Cache-Control"), "private, no-store");
+    assert.deepEqual(await result.json(), { count: 0 });
+    assert.deepEqual(await (await fetch(`${url}/books/work`)).json(), { id: "work" });
+    assert.deepEqual(await (await fetch(`${url}/images/cover`)).json(), { url: "https://images.example.test/cover.jpg", expiresIn: 240 });
+    assert.equal((await fetch(`${url}/books/missing/library-metadata`)).status, 404);
+    assert.equal((await fetch(`${url}/session`, { method: "POST" })).status, 404);
+    assert.equal((await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).status, 400);
+    assert.ok(limits.some(({ key, limit }) => key.endsWith(":images") && limit === 90));
+    assert.ok(limits.some(({ key, limit }) => key.endsWith(":catalogs") && limit === 20));
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
-test("verified sessions require signature, audience, scope, and expiration", async () => {
-  const oldKey = process.env.BOOKDATABASE_API_KEY;
-  process.env.BOOKDATABASE_API_KEY = "fixture-session-key";
+test("catalog request limits still reject excessive traffic without requiring sign-in", async () => {
+  let generated = false;
+  const app = express(); app.use(express.json());
+  app.use("/catalogs", createAutomaticCatalogRouter({
+    service: { catalogs: async () => { generated = true; return {}; } }, client: {},
+    limit: async () => { throw new CatalogError("CATALOG_RATE_LIMITED", 429, 60); },
+  }));
+  const server = app.listen(0, "127.0.0.1"); await once(server, "listening");
   try {
-    const key = createHmac("sha256", "fixture-session-key").update("vox-api:automatic-catalog-session:v1").digest();
-    const token = await new SignJWT({ scope: "loomey:automatic-catalogs" }).setProtectedHeader({ alg: "HS256" })
-      .setIssuer("vox-api:loomey-catalogs").setAudience("loomey:automatic-catalogs").setSubject("verified-reader").setExpirationTime("1m").sign(key);
-    assert.equal(await verifyCatalogSession(`Bearer ${token}`), "verified-reader");
-    const wrongAudience = await new SignJWT({ scope: "loomey:automatic-catalogs" }).setProtectedHeader({ alg: "HS256" })
-      .setIssuer("vox-api:loomey-catalogs").setAudience("different-app").setSubject("reader").setExpirationTime("1m").sign(key);
-    await assert.rejects(verifyCatalogSession(`Bearer ${wrongAudience}`), /UNAUTHORIZED/);
-    const expired = await new SignJWT({ scope: "loomey:automatic-catalogs" }).setProtectedHeader({ alg: "HS256" })
-      .setIssuer("vox-api:loomey-catalogs").setAudience("loomey:automatic-catalogs").setSubject("reader").setExpirationTime(1).sign(key);
-    await assert.rejects(verifyCatalogSession(`Bearer ${expired}`), /UNAUTHORIZED/);
-  } finally { if (oldKey === undefined) delete process.env.BOOKDATABASE_API_KEY; else process.env.BOOKDATABASE_API_KEY = oldKey; }
+    const result = await fetch(`http://127.0.0.1:${server.address().port}/catalogs`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ books: [] }),
+    });
+    assert.equal(result.status, 429);
+    assert.equal(result.headers.get("Retry-After"), "60");
+    assert.deepEqual(await result.json(), { error: "CATALOG_RATE_LIMITED" });
+    assert.equal(generated, false);
+  } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
 test("permanent library metadata is independently sourced, not provider descriptions", async () => {

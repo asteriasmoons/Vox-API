@@ -85,11 +85,11 @@ export class AutomaticCatalogService {
   private inFlight = new Map<string, Promise<CatalogResponse>>();
   constructor(private client: BookDatabaseClient, private store: CatalogStore) {}
 
-  async catalogs(user: string, library: LibrarySignal[]): Promise<CatalogResponse> {
+  async catalogs(library: LibrarySignal[]): Promise<CatalogResponse> {
     const activeUntil = await this.client.assertActive();
     // Refresh proof of subscription even when all metadata is already cached.
     await this.client.get("books/random?includeRelationships=None", 15 * 60_000);
-    const key = `catalog-v3:${digest(user)}:${digest(JSON.stringify(library))}:${Math.floor(Date.now() / 86_400_000)}`;
+    const key = `catalog-v4:${digest(JSON.stringify(library))}:${Math.floor(Date.now() / 86_400_000)}`;
     const cached = await this.store.get(key) as CatalogResponse | undefined;
     if (cached) return cached;
     const existing = this.inFlight.get(key);
