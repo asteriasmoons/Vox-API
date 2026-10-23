@@ -1,0 +1,4 @@
+import { bookPool } from './db';
+export async function recoverInterruptedJobs(staleMinutes=15){const result=await bookPool.query(`UPDATE bk_jobs SET status='queued',available_at=now(),locked_at=NULL,error='Recovered stale worker lease' WHERE status='running' AND locked_at<now()-($1*interval '1 minute') RETURNING id`,[staleMinutes]);return result.rowCount;}
+export async function pruneKnowledge(){await bookPool.query('DELETE FROM bk_provider_responses WHERE expires_at<now()');await bookPool.query(`DELETE FROM bk_jobs WHERE status='done' AND locked_at<now()-interval '14 days'`);}
+export async function stats(){const q=await bookPool.query(`SELECT (SELECT count(*) FROM bk_works) works,(SELECT count(*) FROM bk_editions) editions,(SELECT count(*) FROM bk_authors) authors,(SELECT count(*) FROM bk_jobs WHERE status='queued') queued_jobs,(SELECT count(*) FROM bk_jobs WHERE status='failed') failed_jobs`);return q.rows[0];}

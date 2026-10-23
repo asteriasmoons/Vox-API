@@ -1,0 +1,15 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE IF NOT EXISTS bk_works (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), title text NOT NULL, normalized_title text NOT NULL, description text, language text NOT NULL DEFAULT 'eng', first_published_year int, cover_url text, metadata jsonb NOT NULL DEFAULT '{}', discovered_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS bk_works_title_idx ON bk_works(normalized_title);
+CREATE TABLE IF NOT EXISTS bk_authors (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, normalized_name text NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS bk_work_authors (work_id uuid REFERENCES bk_works ON DELETE CASCADE, author_id uuid REFERENCES bk_authors ON DELETE CASCADE, ordinal int NOT NULL DEFAULT 0, PRIMARY KEY(work_id,author_id));
+CREATE TABLE IF NOT EXISTS bk_editions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), work_id uuid NOT NULL REFERENCES bk_works ON DELETE CASCADE, isbn13 text UNIQUE, publisher text, published_year int, pages int, format text, language text, metadata jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS bk_provider_ids (provider text NOT NULL, provider_id text NOT NULL, work_id uuid NOT NULL REFERENCES bk_works ON DELETE CASCADE, PRIMARY KEY(provider,provider_id));
+CREATE TABLE IF NOT EXISTS bk_subjects (id bigserial PRIMARY KEY, label text NOT NULL, normalized_label text NOT NULL UNIQUE, kind text NOT NULL DEFAULT 'subject');
+CREATE TABLE IF NOT EXISTS bk_work_subjects (work_id uuid REFERENCES bk_works ON DELETE CASCADE, subject_id bigint REFERENCES bk_subjects ON DELETE CASCADE, PRIMARY KEY(work_id,subject_id));
+CREATE TABLE IF NOT EXISTS bk_series (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, normalized_name text NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS bk_work_series (work_id uuid REFERENCES bk_works ON DELETE CASCADE, series_id uuid REFERENCES bk_series ON DELETE CASCADE, position numeric, PRIMARY KEY(work_id,series_id));
+CREATE TABLE IF NOT EXISTS bk_related (from_work uuid REFERENCES bk_works ON DELETE CASCADE, to_work uuid REFERENCES bk_works ON DELETE CASCADE, relation text NOT NULL, weight real NOT NULL DEFAULT 1, PRIMARY KEY(from_work,to_work,relation));
+CREATE TABLE IF NOT EXISTS bk_jobs (id bigserial PRIMARY KEY, kind text NOT NULL, payload jsonb NOT NULL, status text NOT NULL DEFAULT 'queued', attempts int NOT NULL DEFAULT 0, available_at timestamptz NOT NULL DEFAULT now(), locked_at timestamptz, error text, UNIQUE(kind,payload));
+CREATE INDEX IF NOT EXISTS bk_jobs_queue_idx ON bk_jobs(status,available_at);
+CREATE TABLE IF NOT EXISTS bk_provider_responses (provider text NOT NULL, request_key text NOT NULL, payload jsonb NOT NULL, expires_at timestamptz NOT NULL, PRIMARY KEY(provider,request_key));

@@ -1,0 +1,1 @@
+export { knowledgeCandidates } from './knowledgeProvider';
