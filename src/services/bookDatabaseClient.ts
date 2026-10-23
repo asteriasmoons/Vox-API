@@ -1,11 +1,13 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { CatalogError, CatalogStore, delay, digest, mongoCatalogStore } from "./automaticCatalogStore";
+import { catalogFailure, catalogLog, providerRequestFields } from "./catalogDiagnostics";
 
 export type Reference = { id: string; name?: string; _link?: unknown; _links?: unknown };
 export type Resource = {
   id: string; title?: string; name?: string; subtitle?: string; description?: string;
   about?: string; alternateNames?: string[];
+  iso639Code?: string; englishName?: string;
   pageCount?: number; isbns?: string[]; publishDate?: string;
   alternateTitles?: string[];
   uris?: string[]; links?: { uri: string; title: string }[];
@@ -40,7 +42,7 @@ export function validateProviderPayload(value: any, url: URL): void {
   }
   const collection = segments[0]!;
   const { items } = parsePage(value, collection);
-  const relationships: Record<string, string> = { bookId: "books", authorId: "authors", genreId: "genres", subjectId: "subjects" };
+  const relationships: Record<string, string> = { bookId: "books", authorId: "authors", genreId: "genres", subjectId: "subjects", languageId: "languages" };
   const words = (text: string) => text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/);
   for (const item of items) {
     if (url.searchParams.get("includeRelationships") !== "None") {
@@ -67,10 +69,11 @@ export class BookDatabaseClient {
       ? Date.parse(process.env.BOOKDATABASE_SUBSCRIPTION_EXPIRES_AT) : Infinity,
     private signal?: AbortSignal,
     private quota = { blockedUntil: 0 },
+    readonly traceID?: string,
   ) {}
 
-  withSignal(signal: AbortSignal): BookDatabaseClient {
-    return new BookDatabaseClient(this.key, this.store, this.transport, this.activeUntil, signal, this.quota);
+  withSignal(signal: AbortSignal, traceID = this.traceID): BookDatabaseClient {
+    return new BookDatabaseClient(this.key, this.store, this.transport, this.activeUntil, signal, this.quota, traceID);
   }
 
   async assertActive(): Promise<number> {
@@ -88,7 +91,7 @@ export class BookDatabaseClient {
     const url = providerURL(path);
     const cacheKey = url.href;
     const existing = this.inFlight.get(cacheKey);
-    if (existing) return existing;
+    if (existing) { catalogLog("provider.coalesced", providerRequestFields(url), this.traceID); return existing; }
     const pending = this.load(url, Math.min(ttlMs, 86_400_000));
     this.inFlight.set(cacheKey, pending);
     try { return await pending; } finally { this.inFlight.delete(cacheKey); }
@@ -97,7 +100,7 @@ export class BookDatabaseClient {
   private async load(url: URL, ttl: number): Promise<any> {
     const cacheKey = `validated-v2:${url.href}`;
     const cached = await this.store.get(cacheKey);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) { catalogLog("provider.cache_hit", providerRequestFields(url), this.traceID); return cached; }
     const owner = randomUUID();
     const deadline = Date.now() + 25_000;
     while (!(await this.store.claim(cacheKey, owner))) {
@@ -114,15 +117,20 @@ export class BookDatabaseClient {
       if (this.quota.blockedUntil > Date.now()) throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.quota.blockedUntil - Date.now()) / 1000));
       let response: Response | undefined;
       for (let attempt = 0; attempt < 2; attempt++) {
+        const waiting = Date.now();
         await this.store.reserve(this.signal);
         this.signal?.throwIfAborted();
+        const started = Date.now();
+        catalogLog("provider.request", { ...providerRequestFields(url), attempt: attempt + 1, quotaWaitMs: started - waiting }, this.traceID);
         try {
           const timeout = AbortSignal.timeout(15_000);
           const signal = this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
           response = await this.transport(url, { headers: { "X-API-Key": this.key(), Accept: "application/json" }, redirect: "manual", signal });
+          catalogLog("provider.response", { ...providerRequestFields(url), status: response.status, elapsedMs: Date.now() - started }, this.traceID);
           if (response.status < 500 || attempt === 1) break;
           await response.arrayBuffer();
-        } catch {
+        } catch (error) {
+          catalogLog("provider.transport_failed", { ...providerRequestFields(url), ...catalogFailure(error), elapsedMs: Date.now() - started, attempt: attempt + 1 }, this.traceID);
           this.signal?.throwIfAborted();
           if (attempt === 1) throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
         }
@@ -135,6 +143,7 @@ export class BookDatabaseClient {
       const value: any = response.status === 302 ? { contentUrl: response.headers.get("Location") } : await response.json().catch(() => null);
       this.signal?.throwIfAborted();
       if (!response.ok && response.status !== 302) {
+        catalogLog("provider.rejected", { ...providerRequestFields(url), status: response.status, code: value?.errorCode ?? "HTTP_ERROR", problematicParameter: value?.problematicParameter ?? null }, this.traceID);
         if (response.status === 401 || response.status === 403 || ["INVALID_API_KEY", "MISSING_API_KEY"].includes(value?.errorCode)) {
           await this.store.purge();
           throw new CatalogError("PROVIDER_ACCESS_DENIED", 503);
@@ -163,6 +172,7 @@ export class BookDatabaseClient {
     for (let i = 0; i < Math.min(maxPages, 3) && next && !seen.has(next); i++) {
       seen.add(next);
       const page = parsePage(await this.get(next), collection);
+      catalogLog("provider.page", { collection, page: i + 1, records: page.items.length, hasNext: !!page.next }, this.traceID);
       const fresh = page.items.filter(item => {
         if (items.has(item.id)) return false;
         items.add(item.id);
