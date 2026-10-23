@@ -1,157 +1,118 @@
-# Loomey automatic book catalogs
+# Loomey Recommendation Engine
 
-## Configuration and deployment
+Source implementation: 2026-10-23. This is a **new, independent recommendation subsystem**, not a wrapper around the former AutomaticCatalogService. No deployment or live provider/device test was performed.
 
-This feature extends this existing Express/MongoDB service. There is no second backend.
+## Architecture
 
-Required: `BOOKDATABASE_API_KEY` in the existing host's secrets/environment and the existing `MONGODB_URI`.
-The key is already present in the local `.env`; it is not copied into app source, responses, logs, or documentation.
-Deploy the updated backend using the existing `npm run build` / `npm start` or Docker workflow before shipping the iOS change.
+`src/services/loomeyRecommendations/` owns its contracts, provider adapters, normalization, identity matching, discovery plans, relevance scoring, diversification, category allocation, persistence and jobs. It uses the existing Express process and existing `lumeyDB` Mongo connection. It does not import the old recommendation service, ranking, identity helpers, candidate orchestration or category cache.
 
-Optional configuration:
+The existing `/api/books/automatic-catalogs` router now uses `loomeyRecommendationEngine`. Existing maintenance uses the new bookdatabase.io supplement, not the old engine. Old implementation files remain in the repository, but neither the router nor maintenance starts that engine. Collections and unrelated recommendation features are not removed.
 
-- `BOOKDATABASE_DISABLED=true`: disable all provider reads, purge temporary catalogs at startup and maintenance, and reject catalog data requests.
-- `BOOKDATABASE_SUBSCRIPTION_EXPIRES_AT`: optional ISO paid-through bound. Not required. Without it, provider access is revalidated every 15 minutes.
+Flow:
 
-Catalogs do not require Sign in with Apple or any catalog-specific credentials. There is no catalog token exchange. The provider key remains exclusively on this backend. Existing app authentication and user/library/Collections APIs are unchanged.
+1. Parse existing Loomey library identities. Only Finished books supply interests; every owned book supplies exclusion identities.
+2. Extract existing genres, topics/tags/tropes, authors and series. Ratings/favorites weight interest discovery; low-rated Finished books are downweighted rather than silently removed.
+3. Resolve up to eight author-diverse Finished sources through Hardcover; Google/Open Library each resolve up to four. Source lookups are isolated and bounded at 35 seconds per provider.
+4. Build independent author, series, related-work and shared-interest query plans for the requested stale categories. Query providers concurrently, but serialize each provider's bounded plans through shared rate reservations.
+5. Merge compatible candidates, exclude owned works/editions and score actual metadata. At most 64 new candidates per provider are retained. One source cannot monopolize the entire discovery budget.
+6. Persist normalized independent records and progressive category pools. Enrich up to twelve strongest incomplete/thumbnail-only candidates; use bookdatabase.io for at most three useful supplementary lookups.
+7. Persist each category independently and return globally deduplicated, diversified rows to the existing interface.
 
-## Endpoints
+There is no AI, embedding, generative recommendation call, hardcoded book list or provider-personalization endpoint.
 
-All responses are `private, no-store`. These routes accept requests without an Authorization header and apply per-address request limits independently of shared provider quotas. Recommendations depend on the submitted library signals, not an Apple identity or submitted account ID. There is no endpoint to retrieve another library's cached catalogs by identifier.
+## Providers And Configuration
 
-| Method | Path | Purpose |
+Configure these through the existing backend's environment/secret management. Never place them in the iOS app or commit their values.
+
+| Variable | Purpose |
+| --- | --- |
+| `HARDCOVER_API_TOKEN` | Enables Hardcover catalog queries; a token with or without the `Bearer ` prefix is accepted. |
+| `GOOGLE_BOOKS_API_KEY` | Reuses the project's existing Google Books key; configure it for reliable production quota/identification. Unkeyed public requests may be refused by Google. |
+| `BOOKDATABASE_API_KEY` | Existing optional supplementary provider. Its absence does not disable the recommendation engine. |
+| `OPEN_LIBRARY_CONTACT_EMAIL` | Recommended application identification. Without it, use the conservative unidentified-request rate. |
+| `MONGODB_URI` | Existing Mongo connection, unchanged. |
+
+Existing optional `BOOKDATABASE_DISABLED=true` and `BOOKDATABASE_SUBSCRIPTION_EXPIRES_AT` remain supported. An expiry timestamp is **not required**. Disabling/revoking this provider removes only its licensed supplements, not independent recommendations.
+
+Hardcover uses the documented `https://api.hardcover.app/v1/graphql` endpoint and backend Authorization header. Queries use actual `books`, `editions`, `languages`, `contributions.author`, `book_series.series`, `taggings.tag`, `cached_tags` and `cached_similar_book_ids` fields. Exact filters, language relationships and bounded search-ID fallback are used instead of disabled wildcard operators. Catalog relationship IDs supply candidates only; Loomey performs the personalization and ranking.
+
+Google uses documented volumes searches (`inauthor`, `subject`, `intitle`, `isbn`) and volume details, `langRestrict=en`, pagination and returned image links. The key is sent only on backend Google requests using the documented key parameter; logs never include query strings. Open Library uses English-filtered search with selected-edition fields, author/subject searches, work/edition detail relationships and associated cover IDs/OLIDs. No unsupported series-search field is assumed for Google or Open Library.
+
+Local protection limits are conservative ceilings, not claims about a subscription's actual quota:
+
+| Provider | Start spacing | Daily engine ceiling | Request timeout |
+| --- | --- | --- | --- |
+| Hardcover | 1,100 ms, below 60 requests/minute | 5,000 | 18 seconds |
+| Google Books | 250 ms | 1,000 | 10 seconds |
+| Open Library | 1,100 ms; 400 ms with contact identification | 1,500 | 12 seconds |
+| bookdatabase.io | Existing shared 1,100 ms reservation | Existing 5,000/UTC day | 8 seconds for supplements |
+
+Mongo compare-and-set reservations coordinate concurrent workers. Individual generation budgets additionally cap Hardcover/Google/Open Library at 24/24/22 uncached HTTP attempts. Retries count against budgets. Discovery uses at most ten Hardcover and nine Google/Open Library plans; pagination is bounded. Public metadata caches and request leases deduplicate repeated lookups across readers and restarts. Other existing app features retain their existing provider clients.
+
+## Matching, Ranking And Categories
+
+Work identity combines namespaced provider IDs, checksum-valid equivalent ISBN-10/13 values, actual title variants and normalized author/title forms. Candidate metadata merges require compatible identities/authors. Ownership exclusions accept a matching valid ISBN even when an owned record lacks its title/author. Provider namespaces cannot collide. Bridge records merge alternate provider editions before category allocation.
+
+Normalization removes HTML, control/whitespace artifacts and recognized binding/edition suffixes. Meaningful subtitles and installment numbers are retained. Source fields prefer Hardcover, then Google, then Open Library, without replacing complete data with missing values. Provider identifiers, aliases and associated cover alternatives remain attached. Existing Loomey Book UUIDs and stored metadata are never rewritten.
+
+Base relevance weights: shared specific genre 4 (maximum three), theme/tag 6 (maximum four), finished author 18, verified series 28, catalog relationship 8, and up to three matching Finished books at 2 each. Generic/promotional labels do not score. Duplicate taxonomy labels count once; a provider's flat categories cannot erase themes explicitly recorded in Loomey. Name-only series matching additionally requires a compatible Finished author.
+
+| Existing Category | Qualification And Ranking |
+| --- | --- |
+| You Might Also Like | Multiple specific interests, a series relationship, or finished author plus a theme; extra weight for overlap across completed books. |
+| Based on Your Favorite Genres | A relevant genre and at least two distinct interest signals; genre-focused bonus. |
+| Explore Similar Themes | A relevant theme and multiple interest signals; theme-focused bonus. |
+| Discover New Authors | Authors absent from Finished sources and multiple matching interests. Reading/TBR authors do not become preferences. |
+| More From Authors You Read | Verified Finished author overlap, with unread titles only. |
+| Related Books | Verified series/catalog relationships; otherwise a strong same-source genre plus at least two themes. The latter is metadata relatedness, not an invented provider relationship. |
+| Discover Something New | New authors matching multiple interests, with a bounded less-popular-book bonus. |
+
+Greedy diversification penalizes repeated authors, series and genres within a category; author/series caps prevent domination. Category pools retain up to 64 qualified records so early truncation cannot starve seven globally deduplicated rows. Allocation reserves narrow categories, then fills rows round-robin to six cards. No work appears twice across displayed categories. Categories with fewer than two usable, qualifying books are omitted rather than filled with unrelated books. All seven strategies are implemented; actual population depends on the reader's Finished metadata and provider coverage.
+
+## Cache And Job Lifecycle
+
+- `LoomeyRecommendationCache` and `LoomeyRecommendationBudget` are feature collections on the existing `lumeyDB` connection, not a separate database/server. TTL indexes bound retention. No raw personal library/history body is persisted; category keys hash the Finished profile.
+- Normalized independent books and category pools survive process restarts for at most seven days. Fresh categories refresh after six hours. Public provider responses normally cache for six hours; the language list caches for one day.
+- The app's existing root lifecycle hook loads protected, atomic disk snapshots immediately, prepares missing/stale rows at active startup and refreshes on Finished-data changes/foreground opportunities. The catalog view observes prepared state instead of starting generation itself. Existing compatible snapshots stay visible while the new engine replaces them.
+- Adding an owned book filters saved backend/iOS results immediately. If an ownership change drains a previously populated pool, that category is replenished. Unfinished ratings/activity/genres/series cannot change the personalization profile.
+- Failed category refreshes preserve their previous results and original hard expiry. Other categories continue independently. Successful empty results and failed requests have distinct states. Failed categories retry after five minutes; unchanged fresh categories are not regenerated.
+- Jobs run in the existing Express process, with a three-minute deadline, 45-second renewable ownership lease and 15-second heartbeat. Polls read saved category progress. Another process can reclaim a lost lease on a subsequent request. This is not a durable external queue; a restart can interrupt in-flight work but cannot erase completed categories.
+- iOS background suspension cancels polling, not an already-dispatched server job. No guaranteed suspended execution or new background entitlement is assumed. Foreground activation resumes preparation.
+
+bookdatabase.io supplements are stored separately under a licensed cache group for at most 24 hours and are never written into the independent base records. Rendering overlays them only while access/expiry permits. The app honors per-record metadata expiry and scoped provider disable information. Fifteen-minute existing-process maintenance checks optional provider access and purges only licensed/retired provider caches on revocation. Offline copies learn revocation on their next response and expire within their recorded bounds; cancellation cannot be detected instantly on a disconnected device.
+
+## Covers, Details And Network Failures
+
+Cards require real metadata and an associated cover reference. Prefer actual returned full-size images over thumbnails. Open Library uses the verified English edition's cover/OLID before a compatible work fallback; a foreign work title's cover is not assigned to its English edition. Alternative provider URLs are interleaved so one provider's image sizes do not consume every fallback attempt. No unrelated cover is substituted.
+
+The existing iOS cover cache persists validated image bytes, not expiring signed URLs, with three concurrent preload tasks and bounded memory/disk retention. New metadata is published before cover prefetch completes, so image latency cannot block catalog browsing. HTML, corrupt/one-pixel/oversized images fail independently. A failed cover falls through to the same book's other associated URLs; failed cards do not invalidate another row or erase saved catalog metadata.
+
+Provider requests use independent timeouts, at most one transient retry, shared rate-limit cooldowns and two-consecutive-failure discovery stops. Hardcover errors do not gate Google/Open Library. Partial Open Library details retain valid search metadata. A single provider's access denial never clears independent categories. All API redirects stay on the provider's HTTPS origin; normal Node/URLSession certificate validation is unchanged. No ATS exception or certificate bypass was added.
+
+The former raw frontend TLS error could surface from the catalog POST to the existing backend host; source changes cannot prove the production certificate/handshake cause. Diagnostics now distinguish API, resolver and image stages. The live TLS chain remains unverified and must not be described as repaired based on mock tests.
+
+## Existing Endpoints
+
+All responses retain existing per-address request limits and `Cache-Control: private, no-store`. No Apple sign-in or token exchange is added.
+
+| Method | Path Under `/api/books/automatic-catalogs` | Behavior |
 | --- | --- | --- |
-| POST | `/api/books/automatic-catalogs` | Accept `{ books: [...] }`, return expiring personalized catalogs. |
-| GET | `/api/books/automatic-catalogs/books/:id` | Full metadata for a provider work and a compatible edition. |
-| GET | `/api/books/automatic-catalogs/books/:id/library-metadata` | Independently sourced Google Books/Open Library metadata suitable for saving to the user's library. |
-| GET | `/api/books/automatic-catalogs/images/:id` | Resolve the documented 302 image-content endpoint without forwarding the provider key to the image host/app. |
+| POST | `/` | `{books, progressive:true, forceRefresh?, categories?}`; cached rows immediately, HTTP 202 while building, bounded same-input polling. |
+| GET | `/books/:id` | New engine's saved normalized metadata. |
+| GET | `/books/:id/library-metadata` | Independent saved metadata suitable for adding a book to the existing library. |
+| POST | `/books/:id/library-metadata` | Also accepts the displayed card's title/author/ISBN, allowing older cached cards to resolve independent metadata through the new adapters. This is a metadata lookup, never a Finished signal. |
+| GET | `/images/:id` | Existing backend-only bookdatabase.io signed HTTPS image resolver. |
 
-The POST also accepts `progressive: true`. It immediately returns HTTP 202 with `state: "building"`, the currently available catalogs, and `Retry-After: 4`. Repeat the same POST to obtain newer snapshots until `state` is `ready` or `failed`. `forceRefresh: true` on the first request retries a failed/incomplete fetch; omit it on subsequent polls. Existing clients without this flag retain their original response contract. No additional authentication is required.
+Non-progressive POST remains compatible. `X-Loomey-Catalog-Trace` correlates frontend/server logs. Logs include provider, stage, request digest, counts, timings and safe error codes, not tokens, query strings, raw reading history, signed URLs or provider response bodies.
 
-Generation continues in this existing Express process, using the existing Mongo feature cache and owner-checked lease for cross-worker deduplication. No new backend, queue, database, or worker service is introduced. Jobs have a five-minute overall deadline; individual HTTP progress calls return promptly, and discovery page requests have a twelve-second timeout without repeated retries. The larger-page recovery request has at least twelve seconds. Full record reads retain their 15-second timeout and one retry. Process restarts leave only expiring snapshots/leases, not permanent jobs or personal input profiles.
+## Verification And Changed Files
 
-Book signals: local opaque ID, title, author, ISBN, existing genres/topics, rating, favorite flag, reading status, and an aggregate of recent pages/minutes. No session notes, review text, email, or name is sent. Books are capped at 1,000 per request with validation, not silently truncated. The app uses the same backend host as the existing features.
+See the [cross-project implementation report](/Users/asteriasmoons/Desktop/Lumey/AUTOMATIC_BOOK_CATALOGS.md) for the exact file manifest, current check results and verification boundary. Automated checks use injected transports, temporary storage and fake Mongo models. No live API/database/SSH/device tests, app launches, simulator boots or deployments are authorized by these results.
 
-## Actual provider contract
+Official references consulted:
+- [Hardcover getting started and limits](https://docs.hardcover.app/api/getting-started/), [search](https://docs.hardcover.app/api/guides/searching/), [published GraphQL schema](https://github.com/hardcoverapp/hardcover-docs/blob/main/schema.graphql).
+- [Google Books usage](https://developers.google.com/books/docs/v1/using), [volumes list](https://developers.google.com/books/docs/v1/reference/volumes/list), [volume metadata](https://developers.google.com/books/docs/v1/reference/volumes).
+- [Open Library usage/rates](https://openlibrary.org/developers/api), [search/English editions](https://openlibrary.org/dev/docs/api/search), [works/editions](https://openlibrary.org/dev/docs/api/books), [covers](https://openlibrary.org/dev/docs/api/covers).
+- [bookdatabase.io documentation](https://bookdatabase.io/documentation), [OpenAPI](https://bookdatabase.io/api/v1.yaml), [temporary caching/subscription terms](https://bookdatabase.io/terms-of-service).
 
-Sources inspected before implementation:
-
-- [Documentation](https://bookdatabase.io/documentation)
-- [OpenAPI v1](https://bookdatabase.io/api/v1.yaml)
-- [Published plans](https://bookdatabase.io/)
-- [Terms, sections 7 and 9](https://bookdatabase.io/terms-of-service)
-
-`/books` are works; `/editions` carry ISBNs, page counts, publishers and genres. Subjects and author references belong to works. Both `_link` (OpenAPI spelling) and `_links` (live response spelling) are supported. Pagination follows the supplied next link, not guessed numeric pages. Provider redirects are never followed with the API key. All HAL links are restricted to the documented HTTPS API origin and `/v1/` path. Returned resource IDs, search criteria and requested relationships are checked to reject responses that do not honor the request.
-
-The live provider can reject its own next link with `INVALID_FORMAT_CONTINUATION_TOKEN`. In that specific case, a single larger first-page request uses the same documented filters and a page size bounded by the original discovery budget and the provider's maximum of 100. Already-seen records are removed. No token is synthesized, and a failed recovery preserves previous results and reports a partial response.
-
-There is no documented direct book-to-book recommendation edge, author-similarity API, genre name search, subject name search, or publication-year field on this edition schema. We do not invent any. Related Books is inferred from multiple shared subjects/genres, not advertised as an explicit publisher/provider relation. New authors are authors of matching works, not a fabricated author-relationship graph. Publication year remains absent when unavailable.
-
-English-only recommendations are verified through edition language relationships. The English resource ID is learned from `/languages/{id}` with `iso639Code: "eng"`, or the documented paginated `/languages` collection, and cached temporarily. It is not hardcoded. `/books` does not accept a language filter. Genre discovery uses `/editions?genreId=...&languageId=...`; author and subject discovery use `/books?authorId=...` and `/books?subjectId=...`, then validate linked editions individually. If a compound edition query fails, the documented single-filter edition query is used with the identical mandatory language validation. Foreign and unknown-language editions never qualify. Display titles, ISBNs, pages, publishers and images come from the verified English edition, not an arbitrary translation's work title or cover.
-
-## Matching and ranking
-
-ISBN-13/10 are checked, ISBN-10 can be canonically compared to ISBN-13, and editions resolve to works. A conflicting title/author or edition-to-work relationship is not accepted solely because an ISBN matched. Fallback is normalized exact title and author, using both the work-title index and the separately documented edition-title index; ambiguous work matches are excluded rather than guessed. Loomey's current Book model has no compatible stored provider work ID or Google/Open Library identifier, so none is fabricated or migrated into it.
-
-Only books with reading status `Finished` drive source matching, genre/subject preferences and recommendation ranking. Favorites, high ratings and recent activity prioritize those finished books, with distinct authors represented first. The existing exclusion of ratings below three remains. Reading, TBR, DNF, archived and all other library records remain ownership exclusions, never positive recommendation signals. The full library is still submitted so these exclusions are reliable; no reading status or stored book metadata is modified.
-
-Up to 36 finished sources are considered to obtain at most twelve matched works. The first twelve source attempts use the documented ISBN and strict title/author paths. Later attempts are ISBN-only, allowing a valid later finished book to match without spending the entire budget on broken title searches. If provider title matching fails, real specific genres/subjects on finished library books can still rank verified English candidates. A bounded documented `/editions?languageId=...` plan provides candidates for this fallback; only actual metadata overlap qualifies, and actual returned matching genre IDs can add targeted genre plans. This is not a genre-name search or an unrestricted catalog copy.
-
-Discovery pages request `includeRelationships=None` and stream HAL pages as they arrive. Candidate IDs are then resolved to full work and English edition records with `includeRelationships=All`; this changes when data is fetched, not which metadata fields or catalog types are supported. Up to eight linked editions are checked for an English match; work-filtered edition pages are a fallback when edition references are absent or additional editions remain unchecked. A later page or relationship outage does not erase earlier verified results. Each matched finished book can publish a preview before matching continues. When the rotated preview category is absent, its available author query is used instead of skipping that book. A preview stops after two accepted books; remaining pages can be resumed later. Broad profile discovery is used only when no finished source matches; successful source relationships retain priority. Subsequent genre/author plans run before subject queries in each interleaved pass, with duplicate work enrichment avoided during the job.
-
-Specific genres score 3, subjects 5, same author 4, and a genre-plus-subject combination adds 5. Very broad classifications such as Fiction, General and Literature do not score. Counts are capped to prevent metadata-rich records from dominating. Strongest matches rank first with deterministic ID tie breaks. All existing library identities, source works, duplicate work IDs, ISBN equivalents and title/author duplicates are excluded. Catalog allocation also prevents repetition across rows.
-
-Catalog types are similar books, favorite genres, similar themes, new authors, familiar authors, related books and broader discovery. Each row requires at least two qualifying records and includes at most six. Allocation reserves the two-book minimum for viable sections before filling longer rows, preventing the first broad section from consuming all candidates. Missing categories are omitted, never filled with unrelated books. Candidate expansion is bounded to 24 distinct metadata plans, up to three pages of twelve results, and 64 candidate work enrichments, not an unrestricted crawl. Each seed can supply two authors, two specific genres and three specific subjects. Cold generation can take time under the one-per-second plan, but progressive HTTP calls return promptly and already available rows are shown before generation finishes. All seven catalog types remain supported.
-
-## Caching, quota and outages
-
-- Existing MongoDB/Mongoose infrastructure stores only expiring feature-specific documents, not a permanent catalog mirror.
-- Metadata TTL is six hours by default, never more than 24 hours; negative lookups last 15 minutes; image URLs last four minutes because provider URLs are valid for five.
-- Personalized outputs last one hour, or five minutes when partial. Cache keys hash the complete normalized library input, including local opaque book IDs, so library/rating/status/reading changes invalidate output. No raw personal input profile is persisted.
-- Identical fetches coalesce in-process and through owner-checked Mongo leases across workers.
-- Cached catalog responses do not wait for a random-book request. The existing periodic maintenance still checks provider access every 15 minutes.
-- Atomic Mongo rate reservations enforce at least 1,100 ms between provider request starts across all workers, including midnight. A durable UTC daily counter caps requests at 5,000 even after a restart. Conservative reservations count failed calls too; the provider may refund 5xx against its own count.
-- Timeouts and 5xx receive one bounded retry, with a new rate/quota reservation. Auth/quota/invalid-record errors are not blindly retried. Missing records are negative-cached. Provider responses are validated before caching.
-- Requests are rate-limited by server-observed client address independently of the shared subscription budget. Catalog/data requests allow 20 per minute, progressive status requests 40 per minute, and image resolution 90 per minute. Existing proxy configuration is unchanged; clients sharing a server-observed proxy address share that limit. Health checks run every 15 minutes and use the same cached/rate-limited client, consuming at most about 96 daily calls.
-- Provider `NO_API_CALLS_REMAINING` (documented HTTP 400) and HTTP 429 are handled explicitly with retry information. Access-denied responses purge provider-derived caches. Mongo outages fail closed rather than bypassing quota controls.
-- iOS stores catalog responses and cover bytes only in bounded, expiring memory caches. No catalog credentials are stored. Offline unexpired responses can be reused; other offline/error/empty states offer retry.
-- Finished-only output uses the versioned `catalog-v11-finished-profile` key, so previous mixed-status catalogs/job snapshots are not reused. The app uses a corresponding `finished-v3` memory-cache prefix and retains English validation. Existing user data is untouched.
-
-## Diagnostics
-
-Search Railway logs for `[LoomeyCatalog]`. JSON events record HTTP status/latency, job trace IDs, finished/eligible/source-lookup counts, finished-only specific genre/subject counts, seed matching outcomes, author/genre/subject query filters, provider pages, relationship/language rejections, candidate counts, per-section ranking and failures. The app sends `X-Loomey-Catalog-Trace`, echoed in responses; `traceID` in job snapshots identifies the generation job even if another HTTP poll reads it. Frontend console events use the same prefix for network calls, polling, applied sections, retries, detail selection, and image request/cache/decode results. No API keys, reader titles, ISBNs, session text, signed image URLs or raw personalized request bodies are logged. Provider search/ISBN/continuation-token parameter values are redacted.
-
-## Subscription cancellation
-
-The terms permit temporary caching while subscribed and require removing stored/cached provider data when access ends. No renewal date is required by this implementation. Provider access checks detect denial within a maintenance interval, but the API does not document a subscription-status webhook or endpoint. If cancelling, set `BOOKDATABASE_DISABLED=true` and restart all backend workers; do not wait for a failing provider call. For immediate cleanup after disabling:
-
-```sh
-npm run build
-node scripts/purge-automatic-catalogs.mjs
-```
-
-Only AutomaticCatalogCache is purged. Collections, user libraries, reading history, and existing recommendation shelves are not touched. The app's temporary catalog data expires; independently verified Google/Open Library data saved to a user's library is not provider-owned catalog content and is retained. New library saves never fall back to bookdatabase.io descriptions/pages/classifications if independent metadata is unavailable.
-
-## Verification and live limitation
-
-The deterministic suite is `node --test tests/automatic-catalogs.test.mjs`. It runs the current TypeScript source through the existing ts-node development runtime, without producing a project build or relying on stale `dist` files. It covers HAL parsing/streaming/pagination, link safety, provider-key header authentication, ISBN/work matching, conflicting metadata, multi-signal scoring, deduplication, cache TTL and coalescing, cross-worker rate/daily quota controls, errors, sign-in-free endpoints, progressive snapshots/background completion, deadlines, retries, request throttling, and independent library metadata. Swift contract checks were updated but not compiled or executed for this fix.
-
-On 2026-10-22 local live checks authenticated successfully and read edition/work responses. However, `/books?searchQuery=QzxNoSuchBookTitle88492&pageSize=1&includeRelationships=None` returned a record titled `George Eliot`, despite echoing the nonsense query in `_links.self`. A Fantastic Mr. Fox title query returned the same unrelated George results. The separate documented edition-title search successfully resolved Dune to Frank Herbert, so that fallback is implemented and tested. The subsequent live relationship expansion still failed to produce trustworthy catalog rows; live personalized output remains unverified. Matching/filter checks reject unrelated records rather than treating a 200 response as recommendation success. This behavior needs resolution/clarification from the provider; no invented alternate endpoint or unrelated filler is used. Logs expose stage/error code only, not reader inputs or API credentials.
-
-The broader existing `npm test` suite also reports journal-analysis/provider-split expectation failures in unchanged AI services. Those services and their tests were intentionally not rewritten for this metadata-only feature.
-
-On 2026-10-23 the deployed synchronous catalog request took 94.7 seconds and returned `PROVIDER_UNAVAILABLE`. With the corrected source and real provider/Mongo data, an HTTP integration check returned the initial progress response in 669 ms and displayed four fully resolved book records on the first four-second poll; status calls took approximately 180-240 ms. Remaining subject/genre lookups continued independently. The provider still failed a subject request, so that diagnostic finished as incomplete rather than claiming all metadata was available. Incomplete results remain explicitly retryable. These source changes have not been deployed by the coding agent.
-
-### English-only correction, 2026-10-23
-
-The earlier result was not English-validated; Dutch titles exposed a missing language check. The corrected current-source HTTP test, using the real provider and existing Mongo temporary metadata cache with one public Dune library signal, returned HTTP 202 in 578 ms, two populated sections on the 4.7-second poll, and nine distinct verified English books at completion in 13.1 seconds. English titles included The Jesus incident, The robot brains, Accelerando and Tyrant's Test. All nine had actual English edition language relationships; foreign editions were rejected. The run explicitly reported partial data because a subject request failed and the provider's own continuation link was rejected. The subsequent documented larger-page recovery was tested live and returned 35 unique author works rather than stopping at twelve. Those discovery works still undergo English verification before display. These timings use some warm provider caches and are not a cold-start guarantee or device UI verification.
-
-The updated deterministic suite passes 39 tests, including English ID resolution, language rejection, edition-title/cover precedence, twelve-source coverage, author/genre/subject plans, all seven viable sections, fallback queries, pagination recovery and diagnostic redaction. `tsc --noEmit` passes. Swift contracts were updated but no app build, compiled Swift test harness, launch or deployment was run for this correction. Device UI and the deployed Railway revision remain unverified.
-
-### Finished-only matching and failure trace, 2026-10-23
-
-The supplied Railway trace `C22254CB-F923-4F7D-AA0F-E17D4320F005` proves the provider key and Mongo connection were working: ISBN/author requests returned HTTP 200. Most title queries returned unrelated records and were correctly rejected. Only two source works matched; neither carried genre IDs, and the rotated second preview incorrectly skipped its available author query. Subsequent subject queries hit the old 6.5-second timeout, leaving zero qualifying candidates. Rechecking the documented subject query with a twenty-second allowance also timed out, so increasing the timeout alone is not claimed as a solution.
-
-The current correction uses Finished-only sources/preferences, considers later finished ISBNs, retains strict identity/English checks, falls back to available source relationships for previews, and keeps successful matching ahead of broad profile fallback. A real current-source check using the two publicly identified matching works, their actual metadata and a Reading-status control matched exactly two Finished sources and returned five distinct verified English recommendations. The first two were published after 877 ms using warm temporary metadata caches. The diagnostic used a shortened 35-second overall deadline; the final result retained all five books and reported `partial: true` because upstream subject/pagination work was unavailable or interrupted. Production retains its five-minute deadline. This is not a cold-start guarantee, a test of the user's full ninety-book input, or deployed/device verification.
-
-All 45 deterministic backend tests pass, including Finished-only source selection/ranking, no positive discovery from unfinished books, full-library ownership exclusion, later ISBN attempts, profile fallback and missing-genre author preview ordering. `tsc --noEmit` and `git diff --check` pass. No app build, compiled Swift harness, app launch or deployment was run. Railway connector/CLI access requires reauthentication, so the deployed revision has not been updated or verified here.
-
-Files changed for this follow-up:
-
-| File | Why |
-| --- | --- |
-| `src/services/automaticCatalogService.ts` | Finished-only matching/preferences, later ISBN rescue, actual-metadata fallback, earlier author results and corrected cache/diagnostic counts. |
-| `src/services/bookDatabaseClient.ts` | Preserve the pending bounded twelve-second allowance for documented larger-page pagination recovery. |
-| `tests/automatic-catalogs.test.mjs` | Six additional regressions for source status, ranking, exclusions, fallback and scheduling; generation fixtures now explicitly mark Finished sources. |
-| `AUTOMATIC_BOOK_CATALOGS.md` | Document the rule, actual failure evidence, limitations and verification boundary. |
-
-## Correction file changes
-
-| File | Change |
-| --- | --- |
-| `src/services/bookDatabaseClient.ts` | Language resource parsing/validation, request-level bounds, HAL pagination recovery and provider request/response diagnostics. |
-| `src/services/automaticCatalogService.ts` | Verified English edition selection, broader personalized discovery, balanced query scheduling/section allocation, versioned cache invalidation and generation diagnostics. |
-| `src/services/catalogDiagnostics.ts` | Structured trace logging with credential, ISBN, search and continuation-token redaction. |
-| `src/routes/automaticCatalogs.ts` | Trace correlation, endpoint diagnostics and a separate progressive polling rate-limit bucket. |
-| `tests/automatic-catalogs.test.mjs` | English, broader discovery, fallback, allocation, pagination and logging regression coverage; existing tests updated for verified editions. |
-| `AUTOMATIC_BOOK_CATALOGS.md` | Current contracts, limits, fallback behavior, live evidence and verification boundaries. |
-
-No Collections, app authentication, reading history, other providers or unrelated backend services were edited for this correction.
-
-## Backend file manifest
-
-New:
-- `src/services/bookDatabaseClient.ts`: documented API, HAL, validation, request coalescing and temporary cache access.
-- `src/services/automaticCatalogStore.ts`: feature-only Mongo TTL caches, leases, quota/rate controls and purge.
-- `src/services/automaticCatalogService.ts`: library validation, reliable matching, ranking and catalog allocation.
-- `src/services/catalogLibraryMetadata.ts`: independent metadata for permanent library saves, no AI.
-- `src/services/catalogDiagnostics.ts`: structured, redacted provider and catalog diagnostics.
-- `src/services/automaticCatalogMaintenance.ts`: existing-process periodic access checks and disabled-state cleanup.
-- `src/routes/automaticCatalogs.ts`: sign-in-free feature routes, per-address throttling and consistent safe errors.
-- `scripts/purge-automatic-catalogs.mjs`: operator cleanup of feature caches only.
-- `tests/automatic-catalogs.test.mjs`: deterministic feature coverage.
-- `AUTOMATIC_BOOK_CATALOGS.md`: this setup, contract, licensing and operational record.
-
-Modified:
-- `src/server.ts`: mount routes and start maintenance after existing Mongo connection succeeds.
-- `.env.example`: document the provider key and optional controls. Existing deployment files/dependencies are unchanged.
+Hardcover's API is beta and tokens/permissions may change. Open Library requests must remain user-driven, identified, cached and bounded, not a high-traffic catalog mirror; register the application/use case as requested by its guidelines. Provider API access does not establish unrestricted rights to every cover image. Production credentials, access/usage eligibility, live data quality and actual coverage require operator verification.

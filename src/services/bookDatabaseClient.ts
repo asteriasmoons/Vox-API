@@ -14,8 +14,19 @@ export type Resource = {
   _embedded?: Record<string, Reference[]>;
   _link?: Record<string, { href: string }>; _links?: Record<string, { href: string }>;
 };
-export const refs = (resource: Resource, relation: string): Reference[] =>
-  (resource._embedded?.[relation] ?? []).filter(r => typeof r.id === "string" && r.id.length > 0);
+export const refs = (resource: Resource, relation: string): Reference[] => {
+  const values = resource._embedded?.[relation];
+  return Array.isArray(values) ? values.filter(r => r && typeof r.id === "string" && r.id.length > 0) : [];
+};
+
+export function safeImageURL(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || !url.hostname || url.username || url.password || [...url.searchParams.keys()].some(key => key.toLowerCase() === "apikey")) return null;
+    return url.href;
+  } catch { return null; }
+}
 export const BASE = "https://api.bookdatabase.io/v1/";
 export function providerURL(path: string): URL {
   const url = new URL(path.replace(/^\/v1\//, ""), BASE);
@@ -140,6 +151,8 @@ export class BookDatabaseClient {
         } catch (error) {
           catalogLog("provider.transport_failed", { ...providerRequestFields(url), ...catalogFailure(error), elapsedMs: Date.now() - started, attempt: attempt + 1 }, this.traceID);
           this.signal?.throwIfAborted();
+          const code = (error as { code?: string; cause?: { code?: string } })?.cause?.code ?? (error as { code?: string })?.code ?? "";
+          if (/CERT|TLS|SELF_SIGNED|UNABLE_TO_VERIFY/.test(code)) throw new CatalogError("PROVIDER_TLS_FAILED", 503);
           if (attempt === attempts - 1) throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
         }
       }
@@ -148,7 +161,7 @@ export class BookDatabaseClient {
         await this.store.set(cacheKey, null, new Date(Math.min(Date.now() + 900_000, expiry)));
         return null;
       }
-      const value: any = response.status === 302 ? { contentUrl: response.headers.get("Location") } : await response.json().catch(() => null);
+      const value: any = response.status === 302 ? { contentUrl: safeImageURL(response.headers.get("Location")) } : await response.json().catch(() => null);
       this.signal?.throwIfAborted();
       if (!response.ok && response.status !== 302) {
         catalogLog("provider.rejected", { ...providerRequestFields(url), status: response.status, code: value?.errorCode ?? "HTTP_ERROR", problematicParameter: value?.problematicParameter ?? null }, this.traceID);
@@ -165,6 +178,7 @@ export class BookDatabaseClient {
         throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
       }
       if (!value || typeof value !== "object") throw new CatalogError("INVALID_PROVIDER_RESPONSE", 502);
+      if (response.status === 302 && !value.contentUrl) throw new CatalogError("INVALID_IMAGE_URL", 502);
       if (response.status !== 302) validateProviderPayload(value, url);
       const effectiveTTL = response.status === 302 ? Math.min(ttl, 240_000) : ttl;
       await this.store.set(cacheKey, value, new Date(Math.min(Date.now() + effectiveTTL, expiry)));

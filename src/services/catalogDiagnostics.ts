@@ -3,8 +3,8 @@ export function catalogLog(event: string, fields: Record<string, unknown> = {}, 
 }
 
 export function catalogFailure(error: unknown): Record<string, unknown> {
-  const value = error as { name?: string; code?: string; status?: number };
-  return { code: value?.code ?? "UNAVAILABLE", name: value?.name ?? "Error", status: value?.status };
+  const value = error as { name?: string; code?: string; status?: number; cause?: { code?: string } };
+  return { code: value?.code ?? "UNAVAILABLE", name: value?.name ?? "Error", status: value?.status, transportCode: value?.cause?.code };
 }
 
 export function providerRequestFields(url: URL): Record<string, unknown> {
