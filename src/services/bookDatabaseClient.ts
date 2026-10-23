@@ -70,10 +70,15 @@ export class BookDatabaseClient {
     private signal?: AbortSignal,
     private quota = { blockedUntil: 0 },
     readonly traceID?: string,
+    private requestTimeoutMs = 15_000,
   ) {}
 
   withSignal(signal: AbortSignal, traceID = this.traceID): BookDatabaseClient {
-    return new BookDatabaseClient(this.key, this.store, this.transport, this.activeUntil, signal, this.quota, traceID);
+    return new BookDatabaseClient(this.key, this.store, this.transport, this.activeUntil, signal, this.quota, traceID, this.requestTimeoutMs);
+  }
+
+  withTimeout(milliseconds: number): BookDatabaseClient {
+    return new BookDatabaseClient(this.key, this.store, this.transport, this.activeUntil, this.signal, this.quota, this.traceID, milliseconds);
   }
 
   async assertActive(): Promise<number> {
@@ -118,23 +123,24 @@ export class BookDatabaseClient {
       const expiry = await this.assertActive();
       if (this.quota.blockedUntil > Date.now()) throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.quota.blockedUntil - Date.now()) / 1000));
       let response: Response | undefined;
-      for (let attempt = 0; attempt < 2; attempt++) {
+      const attempts = this.requestTimeoutMs < 15_000 ? 1 : 2;
+      for (let attempt = 0; attempt < attempts; attempt++) {
         const waiting = Date.now();
         await this.store.reserve(this.signal);
         this.signal?.throwIfAborted();
         const started = Date.now();
         catalogLog("provider.request", { ...providerRequestFields(url), attempt: attempt + 1, quotaWaitMs: started - waiting }, this.traceID);
         try {
-          const timeout = AbortSignal.timeout(15_000);
+          const timeout = AbortSignal.timeout(this.requestTimeoutMs);
           const signal = this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
           response = await this.transport(url, { headers: { "X-API-Key": this.key(), Accept: "application/json" }, redirect: "manual", signal });
           catalogLog("provider.response", { ...providerRequestFields(url), status: response.status, elapsedMs: Date.now() - started }, this.traceID);
-          if (response.status < 500 || attempt === 1) break;
+          if (response.status < 500 || attempt === attempts - 1) break;
           await response.arrayBuffer();
         } catch (error) {
           catalogLog("provider.transport_failed", { ...providerRequestFields(url), ...catalogFailure(error), elapsedMs: Date.now() - started, attempt: attempt + 1 }, this.traceID);
           this.signal?.throwIfAborted();
-          if (attempt === 1) throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
+          if (attempt === attempts - 1) throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
         }
       }
       if (!response) throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
@@ -155,6 +161,7 @@ export class BookDatabaseClient {
           this.quota.blockedUntil = value?.errorCode === "NO_API_CALLS_REMAINING" ? midnight.getTime() : Date.now() + 60_000;
           throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.quota.blockedUntil - Date.now()) / 1000));
         }
+        if (value?.errorCode === "INVALID_FORMAT_CONTINUATION_TOKEN") throw new CatalogError("PROVIDER_PAGINATION_INVALID", 502);
         throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
       }
       if (!value || typeof value !== "object") throw new CatalogError("INVALID_PROVIDER_RESPONSE", 502);
@@ -171,10 +178,23 @@ export class BookDatabaseClient {
     let next: string | undefined = url.href;
     const seen = new Set<string>();
     const items = new Set<string>();
+    let expandedPage = false;
     const limit = collection === "languages" ? Math.min(maxPages, 80) : Math.min(maxPages, 3);
     for (let i = 0; i < limit && next && !seen.has(next); i++) {
       seen.add(next);
-      const page = parsePage(await this.get(next), collection);
+      let value: unknown;
+      try { value = await this.get(next); }
+      catch (error) {
+        if (!(error instanceof CatalogError) || error.code !== "PROVIDER_PAGINATION_INVALID" || expandedPage || collection === "languages") throw error;
+        expandedPage = true;
+        const expanded = new URL(url);
+        expanded.searchParams.set("pageSize", String(Math.min(100, Number(url.searchParams.get("pageSize")) * limit)));
+        catalogLog("provider.pagination_fallback", { collection, pageSize: expanded.searchParams.get("pageSize"), reason: "provider_rejected_own_continuation_token" }, this.traceID);
+        // Keep the same documented filters; do not fabricate a continuation token.
+        value = await this.get(expanded.href);
+        next = undefined;
+      }
+      const page = parsePage(value, collection);
       catalogLog("provider.page", { collection, page: i + 1, records: page.items.length, hasNext: !!page.next }, this.traceID);
       const fresh = page.items.filter(item => {
         if (items.has(item.id)) return false;
@@ -182,7 +202,7 @@ export class BookDatabaseClient {
         return true;
       });
       yield fresh;
-      next = page.next;
+      next = expandedPage ? undefined : page.next;
     }
   }
 

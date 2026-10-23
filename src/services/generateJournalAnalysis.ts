@@ -91,30 +91,18 @@ function assertRequiredReflectionStructure(reflection: string): void {
     );
   }
 
-  const proseParagraphs = reflection
-    .split(/\r?\n\s*\r?\n/)
-    .map((section) => section.trim())
-    .filter(
-      (section) =>
-        section &&
-        !section
-          .split(/\r?\n/)
-          .every((line) => line.trim().startsWith("- ")),
-    );
-  const hasTwoFullParagraphs =
-    proseParagraphs.length === 2 &&
-    proseParagraphs.every((paragraph) => {
-      const sentenceCount = paragraph
-        .split(/[.!?]+(?:["')\]]+)?\s+/)
-        .map((sentence) => sentence.trim())
-        .filter(Boolean).length;
+  const prose = contentLines
+    .filter((line) => !line.startsWith("- "))
+    .join(" ")
+    .trim();
+  const sentenceCount = prose
+    .split(/(?<=[.!?])(?:["')\]]+)?\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean).length;
 
-      return sentenceCount >= 4 && sentenceCount <= 6;
-    });
-
-  if (!hasTwoFullParagraphs) {
+  if (!prose || sentenceCount < 4 || sentenceCount > 6) {
     throw new Error(
-      "Groq returned a journal reflection without exactly two 4-6 sentence paragraphs",
+      "Groq returned a journal reflection without 4-6 prose sentences total",
     );
   }
 }

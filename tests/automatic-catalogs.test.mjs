@@ -28,6 +28,7 @@ const resource = (id, title = "Book") => ({ id, title, _embedded: { authors: [{ 
 const edition = (workID, title = "Book", languageID = "english") => ({ id: `edition-${workID}`, title, isbns: ["9780140328721"], _embedded: {
   books: [{ id: workID }], authors: [{ id: "author", name: "Author" }], languages: languageID ? [{ id: languageID }] : [], genres: [{ id: "genre", name: "Sea adventures" }],
 } });
+const linkedWork = (id, title = "Book") => ({ ...resource(id, title), _embedded: { ...resource(id, title)._embedded, editions: [{ id: `edition-${id}` }] } });
 const page = (type, items, next) => ({ _embedded: { [type]: items }, _link: next ? { next: { href: next } } : {} });
 const client = (transport, store = new MemoryStore()) => new BookDatabaseClient(() => "fixture-key", store, transport, () => Date.now() + 3600_000);
 
@@ -324,37 +325,34 @@ test("a stalled provider is aborted by the catalog deadline without a second att
   assert.equal(calls, 1);
 });
 
-test("shortlisted works query and verify English editions, not arbitrary linked translations", async () => {
+test("shortlisted works verify the language of linked editions", async () => {
   const paths = [];
   const c = client(async url => {
     paths.push(url.pathname);
     if (url.pathname.endsWith("/one")) return json({ ...resource("one"), _embedded: { ...resource("one")._embedded, editions: [{ id: "edition" }] } });
-    assert.equal(url.searchParams.get("languageId"), "english");
-    assert.equal(url.searchParams.get("bookId"), "one");
-    return json(page("editions", [edition("one")]));
+    return json({ ...edition("one"), id: "edition" });
   });
   const book = await new AutomaticCatalogService(c, new MemoryStore()).work("one");
   assert.equal(book.isbn, "9780140328721");
   assert.equal(book.language, "eng");
-  assert.deepEqual(paths, ["/v1/books/one", "/v1/editions"]);
+  assert.deepEqual(paths, ["/v1/books/one", "/v1/editions/edition"]);
 });
 
 test("slow optional discovery returns already verified books instead of discarding them", async () => {
   let calls = 0;
   const c = client(async (url, options) => {
     calls++;
-    if (url.pathname.endsWith("/editions") && url.searchParams.has("authorId")) {
+    if (url.pathname.endsWith("/books") && url.searchParams.has("authorId")) {
       assert.equal(url.searchParams.get("includeRelationships"), "None");
       assert.equal(url.searchParams.get("pageSize"), "12");
-      assert.equal(url.searchParams.get("languageId"), "english");
-      return json(page("editions", [edition("first", "First Related Book"), edition("second", "Second Related Book")]));
+      return json(page("books", [resource("first", "First Related Book"), resource("second", "Second Related Book")]));
     }
     if (url.pathname.includes("/editions/edition-")) {
       const id = url.pathname.split("edition-")[1];
       return json(edition(id, id === "first" ? "First Related Book" : "Second Related Book"));
     }
-    if (url.pathname.endsWith("/first")) return json(resource("first", "First Related Book"));
-    if (url.pathname.endsWith("/second")) return json(resource("second", "Second Related Book"));
+    if (url.pathname.endsWith("/first")) return json(linkedWork("first", "First Related Book"));
+    if (url.pathname.endsWith("/second")) return json(linkedWork("second", "Second Related Book"));
     return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
   });
   const service = new AutomaticCatalogService(c, new MemoryStore(), 50);
@@ -371,9 +369,10 @@ test("slow optional discovery returns already verified books instead of discardi
 
 test("lightweight discovery still rejects unrelated hydrated books", async () => {
   const c = client(async url => {
-    if (url.pathname.endsWith("/editions")) return json(page("editions", [edition("unrelated"), edition("also-unrelated")]));
+    if (url.pathname.endsWith("/books")) return json(page("books", [resource("unrelated"), resource("also-unrelated")]));
     if (url.pathname.includes("/editions/edition-")) return json(edition(url.pathname.split("edition-")[1]));
-    return json({ ...resource(url.pathname.split("/").at(-1)), _embedded: { authors: [{ id: "someone-else", name: "Someone Else" }], subjects: [] } });
+    const id = url.pathname.split("/").at(-1);
+    return json({ ...linkedWork(id), _embedded: { ...linkedWork(id)._embedded, authors: [{ id: "someone-else", name: "Someone Else" }], subjects: [] } });
   });
   const service = new AutomaticCatalogService(c, new MemoryStore());
   service.match = async () => ({ id: "source", title: "Source", author: "Author", genres: [], subjects: [], genreIDs: [], subjectIDs: [], authorIDs: ["author"] });
@@ -444,12 +443,12 @@ test("HTTP progressive polling opts in without changing existing catalog clients
 test("HAL pages publish full records before a later page times out", async () => {
   const c = client(async (url, options) => {
     if (url.searchParams.has("continuationToken")) return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
-    if (url.pathname.endsWith("/editions")) return json(page("editions", [edition("first", "First Book"), edition("second", "Second Book")], "https://api.bookdatabase.io/v1/editions?authorId=author&languageId=english&includeRelationships=None&continuationToken=next"));
+    if (url.pathname.endsWith("/books")) return json(page("books", [resource("first", "First Book"), resource("second", "Second Book")], "https://api.bookdatabase.io/v1/books?authorId=author&includeRelationships=None&continuationToken=next"));
     if (url.pathname.includes("/editions/edition-")) {
       const id = url.pathname.split("edition-")[1];
       return json(edition(id, id === "first" ? "First Book" : "Second Book"));
     }
-    return json(resource(url.pathname.split("/").at(-1), url.pathname.endsWith("/first") ? "First Book" : "Second Book"));
+    return json(linkedWork(url.pathname.split("/").at(-1), url.pathname.endsWith("/first") ? "First Book" : "Second Book"));
   });
   const service = new AutomaticCatalogService(c, new MemoryStore(), 50);
   service.match = async () => ({ id: "source", title: "Source", author: "Author", genres: [], subjects: [], genreIDs: [], subjectIDs: [], authorIDs: ["author"] });
@@ -549,4 +548,70 @@ test("catalog diagnostics redact private search and credential values", () => {
   const serialized = JSON.stringify(fields);
   for (const privateValue of ["9780140328721", "PrivateTitle", "secret", "opaque"]) assert.equal(serialized.includes(privateValue), false);
   assert.equal(fields.parameters.languageId, "english");
+});
+
+test("a stalled compound genre filter falls back without admitting foreign editions", async () => {
+  const queries = [];
+  const c = client(async url => {
+    if (url.pathname.endsWith("/editions")) {
+      queries.push(Object.fromEntries(url.searchParams));
+      if (url.searchParams.has("languageId")) throw new Error("compound filter stalled");
+      return json(page("editions", [edition("first", "First"), edition("dutch", "Nederlands", "dutch"), edition("unknown", "Unknown", null), edition("second", "Second")]));
+    }
+    if (url.pathname.includes("/editions/edition-")) {
+      const id = url.pathname.split("edition-")[1];
+      return json(edition(id, id === "first" ? "First" : id === "second" ? "Second" : "Other", id === "dutch" ? "dutch" : id === "unknown" ? null : "english"));
+    }
+    const id = url.pathname.split("/").at(-1);
+    return json(resource(id, id === "first" ? "First" : "Second"));
+  });
+  const service = new AutomaticCatalogService(c, new MemoryStore());
+  service.match = async () => ({ id: "source", title: "Source", author: "Author", genres: ["Sea adventures"], subjects: ["Ocean exploration", "Friendship"], genreIDs: ["genre"], subjectIDs: [], authorIDs: [] });
+  const result = await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author" }] }));
+  const books = result.catalogs.flatMap(catalog => catalog.books);
+  assert.deepEqual(books.map(book => book.id).sort(), ["first", "second"]);
+  assert.ok(books.every(book => book.language === "eng"));
+  assert.ok(queries.some(query => query.languageId === "english"));
+  assert.ok(queries.some(query => !query.languageId));
+});
+
+test("section allocation reserves books for all viable catalog types before filling rows", () => {
+  const service = new AutomaticCatalogService({}, new MemoryStore());
+  const seed = { id: "source", genres: ["Fantasy", "Sea adventures"], subjects: ["Friendship", "Ocean exploration"], authorIDs: ["known-author"] };
+  const candidates = Array.from({ length: 30 }, (_, i) => ({
+    ...seed, id: `book-${i}`, title: `Book ${i}`, author: i < 4 ? "Known Author" : `New Author ${i}`, authorNames: [i < 4 ? "Known Author" : `New Author ${i}`],
+    authorIDs: i < 4 ? ["known-author"] : [`new-author-${i}`], language: "eng",
+  }));
+  const result = service.assemble(parseLibrary({ books: [{ id: "local", title: "Source", author: "Known Author" }] }), [seed], candidates, false, Infinity);
+  assert.equal(result.catalogs.length, 7);
+  assert.ok(result.catalogs.every(catalog => catalog.books.length >= 2 && catalog.books.length <= 6));
+  const ids = result.catalogs.flatMap(catalog => catalog.books.map(book => book.id));
+  assert.equal(ids.length, new Set(ids).size);
+});
+
+test("query bounds apply per page, not across time spent hydrating the previous page", async () => {
+  const c = client(async url => json(url.searchParams.has("continuationToken")
+    ? page("books", [resource("second")])
+    : page("books", [resource("first")], "/v1/books?authorId=author&includeRelationships=None&continuationToken=next"))).withTimeout(10);
+  const pages = c.pages("books", { authorId: "author", includeRelationships: "None" }, 2);
+  assert.equal((await pages.next()).value[0].id, "first");
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal((await pages.next()).value[0].id, "second");
+});
+
+test("invalid provider HAL tokens recover with a larger documented page and unchanged filters", async () => {
+  const queries = [];
+  const c = client(async url => {
+    queries.push(Object.fromEntries(url.searchParams));
+    if (url.searchParams.has("continuationToken")) return json({ errorCode: "INVALID_FORMAT_CONTINUATION_TOKEN", problematicParameter: "continuationToken" }, 400);
+    return json(url.searchParams.get("pageSize") === "6"
+      ? page("books", [resource("first"), resource("second"), resource("third")])
+      : page("books", [resource("first")], "/v1/books?authorId=author&includeRelationships=None&pageSize=2&continuationToken=provider-token"));
+  });
+  const books = await c.page("books", { authorId: "author", includeRelationships: "None", pageSize: "2" }, 3);
+  assert.deepEqual(books.map(book => book.id), ["first", "second", "third"]);
+  assert.equal(queries.length, 3);
+  assert.equal(queries[2].authorId, "author");
+  assert.equal(queries[2].pageSize, "6");
+  assert.equal(queries[2].continuationToken, undefined);
 });

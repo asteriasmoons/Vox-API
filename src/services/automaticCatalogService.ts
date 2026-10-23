@@ -20,7 +20,7 @@ export type CatalogBook = {
 export type AutomaticCatalog = { id: string; title: string; books: CatalogBook[] };
 export type CatalogResponse = { catalogs: AutomaticCatalog[]; generatedAt: string; expiresAt: string; partial: boolean; traceID?: string };
 export type CatalogJobResponse = CatalogResponse & { state: "building" | "ready" | "failed"; errorCode?: string; retryAfter?: number };
-const catalogKey = (library: LibrarySignal[]) => `catalog-v8-english:${digest(JSON.stringify(library))}`;
+const catalogKey = (library: LibrarySignal[]) => `catalog-v9-english-expanded:${digest(JSON.stringify(library))}`;
 export const normalize = (s: string) => s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 export const bookKey = (title: string, author: string) => `${normalize(title)}|${normalize(author)}`;
 export const normalizeISBN = (s: string) => s.replace(/[^\dX]/gi, "").toUpperCase();
@@ -175,10 +175,30 @@ export class AutomaticCatalogService {
     const resource: Resource | null = await client.get(path("books", id));
     if (!resource) return null;
     const languageID = englishLanguageID ?? await this.englishLanguage(client);
-    for await (const editions of client.pages("editions", { bookId: id, languageId: languageID, includeRelationships: "All", pageSize: "5" }, 2)) {
-      for (const edition of editions) {
-        const mapped = this.map(resource, edition, languageID);
-        if (mapped) return mapped;
+    const linkedEditions = refs(resource, "editions");
+    for (const ref of linkedEditions.slice(0, 8)) {
+      const edition: Resource | null = await client.get(path("editions", ref.id));
+      const mapped = edition ? this.map(resource, edition, languageID) : null;
+      if (mapped) return mapped;
+    }
+    if (!linkedEditions.length) {
+      // Some documented compound filters stall upstream. Fall back to the work's
+      // editions, but require the same language relationship on every record.
+      const queries = [{ bookId: id, languageId: languageID }, { bookId: id }];
+      for (const query of queries) {
+        try {
+          const bounded = client.withTimeout?.(6500) ?? client;
+          for await (const editions of bounded.pages("editions", { ...query, includeRelationships: "All", pageSize: "5" }, 2)) {
+            for (const edition of editions) {
+              const mapped = this.map(resource, edition, languageID);
+              if (mapped) return mapped;
+            }
+          }
+          break;
+        } catch (error) {
+          if (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED", "CATALOG_TIMED_OUT"].includes(error.code)) throw error;
+          catalogLog("book.edition_query_failed", { workID: id, filtered: "languageId" in query, ...catalogFailure(error) }, client.traceID);
+        }
       }
     }
     catalogLog("book.rejected", { workID: id, reason: "no_verified_english_edition" }, client.traceID);
@@ -278,15 +298,33 @@ export class AutomaticCatalogService {
     const excludedIDs = new Set<string>();
     const plans: { collection: string; query: Record<string, string> }[] = [];
     const completed = new Set<string>();
-    const expand = async (plan: typeof plans[number]) => {
+    const previews = new Set<string>();
+    const hydratedWorks = new Map<string, CatalogBook | null>();
+    const expand = async (plan: typeof plans[number], preview = false) => {
       const key = JSON.stringify(plan);
-      if (exhausted || completed.has(key) || completed.size >= 24 || remaining <= 0 || !englishLanguageID) return;
+      if (exhausted || (completed.has(key) && (preview || !previews.has(key))) || (!completed.has(key) && completed.size >= 24) || remaining <= 0 || !englishLanguageID) return;
       completed.add(key);
+      if (preview) previews.add(key); else previews.delete(key);
       const query = plan.collection === "editions" ? { ...plan.query, languageId: englishLanguageID } : plan.query;
-      catalogLog("discovery.plan_start", { collection: plan.collection, query, plan: completed.size, candidateBudget: remaining }, client.traceID);
+      catalogLog("discovery.plan_start", { collection: plan.collection, query, plan: completed.size, preview, candidateBudget: remaining }, client.traceID);
       try {
         let accepted = 0;
-        for await (const results of client.pages(plan.collection, { ...query, includeRelationships: "None", pageSize: "12" }, 3)) {
+        const pages = async function* () {
+          let yielded = false;
+          try {
+            const bounded = client.withTimeout?.(6500) ?? client;
+            for await (const results of bounded.pages(plan.collection, { ...query, includeRelationships: "None", pageSize: "12" }, preview ? 1 : 3)) {
+              yielded = true;
+              yield results;
+            }
+          } catch (error) {
+            if (yielded || plan.collection !== "editions" || (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED", "CATALOG_TIMED_OUT"].includes(error.code))) throw error;
+            catalogLog("discovery.language_filter_fallback", { query: plan.query, ...catalogFailure(error) }, client.traceID);
+            const bounded = client.withTimeout?.(6500) ?? client;
+            yield* bounded.pages(plan.collection, { ...plan.query, includeRelationships: "None", pageSize: "12" }, preview ? 1 : 3);
+          }
+        };
+        for await (const results of pages()) {
           for (const result of results) {
             const edition: Resource | null = plan.collection === "editions" ? await client.get(path("editions", result.id)) : null;
             if (plan.collection === "editions" && !edition) continue;
@@ -294,20 +332,34 @@ export class AutomaticCatalogService {
               catalogLog("candidate.rejected", { editionID: edition.id, reason: "non_english_or_unknown_language", languages: refs(edition, "languages").map(language => language.id) }, client.traceID);
               continue;
             }
-            if (edition && plan.query.genreId && !refs(edition, "genres").some(genre => genre.id === plan.query.genreId)) continue;
+            if (edition && plan.query.genreId && !refs(edition, "genres").some(genre => genre.id === plan.query.genreId)) {
+              catalogLog("candidate.rejected", { editionID: edition.id, reason: "genre_relationship_mismatch" }, client.traceID);
+              continue;
+            }
             const workIDs = edition ? refs(edition, "books").map(r => r.id) : [result.id];
             for (const id of workIDs) {
               if (excludedIDs.has(id) || candidates.has(id) || remaining <= 0) continue;
-              remaining--;
+              if (!edition && hydratedWorks.has(id) && !hydratedWorks.get(id)) continue;
               let mapped: CatalogBook | null;
               if (plan.collection === "editions") {
+                remaining--;
                 const work = await client.get(path("books", id));
                 mapped = work ? this.map(work, edition ?? undefined, englishLanguageID) : null;
+              } else if (hydratedWorks.has(id)) {
+                mapped = hydratedWorks.get(id)!;
               } else {
+                remaining--;
                 mapped = await this.work(id, client, englishLanguageID);
+                hydratedWorks.set(id, mapped);
               }
-              if (mapped && plan.query.authorId && !mapped.authorIDs.includes(plan.query.authorId)) continue;
-              if (mapped && plan.query.subjectId && !mapped.subjectIDs.includes(plan.query.subjectId)) continue;
+              if (mapped && plan.query.authorId && !mapped.authorIDs.includes(plan.query.authorId)) {
+                catalogLog("candidate.rejected", { workID: id, reason: "author_relationship_mismatch" }, client.traceID);
+                continue;
+              }
+              if (mapped && plan.query.subjectId && !mapped.subjectIDs.includes(plan.query.subjectId)) {
+                catalogLog("candidate.rejected", { workID: id, reason: "subject_relationship_mismatch" }, client.traceID);
+                continue;
+              }
               if (mapped && !excludedKeys.has(bookKey(mapped.title, mapped.author)) && !(mapped.isbn && excludedISBNs.has(canonicalISBN(mapped.isbn)))) {
                 candidates.set(id, mapped);
                 catalogLog("candidate.accepted", { workID: id, language: mapped.language, genres: mapped.genres.length, subjects: mapped.subjects.length, totalCandidates: candidates.size }, client.traceID);
@@ -316,9 +368,9 @@ export class AutomaticCatalogService {
                 if (publish && candidates.size >= 2) await publish(this.assemble(library, seeds, [...candidates.values()], true, activeUntil));
               }
             }
-            if (remaining <= 0 || accepted >= 8) break;
+            if (remaining <= 0 || accepted >= (preview ? 2 : 8)) break;
           }
-          if (remaining <= 0 || accepted >= 8) break;
+          if (remaining <= 0 || accepted >= (preview ? 2 : 8)) break;
         }
         catalogLog("discovery.plan_complete", { collection: plan.collection, query, accepted, totalCandidates: candidates.size }, client.traceID);
       } catch (error) {
@@ -348,7 +400,7 @@ export class AutomaticCatalogService {
           });
           const kind = ["authorId", "genreId", "subjectId"][(seeds.length - 1) % 3]!;
           const preview = refsForSeed(book).find(plan => plan.query[kind] && !completed.has(JSON.stringify(plan)));
-          if (preview) await expand(preview);
+          if (preview) await expand(preview, true);
         } else catalogLog("seed.unmatched", { seed: seedSignals.indexOf(signal) + 1, reason: book ? "duplicate_work" : "no_exact_title_author_or_isbn_match" }, client.traceID);
       } catch (error) {
         if (error instanceof CatalogError && ["PROVIDER_QUOTA_EXHAUSTED", "PROVIDER_ACCESS_DENIED", "CATALOG_NOT_CONFIGURED"].includes(error.code)) throw error;
@@ -392,25 +444,44 @@ export class AutomaticCatalogService {
     const usedIDs = new Set<string>();
     const usedKeys = new Set<string>();
     const catalogs: AutomaticCatalog[] = [];
+    const eligibleByCatalog = new Map<string, typeof ranked>();
+    const sectionCounts = new Map<string, number>();
     const add = (id: string, title: string, predicate: (item: typeof ranked[number]) => boolean) => {
       const eligible = ranked.filter(item => predicate(item) && !usedIDs.has(item.book.id) && !usedKeys.has(bookKey(item.book.title, item.book.author)));
-      if (traceID) catalogLog("catalog.section", { id, eligible: eligible.length, showing: eligible.length < 2 ? 0 : Math.min(6, eligible.length), reason: eligible.length < 2 ? "insufficient_qualifying_english_books" : "ranked" }, traceID);
+      sectionCounts.set(id, eligible.length);
       if (eligible.length < 2) return;
-      const books = eligible.slice(0, 6).map(item => item.book);
+      const books = eligible.slice(0, 2).map(item => item.book);
+      eligibleByCatalog.set(id, ranked.filter(predicate));
       books.forEach(book => { usedIDs.add(book.id); usedKeys.add(bookKey(book.title, book.author)); });
       catalogs.push({ id, title, books });
     };
-    // Allocate specific relationships first; present the familiar discovery order below.
+    // Reserve each viable section's minimum before filling rows, so the first
+    // broad predicate cannot consume every book available to the other sections.
     add("authors-read", "More From Authors You Read", r => r.authors > 0);
+    add("new-authors", "Discover New Authors", r => r.score >= 8 && r.book.authorIDs.every(id => !knownAuthors.has(id))
+      && (r.book.authorNames ?? [r.book.author]).every(author => !libraryAuthors.has(normalize(author))));
     add("similar", "You Might Also Like", r => r.score >= 10 && r.subjects + r.genres >= 2);
     add("themes", "Explore Similar Themes", r => r.subjects >= 2);
     add("genres", "Based on Your Favorite Genres", r => r.genres >= 1 && r.score >= 6);
-    add("new-authors", "Discover New Authors", r => r.score >= 8 && r.book.authorIDs.every(id => !knownAuthors.has(id))
-      && (r.book.authorNames ?? [r.book.author]).every(author => !libraryAuthors.has(normalize(author))));
     add("related", "Related Books", r => r.subjects >= 1 && r.genres >= 1 && r.score >= 8);
     add("discovery", "Discover Something New", r => r.subjects >= 1 || r.genres >= 2);
+    for (let slot = 2; slot < 6; slot++) {
+      for (const catalog of catalogs) {
+        const next = eligibleByCatalog.get(catalog.id)?.find(item => !usedIDs.has(item.book.id) && !usedKeys.has(bookKey(item.book.title, item.book.author)));
+        if (next) {
+          catalog.books.push(next.book);
+          usedIDs.add(next.book.id); usedKeys.add(bookKey(next.book.title, next.book.author));
+        }
+      }
+    }
     const order = ["similar", "genres", "themes", "new-authors", "authors-read", "related", "discovery"];
     catalogs.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    if (traceID) {
+      for (const id of order) {
+        const showing = catalogs.find(catalog => catalog.id === id)?.books.length ?? 0;
+        catalogLog("catalog.section", { id, eligible: sectionCounts.get(id) ?? 0, showing, reason: showing ? "ranked" : "insufficient_qualifying_english_books" }, traceID);
+      }
+    }
     return { catalogs, generatedAt: new Date().toISOString(), expiresAt: new Date(Math.min(Date.now() + (partial ? 300_000 : 3_600_000), activeUntil)).toISOString(), partial };
   }
 }
@@ -427,7 +498,7 @@ function refsForSeed(seed: CatalogBook) {
     .forEach(subjectId => plans.push({ collection: "books", query: { subjectId } }));
   seed.genreIDs.filter((_, index) => specific([seed.genres[index] ?? ""]).length > 0).slice(0, 2)
     .forEach(genreId => plans.push({ collection: "editions", query: { genreId } }));
-  seed.authorIDs.slice(0, 2).forEach(authorId => plans.unshift({ collection: "editions", query: { authorId } }));
+  seed.authorIDs.slice(0, 2).forEach(authorId => plans.unshift({ collection: "books", query: { authorId } }));
   return plans;
 }
 
