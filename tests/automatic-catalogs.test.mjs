@@ -320,7 +320,7 @@ test("a stalled provider is aborted by the catalog deadline without a second att
   });
   const service = new AutomaticCatalogService(c, new MemoryStore(), 30);
   const start = Date.now();
-  await assert.rejects(service.catalogs(parseLibrary({ books: [{ id: "one", title: "Book", author: "Author", isbn: "9780140328721" }] })), /CATALOG_TIMED_OUT/);
+  await assert.rejects(service.catalogs(parseLibrary({ books: [{ id: "one", title: "Book", author: "Author", isbn: "9780140328721", status: "Finished" }] })), /CATALOG_TIMED_OUT/);
   assert.ok(Date.now() - start < 1000);
   assert.equal(calls, 1);
 });
@@ -357,7 +357,7 @@ test("slow optional discovery returns already verified books instead of discardi
   });
   const service = new AutomaticCatalogService(c, new MemoryStore(), 50);
   service.match = async () => ({ id: "source", title: "Source", author: "Author", genres: [], subjects: ["Ocean exploration", "Friendship"], genreIDs: [], subjectIDs: ["s1", "s2"], authorIDs: ["author"] });
-  const library = parseLibrary({ books: [{ id: "local", title: "Source", author: "Author" }] });
+  const library = parseLibrary({ books: [{ id: "local", title: "Source", author: "Author", status: "Finished" }] });
   const response = await service.catalogs(library);
   assert.equal(response.partial, true);
   assert.equal(response.catalogs[0].id, "authors-read");
@@ -376,7 +376,7 @@ test("lightweight discovery still rejects unrelated hydrated books", async () =>
   });
   const service = new AutomaticCatalogService(c, new MemoryStore());
   service.match = async () => ({ id: "source", title: "Source", author: "Author", genres: [], subjects: [], genreIDs: [], subjectIDs: [], authorIDs: ["author"] });
-  const response = await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author" }] }));
+  const response = await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author", status: "Finished" }] }));
   assert.deepEqual(response.catalogs, []);
 });
 
@@ -453,7 +453,7 @@ test("HAL pages publish full records before a later page times out", async () =>
   const service = new AutomaticCatalogService(c, new MemoryStore(), 50);
   service.match = async () => ({ id: "source", title: "Source", author: "Author", genres: [], subjects: [], genreIDs: [], subjectIDs: [], authorIDs: ["author"] });
   const snapshots = [];
-  const response = await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author" }] }), async snapshot => { snapshots.push(snapshot); });
+  const response = await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author", status: "Finished" }] }), async snapshot => { snapshots.push(snapshot); });
   assert.equal(snapshots[0].catalogs[0].books.length, 2);
   assert.deepEqual(snapshots[0].catalogs[0].books[0].subjects, ["Ocean exploration", "Friendship"]);
   assert.equal(response.partial, true);
@@ -465,7 +465,7 @@ test("twelve diverse source books are matched, instead of stopping after four", 
   const service = new AutomaticCatalogService(c, new MemoryStore());
   const matched = [];
   service.match = async signal => { matched.push(signal.id); return { id: signal.id, title: signal.title, author: "Author", genres: [], subjects: [], genreIDs: [], subjectIDs: [], authorIDs: [] }; };
-  await service.catalogs(parseLibrary({ books: Array.from({ length: 16 }, (_, i) => ({ id: `seed-${i}`, title: `Book ${i}`, author: `Author ${i % 8}` })) }));
+  await service.catalogs(parseLibrary({ books: Array.from({ length: 16 }, (_, i) => ({ id: `seed-${i}`, title: `Book ${i}`, author: `Author ${i % 8}`, status: "Finished" })) }));
   assert.equal(matched.length, 12);
 });
 
@@ -535,7 +535,7 @@ test("author, genre, and subject discovery are all used and editions carry the E
   });
   const service = new AutomaticCatalogService(c, new MemoryStore());
   service.match = async () => ({ id: "source", title: "Source", author: "Author", genres: ["Sea adventures"], subjects: ["Ocean exploration", "Friendship"], genreIDs: ["genre"], subjectIDs: ["s1", "s2"], authorIDs: ["author"] });
-  await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author" }] }));
+  await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author", status: "Finished" }] }));
   assert.ok(plans.some(query => query.authorId === "author"));
   assert.ok(plans.some(query => query.genreId === "genre"));
   assert.ok(plans.some(query => query.subjectId === "s1"));
@@ -567,7 +567,7 @@ test("a stalled compound genre filter falls back without admitting foreign editi
   });
   const service = new AutomaticCatalogService(c, new MemoryStore());
   service.match = async () => ({ id: "source", title: "Source", author: "Author", genres: ["Sea adventures"], subjects: ["Ocean exploration", "Friendship"], genreIDs: ["genre"], subjectIDs: [], authorIDs: [] });
-  const result = await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author" }] }));
+  const result = await service.catalogs(parseLibrary({ books: [{ id: "local", title: "Source", author: "Author", status: "Finished" }] }));
   const books = result.catalogs.flatMap(catalog => catalog.books);
   assert.deepEqual(books.map(book => book.id).sort(), ["first", "second"]);
   assert.ok(books.every(book => book.language === "eng"));
@@ -614,4 +614,101 @@ test("invalid provider HAL tokens recover with a larger documented page and unch
   assert.equal(queries[2].authorId, "author");
   assert.equal(queries[2].pageSize, "6");
   assert.equal(queries[2].continuationToken, undefined);
+});
+
+test("only Finished books are matched, even when Reading and TBR books have higher ratings", async () => {
+  const service = new AutomaticCatalogService(client(async () => assert.fail("no metadata query expected")), new MemoryStore());
+  const matched = [];
+  service.match = async signal => {
+    matched.push(signal.id);
+    return { id: signal.id, title: signal.title, author: signal.author, genres: [], subjects: [], genreIDs: [], subjectIDs: [], authorIDs: [] };
+  };
+  await service.catalogs(parseLibrary({ books: [
+    { id: "reading", title: "Reading Book", author: "Author", status: "Reading", rating: 5, favorite: true },
+    { id: "tbr", title: "Saved Book", author: "Author", status: "To Be Read", rating: 5, favorite: true },
+    { id: "finished", title: "Finished Book", author: "Author", status: "Finished", rating: 4 },
+    { id: "archived", title: "Archived Book", author: "Author", status: "Archived", rating: 5 },
+  ] }));
+  assert.deepEqual(matched, ["finished"]);
+});
+
+test("a library without Finished books does not query the provider or invent preferences", async () => {
+  const service = new AutomaticCatalogService(client(async () => assert.fail("unfinished books must not drive discovery")), new MemoryStore());
+  service.match = async () => assert.fail("unfinished book must not be matched");
+  const response = await service.catalogs(parseLibrary({ books: [
+    { id: "reading", title: "Reading Book", author: "Author", status: "Reading", genres: ["Fantasy"], rating: 5 },
+  ] }));
+  assert.deepEqual(response.catalogs, []);
+  assert.equal(response.partial, false);
+});
+
+test("metadata from Finished books ranks real candidates without a successful provider seed match", () => {
+  const service = new AutomaticCatalogService({}, new MemoryStore());
+  const library = parseLibrary({ books: [
+    { id: "finished", title: "Finished Book", author: "Known Author", status: "Finished", genres: ["Fantasy"], subjects: ["Dragons"], rating: 5, favorite: true },
+    { id: "reading", title: "Reading Book", author: "Other Author", status: "Reading", genres: ["Romance"], rating: 5, favorite: true },
+    { id: "tbr", title: "Saved Book", author: "Other Author", status: "To Be Read", subjects: ["Marriage"], rating: 5, favorite: true },
+  ] });
+  const candidates = ["first", "second"].map(id => ({ id, title: id, author: "New Author", authorNames: ["New Author"], authorIDs: ["new"], genres: ["Fantasy"], subjects: ["Dragons"], language: "eng" }));
+  candidates.push({ ...candidates[0], id: "unrelated", title: "Unrelated", genres: ["Romance"], subjects: ["Marriage"] });
+  const result = service.assemble(library, [], candidates, false, Infinity);
+  assert.deepEqual(result.catalogs.flatMap(catalog => catalog.books.map(book => book.id)).sort(), ["first", "second"]);
+});
+
+test("Finished metadata drives English discovery and keeps the entire library excluded", async () => {
+  const queries = [];
+  const titles = { first: "First", second: "Second", owned: "Already Saved", unrelated: "Unrelated" };
+  const fantasyEdition = id => {
+    const record = edition(id, titles[id]);
+    record._embedded.genres = [{ id: id === "unrelated" ? "mystery" : "fantasy", name: id === "unrelated" ? "Mystery" : "Fantasy" }];
+    return record;
+  };
+  const c = client(async url => {
+    if (url.pathname.endsWith("/editions")) {
+      queries.push(Object.fromEntries(url.searchParams));
+      return json(page("editions", Object.keys(titles).filter(id => !url.searchParams.has("genreId") || id !== "unrelated").map(fantasyEdition)));
+    }
+    if (url.pathname.includes("/editions/edition-")) return json(fantasyEdition(url.pathname.split("edition-")[1]));
+    const id = url.pathname.split("/").at(-1);
+    return json(resource(id, titles[id]));
+  });
+  const service = new AutomaticCatalogService(c, new MemoryStore());
+  service.match = async () => null;
+  const response = await service.catalogs(parseLibrary({ books: [
+    { id: "finished", title: "Finished Book", author: "Known Author", status: "Finished", genres: ["Fantasy"], rating: 5, favorite: true },
+    { id: "saved", title: "Already Saved", author: "Author", status: "To Be Read" },
+  ] }));
+  assert.deepEqual(response.catalogs.flatMap(catalog => catalog.books.map(book => book.id)).sort(), ["first", "second"]);
+  assert.ok(queries.every(query => query.languageId === "english"));
+  assert.ok(queries.some(query => query.genreId === "fantasy"), "genuine genre references discovered from matching editions are expanded");
+});
+
+test("later Finished ISBNs are tried when the first twelve sources fail", async () => {
+  const service = new AutomaticCatalogService(client(async () => assert.fail("no discovery query expected")), new MemoryStore());
+  const attempts = [];
+  service.match = async (signal, _client, isbnOnly) => {
+    attempts.push({ id: signal.id, isbnOnly });
+    return signal.id === "seed-14" ? { id: "work", title: signal.title, author: signal.author, genres: [], subjects: [], genreIDs: [], subjectIDs: [], authorIDs: [] } : null;
+  };
+  await service.catalogs(parseLibrary({ books: Array.from({ length: 16 }, (_, i) => ({ id: `seed-${String(i).padStart(2, "0")}`, title: `Finished ${i}`, author: `Author ${i}`, isbn: "9780140328721", status: "Finished" })) }));
+  assert.ok(attempts.some(attempt => attempt.id === "seed-14" && attempt.isbnOnly));
+  assert.equal(attempts.length, 16);
+});
+
+test("a Finished seed without genres still previews its author before slow subject queries", async () => {
+  const queries = [];
+  const c = client(async url => {
+    assert.equal(url.pathname, "/v1/books", "matched sources use targeted relationships, not the broad profile fallback");
+    queries.push(Object.fromEntries(url.searchParams));
+    return json(page("books", []));
+  });
+  const service = new AutomaticCatalogService(c, new MemoryStore());
+  service.match = async signal => ({ id: signal.id, title: signal.title, author: signal.author, genres: [], genreIDs: [], subjects: ["Witchcraft"], subjectIDs: ["subject"], authorIDs: [`author-${signal.id}`] });
+  await service.catalogs(parseLibrary({ books: [
+    { id: "one", title: "First Finished", author: "First Author", status: "Finished", genres: ["Magic"] },
+    { id: "two", title: "Second Finished", author: "Second Author", status: "Finished" },
+  ] }));
+  assert.equal(queries[0].authorId, "author-one");
+  assert.equal(queries[1].authorId, "author-two");
+  assert.ok(queries.slice(2).some(query => query.subjectId === "subject"));
 });

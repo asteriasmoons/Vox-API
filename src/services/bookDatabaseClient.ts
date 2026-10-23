@@ -191,7 +191,7 @@ export class BookDatabaseClient {
         expanded.searchParams.set("pageSize", String(Math.min(100, Number(url.searchParams.get("pageSize")) * limit)));
         catalogLog("provider.pagination_fallback", { collection, pageSize: expanded.searchParams.get("pageSize"), reason: "provider_rejected_own_continuation_token" }, this.traceID);
         // Keep the same documented filters; do not fabricate a continuation token.
-        value = await this.get(expanded.href);
+        value = await this.withTimeout(Math.max(12_000, this.requestTimeoutMs)).get(expanded.href);
         next = undefined;
       }
       const page = parsePage(value, collection);
