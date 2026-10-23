@@ -73,7 +73,7 @@ function freeTierOutputBudget(systemPrompt: string, userPrompt: string): number 
   );
 }
 
-function assertRequiredReflectionQuestions(reflection: string): void {
+function assertRequiredReflectionStructure(reflection: string): void {
   const contentLines = reflection
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -88,6 +88,33 @@ function assertRequiredReflectionQuestions(reflection: string): void {
   if (!hasTwoFinalQuestions) {
     throw new Error(
       "Groq returned a journal reflection without exactly two final bullet questions",
+    );
+  }
+
+  const proseParagraphs = reflection
+    .split(/\r?\n\s*\r?\n/)
+    .map((section) => section.trim())
+    .filter(
+      (section) =>
+        section &&
+        !section
+          .split(/\r?\n/)
+          .every((line) => line.trim().startsWith("- ")),
+    );
+  const hasTwoFullParagraphs =
+    proseParagraphs.length === 2 &&
+    proseParagraphs.every((paragraph) => {
+      const sentenceCount = paragraph
+        .split(/[.!?]+(?:["')\]]+)?\s+/)
+        .map((sentence) => sentence.trim())
+        .filter(Boolean).length;
+
+      return sentenceCount >= 4 && sentenceCount <= 6;
+    });
+
+  if (!hasTwoFullParagraphs) {
+    throw new Error(
+      "Groq returned a journal reflection without exactly two 4-6 sentence paragraphs",
     );
   }
 }
@@ -115,7 +142,7 @@ function journalAnalysisFromParsed(
     throw new Error("Groq returned incomplete analysis fields");
   }
 
-  assertRequiredReflectionQuestions(reflection);
+  assertRequiredReflectionStructure(reflection);
 
   return {
     themes: themes.slice(0, 4),
@@ -140,18 +167,18 @@ Use only the supplied writing. Do not claim knowledge of the user's broader life
 
 Preserve the user's own framing and emotional scale. Their explicit description or rating of the day is controlling evidence. Do not undermine a positive account by manufacturing tension or a negative counterpoint. An unfinished task, future plan, ordinary preference, practical detail, or moment of affection is not automatically a contradiction or problem. Missing someone is not emotional dependence. "When I feel like it" is not avoidance. Routine preparation is not a coping or control strategy. Identify a problem only when the user explicitly presents it as one.
 
-Write one to three short paragraphs with one supported observation each. Do not summarize, retell, paraphrase, list events, or walk through the entry in order. A sentence is invalid if it says what the user already said with synonyms, reordered details, or a more abstract label. Use at most one brief detail per paragraph as evidence for a distinction, priority, implication, or unresolved question that is not already stated. If little genuine reflection is supported, write less; never fill space by repeating the entry. Do not begin with "you mentioned," "you wrote," "you described," or "your entry." Do not praise, reassure, advise, diagnose, moralize, scold, judge, sound snippy, or tell the user what they really feel or need to admit. Never ask them to cope with, fix, manage, or make a plan for something they did not identify as a problem.
+Write exactly two full prose paragraphs before the questions. Each paragraph must contain 4-6 complete, substantive sentences and develop one distinct supported insight. Do not summarize, retell, paraphrase, list events, or walk through the entry in order. A sentence is invalid if it says what the user already said with synonyms, reordered details, or a more abstract label. Use brief concrete details only as evidence for a distinction, priority, implication, or unresolved question that is not already stated. Every sentence must contribute useful reflection; never use repetition, generic commentary, or recap as padding. Do not begin with "you mentioned," "you wrote," "you described," or "your entry." Do not praise, reassure, advise, diagnose, moralize, scold, judge, sound snippy, or tell the user what they really feel or need to admit. Never ask them to cope with, fix, manage, or make a plan for something they did not identify as a problem.
 
 End with exactly two specific bullet questions, each beginning "- " and ending "?". Do not force confrontation or problem-solving. Challenge only an issue the user explicitly treats as an issue. Otherwise ask about concrete things they enjoyed, appreciated, accomplished, noticed, chose, or anticipate. Questions must be calm, curious, nonjudgmental, and specific to this writing.
 
 Return only valid JSON with exactly these fields:
-{"themes":["2-4 literal neutral topics"],"mood":"1-3 proportional words","reflection":"Paragraph text.\\n\\n- Specific question?\\n- Specific question?"}
+{"themes":["2-4 literal neutral topics"],"mood":"1-3 proportional words","reflection":"First full paragraph of 4-6 sentences.\\n\\nSecond full paragraph of 4-6 sentences.\\n\\n- Specific question?\\n- Specific question?"}
 
 Themes must use literal topic framing. Do not relabel pet care as caregiving, affection as dependence, paperwork as instability, or preference as avoidance unless the user does.`;
 }
 
 function buildCompactUserPrompt(entryText: string): string {
-  return `Reflect only on the journal text below. Preserve its explicit framing, do not invent a problem, and return only the required JSON.\n\n${entryText}`;
+  return `Reflect only on the journal text below. Write exactly two full 4-6 sentence prose paragraphs before the two questions. Preserve its explicit framing, do not invent a problem, and return only the required JSON.\n\n${entryText}`;
 }
 
 function isProviderJsonValidationFailure(error: unknown): boolean {
