@@ -10,6 +10,8 @@ import recsRoute from "./routes/recs";
 import recsBookSummaryRoute from "./routes/recsBookSummary";
 import recommendationCollectionsRoute from "./routes/recommendationCollections";
 import recommendationBookDetailRoute from "./routes/recommendationBookDetail";
+import automaticCatalogsRoute from "./routes/automaticCatalogs";
+import { startAutomaticCatalogMaintenance } from "./services/automaticCatalogMaintenance";
 import journalRoutes from "./routes/journal";
 import astrologyRoutes from "./routes/astrology";
 import { createBuddyRouter } from "./routes/buddy-routes";
@@ -86,6 +88,7 @@ app.use("/api/books/recs", recsRoute);
 app.use("/api/books/recs-book-summary", recsBookSummaryRoute);
 app.use("/api/books/recommendation-collections", recommendationCollectionsRoute);
 app.use("/api/books/recommendation-book-detail", recommendationBookDetailRoute);
+app.use("/api/books/automatic-catalogs", automaticCatalogsRoute);
 app.use("/api/journal", journalRoutes);
 app.use("/api/astrology", astrologyRoutes);
 app.use("/api/buddy", createBuddyRouter(io));
@@ -161,6 +164,7 @@ mongoose
   .connect(process.env.MONGODB_URI as string)
   .then(async () => {
     console.log("MongoDB Atlas connected");
+    startAutomaticCatalogMaintenance();
     await restoreActiveSprintTimers(io);
   })
   .catch((err) => {

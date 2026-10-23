@@ -1,0 +1,159 @@
+import "dotenv/config";
+import { randomUUID } from "node:crypto";
+import { CatalogError, CatalogStore, delay, digest, mongoCatalogStore } from "./automaticCatalogStore";
+
+export type Reference = { id: string; name?: string; _link?: unknown; _links?: unknown };
+export type Resource = {
+  id: string; title?: string; name?: string; subtitle?: string; description?: string;
+  about?: string; alternateNames?: string[];
+  pageCount?: number; isbns?: string[]; publishDate?: string;
+  alternateTitles?: string[];
+  uris?: string[]; links?: { uri: string; title: string }[];
+  _embedded?: Record<string, Reference[]>;
+  _link?: Record<string, { href: string }>; _links?: Record<string, { href: string }>;
+};
+export const refs = (resource: Resource, relation: string): Reference[] =>
+  (resource._embedded?.[relation] ?? []).filter(r => typeof r.id === "string" && r.id.length > 0);
+export const BASE = "https://api.bookdatabase.io/v1/";
+export function providerURL(path: string): URL {
+  const url = new URL(path.replace(/^\/v1\//, ""), BASE);
+  if (url.origin !== new URL(BASE).origin || !url.pathname.startsWith("/v1/") || url.username || url.password)
+    throw new CatalogError("INVALID_PROVIDER_LINK", 502);
+  // Never forward a query-string credential or trust one supplied by a HAL link.
+  url.searchParams.delete("apiKey");
+  url.searchParams.sort();
+  return url;
+}
+export function parsePage(value: any, collection: string): { items: Resource[]; next?: string } {
+  const items = value?._embedded?.[collection];
+  if (!Array.isArray(items)) throw new CatalogError("INVALID_PROVIDER_RESPONSE", 502);
+  const next = (value._link ?? value._links)?.next?.href;
+  return { items: items.filter((r: any) => r && typeof r.id === "string"), ...(typeof next === "string" ? { next } : {}) };
+}
+
+export function validateProviderPayload(value: any, url: URL): void {
+  const segments = url.pathname.replace(/^\/v1\//, "").split("/").filter(Boolean);
+  if (segments.length > 1) {
+    if (typeof value.id !== "string") throw new CatalogError("INVALID_PROVIDER_RESPONSE", 502);
+    if (segments[1] !== "random" && value.id !== decodeURIComponent(segments[1]!)) throw new CatalogError("PROVIDER_RESPONSE_MISMATCH", 502);
+    return;
+  }
+  const collection = segments[0]!;
+  const { items } = parsePage(value, collection);
+  const relationships: Record<string, string> = { bookId: "books", authorId: "authors", genreId: "genres", subjectId: "subjects" };
+  const words = (text: string) => text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(/\s+/);
+  for (const item of items) {
+    if (url.searchParams.get("includeRelationships") !== "None") {
+      for (const [parameter, relation] of Object.entries(relationships)) {
+        const id = url.searchParams.get(parameter);
+        if (id && !refs(item, relation).some(r => r.id === id)) throw new CatalogError("PROVIDER_RESPONSE_MISMATCH", 502);
+      }
+    }
+    const query = url.searchParams.get("searchQuery");
+    if (query && url.searchParams.get("searchMode") !== "Fuzzy" && ["books", "editions"].includes(collection)) {
+      const titles = [item.title ?? "", ...(item.alternateTitles ?? [])].map(words);
+      if (!titles.some(title => words(query).every(word => title.includes(word)))) throw new CatalogError("PROVIDER_RESPONSE_MISMATCH", 502);
+    }
+  }
+}
+
+export class BookDatabaseClient {
+  private inFlight = new Map<string, Promise<any>>();
+  private blockedUntil = 0;
+  constructor(
+    private key: () => string = () => process.env.BOOKDATABASE_API_KEY ?? "",
+    private store: CatalogStore = mongoCatalogStore(digest(process.env.BOOKDATABASE_API_KEY ?? "unconfigured")),
+    private transport: typeof fetch = fetch,
+    private activeUntil: () => number = () => process.env.BOOKDATABASE_SUBSCRIPTION_EXPIRES_AT
+      ? Date.parse(process.env.BOOKDATABASE_SUBSCRIPTION_EXPIRES_AT) : Infinity,
+  ) {}
+
+  async assertActive(): Promise<number> {
+    const expiry = this.activeUntil();
+    if (!this.key() || Number.isNaN(expiry) || expiry <= Date.now() || process.env.BOOKDATABASE_DISABLED === "true") {
+      await this.store.purge();
+      throw new CatalogError("CATALOG_NOT_CONFIGURED", 503);
+    }
+    return expiry;
+  }
+
+  async get(path: string, ttlMs = 6 * 3_600_000): Promise<any> {
+    await this.assertActive();
+    const url = providerURL(path);
+    const cacheKey = url.href;
+    const existing = this.inFlight.get(cacheKey);
+    if (existing) return existing;
+    const pending = this.load(url, Math.min(ttlMs, 86_400_000));
+    this.inFlight.set(cacheKey, pending);
+    try { return await pending; } finally { this.inFlight.delete(cacheKey); }
+  }
+
+  private async load(url: URL, ttl: number): Promise<any> {
+    const cacheKey = `validated-v2:${url.href}`;
+    const cached = await this.store.get(cacheKey);
+    if (cached !== undefined) return cached;
+    const owner = randomUUID();
+    const deadline = Date.now() + 25_000;
+    while (!(await this.store.claim(cacheKey, owner))) {
+      if (Date.now() > deadline) throw new CatalogError("PROVIDER_BUSY", 429, 15);
+      await delay(150);
+      const shared = await this.store.get(cacheKey);
+      if (shared !== undefined) return shared;
+    }
+    try {
+      const shared = await this.store.get(cacheKey);
+      if (shared !== undefined) return shared;
+      const expiry = await this.assertActive();
+      if (this.blockedUntil > Date.now()) throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.blockedUntil - Date.now()) / 1000));
+      let response: Response | undefined;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await this.store.reserve();
+        try {
+          response = await this.transport(url, { headers: { "X-API-Key": this.key(), Accept: "application/json" }, redirect: "manual", signal: AbortSignal.timeout(15_000) });
+          if (response.status < 500 || attempt === 1) break;
+          await response.arrayBuffer();
+        } catch {
+          if (attempt === 1) throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
+        }
+      }
+      if (!response) throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
+      if (response.status === 404) {
+        await this.store.set(cacheKey, null, new Date(Math.min(Date.now() + 900_000, expiry)));
+        return null;
+      }
+      const value: any = response.status === 302 ? { contentUrl: response.headers.get("Location") } : await response.json().catch(() => null);
+      if (!response.ok && response.status !== 302) {
+        if (response.status === 401 || response.status === 403 || ["INVALID_API_KEY", "MISSING_API_KEY"].includes(value?.errorCode)) {
+          await this.store.purge();
+          throw new CatalogError("PROVIDER_ACCESS_DENIED", 503);
+        }
+        if (value?.errorCode === "NO_API_CALLS_REMAINING" || response.status === 429) {
+          const midnight = new Date(); midnight.setUTCHours(24, 0, 0, 0);
+          this.blockedUntil = value?.errorCode === "NO_API_CALLS_REMAINING" ? midnight.getTime() : Date.now() + 60_000;
+          throw new CatalogError("PROVIDER_QUOTA_EXHAUSTED", 429, Math.ceil((this.blockedUntil - Date.now()) / 1000));
+        }
+        throw new CatalogError("PROVIDER_UNAVAILABLE", 503);
+      }
+      if (!value || typeof value !== "object") throw new CatalogError("INVALID_PROVIDER_RESPONSE", 502);
+      if (response.status !== 302) validateProviderPayload(value, url);
+      const effectiveTTL = response.status === 302 ? Math.min(ttl, 240_000) : ttl;
+      await this.store.set(cacheKey, value, new Date(Math.min(Date.now() + effectiveTTL, expiry)));
+      return value;
+    } finally { await this.store.release(cacheKey, owner); }
+  }
+
+  async page(collection: string, query: Record<string, string>, maxPages = 1): Promise<Resource[]> {
+    const url = new URL(collection, BASE);
+    Object.entries({ pageSize: "30", ...query }).forEach(([key, value]) => url.searchParams.set(key, value));
+    let next: string | undefined = url.href;
+    const seen = new Set<string>();
+    const items = new Map<string, Resource>();
+    for (let i = 0; i < Math.min(maxPages, 3) && next && !seen.has(next); i++) {
+      seen.add(next);
+      const page = parsePage(await this.get(next), collection);
+      page.items.forEach(item => items.set(item.id, item));
+      next = page.next;
+    }
+    return [...items.values()];
+  }
+}
