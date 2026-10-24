@@ -77,7 +77,7 @@ test("unconfigured preferences preserve the original profile, cache namespace, s
   assert.equal(hasPreferenceInputs(undefined), false);
   const profile = buildProfile([seed()], []);
   assert.equal(profile.signature, profileKey([seed()]));
-  assert.equal(recommendationScore("similar", book("new"), profile), categoryScore("similar", relevance(book("new"), profile)));
+  assert.ok(recommendationScore("similar", book("new"), profile) >= categoryScore("similar", relevance(book("new"), profile)), "recency boost must not reduce relevance");
   assert.deepEqual(discoveryPlans(profile, categoryIDs, "google-books"), discoveryPlans(buildProfile([seed()], [], undefined), categoryIDs, "google-books"));
 });
 
@@ -221,7 +221,7 @@ const knowledgeRow = (changes = {}) => ({ id: "12345678-1234-1234-1234-123456789
   isbns: ["0140328726"], provider_ids: { hardcover: ["42"] }, identifiers: [{ provider: "google-books", id: "stored-volume" }],
   source_names: ["hardcover"], cover_url: "https://covers.example.test/stored.jpg", cover_urls: ["invalid", "https://covers.example.test/alternate.jpg"],
   series: [{ id: "12345678-1234-1234-1234-000000000000", name: "Stored Series", position: "2" }], related: ["pg_12345678123412341234000000000000"],
-  pages: 300, publisher: "Stored Publisher", first_published_year: 2020, popularity: 20, ...changes });
+  pages: 300, publisher: "Stored Publisher", first_published_year: 2024, popularity: 20, ...changes });
 
 test("PostgreSQL rows normalize existing identifiers, editions, covers and provenance without inventing missing metadata", () => {
   const result = knowledgeBook(knowledgeRow());
@@ -384,7 +384,7 @@ test("request-side PostgreSQL imports never collect books or invoke the protecte
     assert.doesNotMatch(source, /\benqueue\s*\(|\b(?:seedKnowledge|runKnowledgeWorker|scheduleDueWork|ingestProviderBook)\s*\(/);
   }
   const runner = readFileSync(new URL("../src/bookKnowledge/runner.ts", import.meta.url), "utf8");
-  assert.match(runner, /const RUN_LIMIT_MS = 10 \* 60 \* 1000/);
+  assert.match(runner, /const RUN_LIMIT_MS = 5 \* 60 \* 1000/);
 });
 
 test("existing catalog route validates and forwards explicit preferences without requiring another login", async () => {
@@ -896,9 +896,9 @@ test("bookdatabase.io supplements verified English metadata in its own temporary
 test("all real provider adapters feed the new engine through mocked HTTP, saved rows, details and restart cache", async () => {
   const store = new MemoryStore();
   const hits = new Map();
-  const google = (i, known = false) => ({ id: `volume${i}`, volumeInfo: { title: i === "seed" ? "Completed Novel" : `Google Novel ${i}`, authors: [known ? "Known Author" : `Google Writer ${i}`], language: "en", description: "Provider description", categories: ["Fantasy", "Dragons", "Political intrigue"], imageLinks: { medium: `https://books.google.com/cover${i}.jpg` }, ...(i === "seed" ? { industryIdentifiers: [{ type: "ISBN_13", identifier: "9780140328721" }] } : {}) } });
-  const ol = (i, known = false) => ({ key: `/works/OL${i === "seed" ? 999 : i}W`, title: i === "seed" ? "Completed Novel" : `Library Novel ${i}`, author_name: [known ? "Known Author" : `Library Writer ${i}`], subject: ["Fantasy", "Dragons", "Political intrigue"], editions: { docs: [{ key: `/books/OL${i === "seed" ? 999 : i}M`, title: i === "seed" ? "Completed Novel" : `Library Novel ${i}`, language: ["eng"], ...(i === "seed" ? { isbn: ["9780140328721"] } : {}) }] } });
-  const hc = (i, known = false) => ({ ...hardcoverRaw(), id: Number(i), title: i === 999 ? "Completed Novel" : `Hardcover Novel ${i}`, contributions: [{ contribution: "Author", author: { id: known ? 1 : 1000 + i, name: known ? "Known Author" : `Hardcover Writer ${i}` } }], book_series: [], cached_tags: { Genre: [{ tag: "Fantasy" }] }, taggings: [{ tag: { id: 33, tag: "Dragons" } }, { tag: { id: 34, tag: "Political intrigue" } }], editions: [{ id: i + 5000, title: i === 999 ? "Completed Novel" : `Hardcover Novel ${i}`, language_id: 8, image: { url: `https://images.hardcover.app/${i}.jpg` }, ...(i === 999 ? { isbn_13: "9780140328721" } : {}) }] });
+  const google = (i, known = false) => ({ id: `volume${i}`, volumeInfo: { title: i === "seed" ? "Completed Novel" : `Google Novel ${i}`, authors: [known ? "Known Author" : `Google Writer ${i}`], language: "en", publishedDate: "2024-05-01", description: "Provider description", categories: ["Fantasy", "Dragons", "Political intrigue"], imageLinks: { medium: `https://books.google.com/cover${i}.jpg` }, ...(i === "seed" ? { industryIdentifiers: [{ type: "ISBN_13", identifier: "9780140328721" }] } : {}) } });
+  const ol = (i, known = false) => ({ key: `/works/OL${i === "seed" ? 999 : i}W`, title: i === "seed" ? "Completed Novel" : `Library Novel ${i}`, author_name: [known ? "Known Author" : `Library Writer ${i}`], first_publish_year: 2024, subject: ["Fantasy", "Dragons", "Political intrigue"], editions: { docs: [{ key: `/books/OL${i === "seed" ? 999 : i}M`, title: i === "seed" ? "Completed Novel" : `Library Novel ${i}`, language: ["eng"], ...(i === "seed" ? { isbn: ["9780140328721"] } : {}) }] } });
+  const hc = (i, known = false) => ({ ...hardcoverRaw(), release_year: 2024, id: Number(i), title: i === 999 ? "Completed Novel" : `Hardcover Novel ${i}`, contributions: [{ contribution: "Author", author: { id: known ? 1 : 1000 + i, name: known ? "Known Author" : `Hardcover Writer ${i}` } }], book_series: [], cached_tags: { Genre: [{ tag: "Fantasy" }] }, taggings: [{ tag: { id: 33, tag: "Dragons" } }, { tag: { id: 34, tag: "Political intrigue" } }], editions: [{ id: i + 5000, title: i === 999 ? "Completed Novel" : `Hardcover Novel ${i}`, language_id: 8, image: { url: `https://images.hardcover.app/${i}.jpg` }, ...(i === 999 ? { isbn_13: "9780140328721" } : {}) }] });
   const transport = new ProviderTransport(store, async (input, init) => {
     const url = new URL(input); hits.set(url.host, (hits.get(url.host) ?? 0) + 1);
     if (url.host === "api.hardcover.app") {

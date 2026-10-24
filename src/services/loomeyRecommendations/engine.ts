@@ -147,7 +147,7 @@ export class LoomeyRecommendationEngine {
         // Four older matches do not constitute sufficient coverage for discovery.
         const section = localSections.get(id) ?? [];
         const recent = section.filter(book => book.releaseYear !== null && book.releaseYear >= new Date().getUTCFullYear() - 5);
-        return section.length < 8 || recent.length < 4;
+        return section.length < 4 || recent.length < 4;
       });
       catalogLog("engine.knowledge_coverage", { candidates: candidates.length, fallbackCategories: fallbackTargets }, context.traceID);
       if (!fallbackTargets.length) {
