@@ -150,7 +150,8 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
     (profile.preferences?.recommendationStyle === "surprise_me" &&
       plan.terms.length === 1 && ["Fiction", "Nonfiction"].includes(plan.terms[0] ?? "")));
   const firstExplicit = profile.preferences && queue.find(plan => plan.preferenceDriven && plan.terms.length === 2);
-  const selected = [...(firstExplicit ? [firstExplicit] : []), ...pinned.filter(plan => plan !== firstExplicit)].slice(0, Math.min(budget, 3));
+  const broad = pinned.filter(plan => plan.kind === "interests");
+  const selected = [...(firstExplicit ? [firstExplicit] : []), ...broad.filter(plan => plan !== firstExplicit), ...pinned.filter(plan => plan.kind !== "interests" && plan !== firstExplicit)].slice(0, Math.min(budget, 4));
   const remaining = queue.filter(plan => !selected.includes(plan));
   const day = Math.floor(Date.now() / 86400000);
   const seed = Number.parseInt(hash(`${profile.signature}:${provider}:${day}`).slice(0, 8), 16);
