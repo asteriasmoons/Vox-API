@@ -21,7 +21,7 @@ export class ProviderTransport {
   private async send(policy: RequestPolicy, url: URL, context: ProviderContext, body?: unknown) {
     const blocked = await this.store.get<number>(`blocked:${policy.provider}`);
     if (blocked && blocked > Date.now()) throw new RecommendationError("PROVIDER_RATE_LIMITED", 429, Math.ceil((blocked - Date.now()) / 1000));
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < (policy.provider === "google-books" ? 4 : 2); attempt++) {
       let current = url;
       try {
         for (let redirect = 0; redirect < 3; redirect++) {
@@ -56,7 +56,20 @@ export class ProviderTransport {
             await this.store.set(`blocked:${policy.provider}`, Date.now() + seconds * 1000, seconds * 1000);
             throw new RecommendationError("PROVIDER_RATE_LIMITED", 429, seconds);
           }
-          if (!response.ok) throw new RecommendationError(response.status >= 500 ? "PROVIDER_UNAVAILABLE" : "PROVIDER_REQUEST_REJECTED", response.status >= 500 ? 503 : 502);
+          if (!response.ok) {
+            if (policy.provider === "google-books" && response.status === 503) {
+              // Log only Google's structured reason, never a full response or API key.
+              const payload = await response.text().catch(() => "");
+              let reason = "unknown";
+              try {
+                const parsed = JSON.parse(payload);
+                const candidate = parsed?.error?.errors?.[0]?.reason ?? parsed?.error?.status;
+                if (typeof candidate === "string" && /^[a-zA-Z_]{1,64}$/.test(candidate)) reason = candidate;
+              } catch { /* HTML 503 bodies have no structured reason. */ }
+              catalogLog("engine.google_books_503", { reason }, context.traceID);
+            }
+            throw new RecommendationError(response.status >= 500 ? "PROVIDER_UNAVAILABLE" : "PROVIDER_REQUEST_REJECTED", response.status >= 500 ? 503 : 502);
+          }
           const raw = await response.text();
           if (raw.length > 4 * 1024 * 1024) throw new RecommendationError("INVALID_PROVIDER_RESPONSE", 502);
           try { return JSON.parse(raw); } catch { throw new RecommendationError("INVALID_PROVIDER_RESPONSE", 502); }
@@ -69,8 +82,9 @@ export class ProviderTransport {
         const code = tls ? "PROVIDER_TLS_FAILED" : error instanceof RecommendationError ? error.code : error?.name === "TimeoutError" ? "PROVIDER_TIMED_OUT" : "PROVIDER_UNAVAILABLE";
         context.failures?.add(policy.provider);
         catalogLog("engine.provider_failed", { provider: policy.provider, host: current.hostname, path: current.pathname, code, cause, attempt: attempt + 1 }, context.traceID);
-        if (attempt || !["PROVIDER_UNAVAILABLE", "PROVIDER_TIMED_OUT"].includes(code)) throw error instanceof RecommendationError ? error : new RecommendationError(code);
-        await pause(300, context.signal);
+        if (attempt >= (policy.provider === "google-books" ? 3 : 1) || !["PROVIDER_UNAVAILABLE", "PROVIDER_TIMED_OUT"].includes(code)) throw error instanceof RecommendationError ? error : new RecommendationError(code);
+        const delay = policy.provider === "google-books" ? (1000 * 2 ** attempt + Math.floor(Math.random() * 400)) : 300;
+        await pause(delay, context.signal);
       }
     }
     throw new RecommendationError("PROVIDER_UNAVAILABLE");
