@@ -244,7 +244,7 @@ export function rankCategories(books: Book[], profile: ReadingProfile, library: 
       pending.sort((a, b) => adjusted(b) - adjusted(a) || b.score - a.score || a.book.id.localeCompare(b.book.id));
       const { book, matchedGenres } = pending.shift()!;
       const author = authorKeys(book.authors[0] ?? "")[0] ?? "";
-      if ((authorCounts.get(author) ?? 0) >= (category === "authors-read" ? 3 : 1) || book.series.some(series => (seriesCounts.get(series.id) ?? 0) >= 1)) continue;
+      if ((authorCounts.get(author) ?? 0) >= (category === "authors-read" ? 4 : 1) || book.series.some(series => (seriesCounts.get(series.id) ?? 0) >= 1)) continue;
       selected.push(book); authorCounts.set(author, (authorCounts.get(author) ?? 0) + 1);
       for (const series of book.series) seriesCounts.set(series.id, (seriesCounts.get(series.id) ?? 0) + 1);
       for (const genre of matchedGenres) genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1);
