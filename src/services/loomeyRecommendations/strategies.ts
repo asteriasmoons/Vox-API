@@ -88,8 +88,8 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
   const authors = new Set<string>();
   if (profile.preferences) {
     const preferences = profile.preferences;
-    const favorites = favoriteGenres(preferences).slice(0, 4);
-    const current = preferences.currentlyInterestedIn.slice(0, 4);
+    const favorites = favoriteGenres(preferences);
+    const current = preferences.currentlyInterestedIn;
     if (preferences.recommendationStyle === "surprise_me" || (!favorites.length && !current.length && preferences.preferredCategory !== "both")) {
       const categories = preferences.preferredCategory === "both" ? ["Fiction", "Nonfiction"] : [preferences.preferredCategory === "fiction" ? "Fiction" : "Nonfiction"];
       for (const term of categories) add("interests", ["similar", "new-authors", "discovery"], { terms: [term], preferenceDriven: true });
@@ -126,8 +126,8 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
     for (const seed of profile.seeds.filter(seed => seed.tagIDs.length >= 2).slice(0, 3)) add("interests", thematicCategories, { tagIDs: seed.tagIDs.slice(0, 2) });
   }
   const ordered = (map: Map<string, number>) => [...map].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([key]) => profile.terms.get(key) ?? key);
-  const genreTerms = ordered(profile.genres).slice(0, 4);
-  const themeTerms = ordered(profile.themes).slice(0, 5);
+  const genreTerms = ordered(profile.genres);
+  const themeTerms = ordered(profile.themes);
   for (let i = 0; i < Math.max(genreTerms.length, themeTerms.length); i++) {
     const genre = genreTerms[i];
     const theme = themeTerms[i];
@@ -139,7 +139,14 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
   const queue: DiscoveryPlan[] = [];
   const groups = [plans.filter(plan => plan.kind === "author"), plans.filter(plan => plan.kind === "series" || plan.kind === "related"), plans.filter(plan => plan.kind === "interests")];
   while (groups.some(group => group.length)) for (const group of groups) { const next = group.shift(); if (next) queue.push(next); }
-  return queue.slice(0, provider === "hardcover" ? 10 : 9);
+  // Rotate the plan window per profile and UTC day so every selected interest
+  // receives discovery opportunities across refreshes instead of always favoring the first four.
+  const budget = provider === "hardcover" ? 24 : 20;
+  if (queue.length <= budget) return queue;
+  const day = Math.floor(Date.now() / 86400000);
+  const seed = Number.parseInt(hash(`${profile.signature}:${provider}:${day}`).slice(0, 8), 16);
+  const start = seed % queue.length;
+  return Array.from({ length: budget }, (_, i) => queue[(start + i) % queue.length]);
 }
 
 export type Relevance = { total: number; author: boolean; series: boolean; related: boolean; genres: number; themes: number; finishedMatches: number; newAuthor: boolean; popularity: number };
@@ -190,7 +197,10 @@ export function recommendationScore(category: CategoryID, book: Book, profile: R
     (style === "surprise_me" && category === "discovery" && match.newAuthor || !profile.seeds.length && ["similar", "new-authors", "discovery"].includes(category))) score = 4;
   if (score === null) return null;
   const boost = style === "follow_preferences" ? 18 : style === "blend_interests" ? 8 : 3;
-  return score * (style === "follow_preferences" ? 0.25 : 1) + evidence.favorites * boost + evidence.current * (boost + 6) + Number(evidence.categoryMatch) * (style === "follow_preferences" ? 8 : 3)
+  // Prefer recently published works without treating a new edition of an old work as a new title.
+  const age = book.releaseYear === null ? null : new Date().getUTCFullYear() - book.releaseYear;
+  const recency = age === null || age < 0 ? 0 : age <= 2 ? 24 : age <= 5 ? 17 : age <= 10 ? 9 : age <= 15 ? 2 : -Math.min(16, Math.floor((age - 15) / 3));
+  return score * (style === "follow_preferences" ? 0.25 : 1) + recency + evidence.favorites * boost + evidence.current * (boost + 6) + Number(evidence.categoryMatch) * (style === "follow_preferences" ? 8 : 3)
     + (style === "surprise_me" ? Number(match.newAuthor) * 8 + Math.max(0, 6 - Math.log2(1 + book.popularity)) : 0);
 }
 export function rankCategories(books: Book[], profile: ReadingProfile, library: LibraryBook[], targets: CategoryID[]): Map<CategoryID, Book[]> {
