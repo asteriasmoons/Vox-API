@@ -51,7 +51,14 @@ async function main(): Promise<void> {
     const rotated = Array.from({ length: 10 }, (_, index) => topics[(runIndex * 10 + index) % topics.length]!);
     await seedKnowledge(rotated);
     console.log('[bookKnowledge] Discovery run started (5-minute maximum; manual override:', process.env.BOOK_KNOWLEDGE_RUN_NOW === 'true', ')');
-    await runKnowledgeWorker(deadline);
+    try {
+      await runKnowledgeWorker(deadline);
+    } catch (error) {
+      // Reaching the five-minute limit is the expected end of a cron run.
+      // Keep unexpected errors visible and let Railway report genuine failures.
+      if (!deadline.aborted || error !== deadline.reason) throw error;
+      console.log('[bookKnowledge] Five-minute run limit reached; stopping successfully');
+    }
   } finally {
     await Promise.allSettled([bookPool.end(), mongoose.disconnect()]);
     console.log('[bookKnowledge] Worker run finished');
