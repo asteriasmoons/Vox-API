@@ -146,7 +146,7 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
   const day = Math.floor(Date.now() / 86400000);
   const seed = Number.parseInt(hash(`${profile.signature}:${provider}:${day}`).slice(0, 8), 16);
   const start = seed % queue.length;
-  return Array.from({ length: budget }, (_, i) => queue[(start + i) % queue.length]);
+  return Array.from({ length: budget }, (_, i) => queue[(start + i) % queue.length]!);
 }
 
 export type Relevance = { total: number; author: boolean; series: boolean; related: boolean; genres: number; themes: number; finishedMatches: number; newAuthor: boolean; popularity: number };
