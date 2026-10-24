@@ -22,7 +22,7 @@ function isScheduledRun(now = new Date()): boolean {
 }
 
 async function main(): Promise<void> {
-  if (!isScheduledRun()) {
+  if (process.env.BOOK_KNOWLEDGE_RUN_NOW !== 'true' && !isScheduledRun()) {
     console.log('[bookKnowledge] Skipping: outside the every-other-day 8 AM Central schedule');
     return;
   }
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     const runIndex = Math.floor((Date.now() / 86_400_000 - FIRST_RUN_DAY) / 2);
     const rotated = Array.from({ length: 10 }, (_, index) => topics[(runIndex * 10 + index) % topics.length]!);
     await seedKnowledge(rotated);
-    console.log('[bookKnowledge] Every-other-day run started (5-minute maximum)');
+    console.log('[bookKnowledge] Discovery run started (5-minute maximum; manual override:', process.env.BOOK_KNOWLEDGE_RUN_NOW === 'true', ')');
     await runKnowledgeWorker(deadline);
   } finally {
     await Promise.allSettled([bookPool.end(), mongoose.disconnect()]);
