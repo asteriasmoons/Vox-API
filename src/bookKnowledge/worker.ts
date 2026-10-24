@@ -18,13 +18,22 @@ function plan(term:string):DiscoveryPlan {const [prefix,...rest]=term.split(':')
  return {key:term,kind:'interests',categories:['genres','themes','discovery'],terms:[prefix==='subject'?value:term],tagIDs:[],workIDs:[]};}
 export async function processDiscovery(payload:{term:string;depth?:number;origin?:string},providers=existingProviders()) {
  const ids:string[]=[];const ctx=context();
+ const providerCounts:Record<string,{returned:number;ingested:number;failed:boolean}>={};
  for(const provider of providers.filter(p=>p.available())){
-  try {for(const book of await provider.discover(plan(payload.term),ctx)){
-   const id=await ingestProviderBook(book,payload.depth??0);if(id)ids.push(id);
-  }}catch(e){console.warn('[bookKnowledge]',provider.name,e instanceof Error?e.message:'provider failure');}
+  const counts={returned:0,ingested:0,failed:false};
+  providerCounts[provider.name]=counts;
+  try {
+   const books=await provider.discover(plan(payload.term),ctx);
+   counts.returned=books.length;
+   for(const book of books){
+    const id=await ingestProviderBook(book,payload.depth??0);
+    if(id){ids.push(id);counts.ingested++;}
+   }
+  }catch(e){counts.failed=true;console.warn('[bookKnowledge]',provider.name,e instanceof Error?e.message:'provider failure');}
+  console.log('[bookKnowledge] Provider discovery', {term:payload.term,provider:provider.name,...counts});
  }
  await relateWorks([...new Set(ids)],payload.origin);
- console.log('[bookKnowledge] Discovery complete', {term:payload.term,ingested:ids.length});
+ console.log('[bookKnowledge] Discovery complete', {term:payload.term,ingested:ids.length,providers:providerCounts});
  return ids.length;
 }
 export async function refreshWork(workId:string,providers=existingProviders()){
