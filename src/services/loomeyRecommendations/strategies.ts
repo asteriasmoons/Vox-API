@@ -223,11 +223,18 @@ export function rankCategories(books: Book[], profile: ReadingProfile, library: 
     const ranked = usable.map(book => ({ book, match: relevance(book, profile), matchedGenres: distinct([...book.genres, ...book.subjects].map(interest)).filter(genre => profile.genres.has(genre)) })).map(item => ({ ...item, score: recommendationScore(category, item.book, profile) }))
       .filter((item): item is typeof item & { score: number } => item.score !== null)
       .sort((a, b) => b.score - a.score || Math.min(3, Math.log1p(b.match.popularity)) - Math.min(3, Math.log1p(a.match.popularity)) || a.book.id.localeCompare(b.book.id));
+    // Prefer genuinely recent works over classic reprints whenever there is
+    // enough recent, relevant inventory for a useful shelf. Missing dates are
+    // not treated as evidence of a new release.
+    const recent = ranked.filter(item => item.book.releaseYear !== null &&
+      item.book.releaseYear >= new Date().getUTCFullYear() - 10 &&
+      item.book.releaseYear <= new Date().getUTCFullYear() + 1);
+    const pool = category === "authors-read" || category === "related" || recent.length < 4 ? ranked : recent;
     const selected: Book[] = [];
     const authorCounts = new Map<string, number>();
     const seriesCounts = new Map<string, number>();
     const genreCounts = new Map<string, number>();
-    const pending = [...ranked];
+    const pending = [...pool];
     const adjusted = (item: typeof ranked[number]) => item.score
       - (authorCounts.get(authorKeys(item.book.authors[0] ?? "")[0] ?? "") ?? 0) * 4
       - Math.max(0, ...item.book.series.map(series => seriesCounts.get(series.id) ?? 0)) * 3
