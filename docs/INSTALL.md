@@ -5,9 +5,9 @@
 3. Install dependency `npm install pg` and `npm install -D @types/pg`. Existing `dotenv`, TypeScript and Node 20+ are used.
 4. Run migrations **from the repository root**: `npx ts-node scripts/book-knowledge.ts migrate` (or compile with your existing TypeScript build and execute the JS). Use a staging database first.
 5. Set `BOOK_KNOWLEDGE_ENABLED=true` only after verifying credentials and tables. Seed a few interests: `npx ts-node scripts/book-knowledge.ts seed fantasy mystery`.
-6. Run one separate Railway worker process with `npx ts-node scripts/book-knowledge.ts worker` or the compiled JS. Do not launch duplicate worker processes until job lease semantics are validated.
+6. Preserve the existing once-weekly Railway job and its ten-minute maximum (`src/bookKnowledge/runner.ts`). Do not start ingestion from the HTTP service or change the job's schedule/configuration for recommendations.
 7. Check growth with `npx ts-node scripts/book-knowledge.ts stats`.
-8. Review `patches/engine-integration.example.ts` to connect PostgreSQL candidates to Codex's catalog engine. Keep the existing provider calls, `ownedMatches` exclusions and MongoDB catalog cache.
+8. The PostgreSQL read source is wired into the existing recommendation engine. Configure the existing database URL on the API service as well as the worker. See [Reading Preferences integration](READING_PREFERENCES.md); the old example patch is not needed. Provider fallback, ownership exclusions and MongoDB catalog caching remain active.
 9. Test end-to-end with a disposable library: finished books should influence ranking, while **all** owned statuses should be excluded.
 
 ## Important
@@ -15,4 +15,4 @@
 - Run the worker in a separate Railway service, not inside Express startup.
 - Provider keys, quotas, attribution, and content licensing must be checked before operating at scale.
 - Migration SQL 001 is included for a new database; 002 extends it. Never apply 001 blindly to a database with conflicting tables.
-- The example integration patch must be reviewed for exact engine compatibility before production deployment.
+- Recommendation misses never enqueue collection. The weekly worker remains solely responsible for ingestion.

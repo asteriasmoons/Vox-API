@@ -59,7 +59,7 @@ export function coverURL(value: unknown): string | null {
     return url.href;
   } catch { return null; }
 }
-type Identity = { title: string; authors: string[]; isbns: string[]; providerIDs?: Book["providerIDs"]; titleVariants?: string[] };
+type Identity = { title: string; authors: string[]; isbns: string[]; providerIDs?: Book["providerIDs"]; titleVariants?: string[]; knowledgeWorkIDs?: string[] };
 export function libraryIdentity(book: LibraryBook): Identity {
   return { title: book.title, authors: [book.author], isbns: book.isbn ? [book.isbn] : [], titleVariants: [displayTitle(book.title, book.subtitle)],
     ...(book.providerBookID ? { providerIDs: { "bookdatabase.io": [book.providerBookID] } } : {}) };
@@ -69,6 +69,7 @@ export function ownedMatches(library: LibraryBook, candidate: Book): boolean {
   return (!!identifier && candidate.isbns.some(value => isbn(value) === identifier)) || sameBook(libraryIdentity(library), candidate);
 }
 export function sameBook(a: Identity, b: Identity): boolean {
+  if (a.knowledgeWorkIDs?.some(id => b.knowledgeWorkIDs?.includes(id))) return true;
   const sharedProvider = Object.entries(a.providerIDs ?? {}).some(([provider, ids]) => ids?.some(id => b.providerIDs?.[provider as ProviderName]?.includes(id)));
   if (sharedProvider) return true;
   const authors = distinct([...a.authors, a.authors.join(", ")]).flatMap(authorKeys);
@@ -97,7 +98,7 @@ export function mergeBooks(a: Book, b: Book): Book {
     genres: distinct([...a.genres, ...b.genres]), subjects: distinct([...a.subjects, ...b.subjects]), tags: distinct([...a.tags, ...b.tags]),
     authorIDs: distinct([...a.authorIDs, ...b.authorIDs]), tagIDs: distinct([...a.tagIDs, ...b.tagIDs]),
     series: [...a.series, ...b.series.filter(series => !a.series.some(existing => existing.id === series.id))],
-    relatedIDs: distinct([...a.relatedIDs, ...b.relatedIDs]), coverUrls: covers, coverQuality: coverFirst.coverQuality ?? "cover",
+    relatedIDs: distinct([...a.relatedIDs, ...b.relatedIDs]), knowledgeWorkIDs: distinct([...(a.knowledgeWorkIDs ?? []), ...(b.knowledgeWorkIDs ?? [])]), coverUrls: covers, coverQuality: coverFirst.coverQuality ?? "cover",
     language: a.language === "eng" || b.language === "eng" ? "eng" : "unknown",
     pages: first.pages ?? second.pages, publisher: first.publisher || second.publisher, releaseYear: first.releaseYear ?? second.releaseYear,
     popularity: Math.max(a.popularity, b.popularity), sources: (distinct([...a.sources, ...b.sources]) as ProviderName[]).sort((x, y) => order.indexOf(x) - order.indexOf(y)),

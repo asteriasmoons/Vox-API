@@ -16,6 +16,14 @@ export type LibraryBook = {
   status: string; rating: number; favorite: boolean; activity: number; providerBookID?: string;
   seriesName?: string; seriesNumber?: string; subtitle?: string;
 };
+export type ReadingPreferences = {
+  version: 1;
+  preferredCategory: "fiction" | "nonfiction" | "both";
+  favoriteFictionGenres: string[];
+  favoriteNonfictionGenres: string[];
+  currentlyInterestedIn: string[];
+  recommendationStyle: "follow_preferences" | "blend_interests" | "surprise_me";
+};
 export type Series = { id: string; name: string; position: number | null };
 export type Book = {
   id: string; title: string; subtitle: string | null; authors: string[]; description: string;
@@ -27,6 +35,7 @@ export type Book = {
   coverQuality?: "thumbnail" | "cover";
   imageID?: string;
   metadataExpiresAt?: string;
+  knowledgeWorkIDs?: string[];
 };
 export type CatalogBook = {
   id: string; title: string; author: string; authorNames: string[]; subtitle: string | null; summary: string;
@@ -46,6 +55,7 @@ export type DiscoveryPlan = {
   key: string; kind: "author" | "series" | "interests" | "related";
   categories: CategoryID[]; author?: string; authorID?: string; seriesID?: string; seriesName?: string;
   terms: string[]; tagIDs: string[]; workIDs: string[];
+  preferenceDriven?: boolean;
 };
 export type ProviderContext = { signal: AbortSignal; traceID: string; budgets?: Partial<Record<ProviderName, number>>; failures?: Set<ProviderName> };
 export interface DiscoveryProvider {
@@ -54,6 +64,11 @@ export interface DiscoveryProvider {
   resolve(books: LibraryBook[], context: ProviderContext): Promise<Book[]>;
   discover(plan: DiscoveryPlan, context: ProviderContext): Promise<Book[]>;
   enrich(book: Book, context: ProviderContext): Promise<Book | null>;
+}
+export interface BookKnowledgeSource {
+  available(): boolean;
+  resolve(books: LibraryBook[], context: ProviderContext): Promise<Book[]>;
+  discover(plan: DiscoveryPlan, context: ProviderContext, preferences?: ReadingPreferences): Promise<Book[]>;
 }
 export class RecommendationError extends Error {
   constructor(readonly code: string, readonly status = 503, readonly retryAfter = 60) { super(code); }

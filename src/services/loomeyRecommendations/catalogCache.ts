@@ -9,7 +9,7 @@ export class RecommendationCatalogCache {
   rowKey(profile: string, id: string) { return `${ENGINE_VERSION}:category:${profile}:${id}`; }
   async saveBook(book: Book) {
     if (book.sources.includes("bookdatabase.io")) throw new Error("Licensed supplements must be stored separately");
-    const aliases = distinct([book.id, ...(book.providerIDs.hardcover ?? []).map(id => `hc_${id}`), ...(book.providerIDs["google-books"] ?? []).map(id => `gb_${id}`), ...(book.providerIDs["open-library"] ?? []).filter(id => /W$/.test(id)).map(id => `ol_${id}`)]);
+    const aliases = distinct([book.id, ...(book.knowledgeWorkIDs ?? []), ...(book.providerIDs.hardcover ?? []).map(id => `hc_${id}`), ...(book.providerIDs["google-books"] ?? []).map(id => `gb_${id}`), ...(book.providerIDs["open-library"] ?? []).filter(id => /W$/.test(id)).map(id => `ol_${id}`)]);
     await Promise.all(aliases.map(id => this.store.set(`book:${id}`, book, RETENTION)));
   }
   async book(id: string, allowLicensed: boolean): Promise<Book | null> {

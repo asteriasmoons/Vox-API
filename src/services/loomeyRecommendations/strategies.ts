@@ -1,5 +1,6 @@
 import { authorKeys, distinct, emptyBook, hash, libraryIdentity, mergeBooks, normalized, ownedMatches, sameBook } from "./normalization";
-import { Book, CategoryID, DiscoveryPlan, LibraryBook, ProviderName } from "./types";
+import { Book, CategoryID, DiscoveryPlan, LibraryBook, ProviderName, ReadingPreferences } from "./types";
+import { favoriteGenres, preferenceEvidence, preferenceTerm } from "./readingPreferences";
 
 const generic = new Set(["fiction", "nonfiction", "non fiction", "general", "books", "literature", "adult", "juvenile fiction", "young adult fiction", "english literature", "american literature", "fictional works"]);
 export function interest(value: string): string {
@@ -7,10 +8,13 @@ export function interest(value: string): string {
   if (!key || generic.has(normalized(value)) || /bestsell|award|new york times|reviewed|nyt |reading level|large type|accessible book|protected daisy/.test(key)) return "";
   return key;
 }
-export type ReadingProfile = { seeds: Book[]; genres: Map<string, number>; themes: Map<string, number>; terms: Map<string, string>; authors: Set<string>; signature: string };
+export type ReadingProfile = { seeds: Book[]; genres: Map<string, number>; themes: Map<string, number>; terms: Map<string, string>; authors: Set<string>; signature: string; preferences?: ReadingPreferences };
 export function finishedBooks(library: LibraryBook[]): LibraryBook[] { return library.filter(book => book.status.toLowerCase() === "finished" && book.title && book.author); }
-export function profileKey(library: LibraryBook[]): string {
-  return hash(JSON.stringify(finishedBooks(library).map(book => ({ ...book, genres: [...book.genres].sort(), subjects: [...book.subjects].sort() })).sort((a, b) => a.id.localeCompare(b.id))));
+export function profileKey(library: LibraryBook[], preferences?: ReadingPreferences): string {
+  const history = JSON.stringify(finishedBooks(library).map(book => ({ ...book, genres: [...book.genres].sort(), subjects: [...book.subjects].sort() })).sort((a, b) => a.id.localeCompare(b.id)));
+  // Keep the existing cache namespace byte-for-byte unchanged for unconfigured readers.
+  return hash(history + (preferences ? JSON.stringify({ ...preferences, favoriteFictionGenres: [...preferences.favoriteFictionGenres].sort(),
+    favoriteNonfictionGenres: [...preferences.favoriteNonfictionGenres].sort(), currentlyInterestedIn: [...preferences.currentlyInterestedIn].sort() }) : ""));
 }
 export function selectSeeds(library: LibraryBook[]): LibraryBook[] {
   const ranked = [...finishedBooks(library)].sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.rating - a.rating || b.activity - a.activity || a.id.localeCompare(b.id));
@@ -23,7 +27,7 @@ export function selectSeeds(library: LibraryBook[]): LibraryBook[] {
   }
   return selected;
 }
-export function buildProfile(library: LibraryBook[], resolved: Book[]): ReadingProfile {
+export function buildProfile(library: LibraryBook[], resolved: Book[], preferences?: ReadingPreferences): ReadingProfile {
   const genres = new Map<string, number>();
   const themes = new Map<string, number>();
   const terms = new Map<string, string>();
@@ -57,7 +61,19 @@ export function buildProfile(library: LibraryBook[], resolved: Book[]): ReadingP
   }
   // Repeated provider labels are one signal, never counted as both a genre and a theme.
   for (const genre of genres.keys()) themes.delete(genre);
-  return { seeds, genres, themes, terms, authors, signature: profileKey(library) };
+  if (preferences) {
+    const weight = preferences.recommendationStyle === "follow_preferences" ? 12 : preferences.recommendationStyle === "blend_interests" ? 4 : 2;
+    for (const value of favoriteGenres(preferences)) {
+      const key = preferenceTerm(value);
+      if (interest(value)) { genres.set(key, (genres.get(key) ?? 0) + weight); terms.set(key, value); }
+    }
+    for (const value of preferences.currentlyInterestedIn) {
+      const key = preferenceTerm(value);
+      if (interest(value)) { themes.set(key, (themes.get(key) ?? 0) + weight + 2); terms.set(key, value); }
+    }
+    for (const genre of genres.keys()) themes.delete(genre);
+  }
+  return { seeds, genres, themes, terms, authors, signature: profileKey(library, preferences), ...(preferences ? { preferences } : {}) };
 }
 const thematicCategories: CategoryID[] = ["similar", "genres", "themes", "new-authors", "related", "discovery"];
 export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], provider: ProviderName): DiscoveryPlan[] {
@@ -70,6 +86,22 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
     if (!plans.some(existing => existing.key === key)) plans.push({ ...plan, key });
   };
   const authors = new Set<string>();
+  if (profile.preferences) {
+    const preferences = profile.preferences;
+    const favorites = favoriteGenres(preferences).slice(0, 4);
+    const current = preferences.currentlyInterestedIn.slice(0, 4);
+    if (preferences.recommendationStyle === "surprise_me" || (!favorites.length && !current.length && preferences.preferredCategory !== "both")) {
+      const categories = preferences.preferredCategory === "both" ? ["Fiction", "Nonfiction"] : [preferences.preferredCategory === "fiction" ? "Fiction" : "Nonfiction"];
+      for (const term of categories) add("interests", ["similar", "new-authors", "discovery"], { terms: [term], preferenceDriven: true });
+    }
+    for (let index = 0; index < Math.max(favorites.length, current.length); index++) {
+      const favorite = favorites[index];
+      const interest = current[index];
+      if (favorite && interest) add("interests", thematicCategories, { terms: [favorite, interest], preferenceDriven: true });
+      if (interest) add("interests", thematicCategories, { terms: [interest], preferenceDriven: true });
+      if (favorite) add("interests", thematicCategories, { terms: [favorite], preferenceDriven: true });
+    }
+  }
   for (const seed of profile.seeds) {
     for (const author of seed.authors.slice(0, 2)) {
       const key = authorKeys(author)[0] ?? author;
@@ -86,7 +118,7 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
       const key = normalized(item.name);
       if (series.has(key)) continue;
       series.add(key);
-      add("series", ["related", "similar"], /^hc_\d+$/.test(item.id) ? { seriesID: item.id } : { seriesName: item.name });
+      add("series", ["related", "similar"], /^hc_\d+$/.test(item.id) ? { seriesID: item.id, seriesName: item.name } : { seriesName: item.name });
     }
     const ids = distinct(profile.seeds.flatMap(seed => seed.relatedIDs)).slice(0, 24);
     if (ids.length) add("related", ["related", "similar", "discovery"], { workIDs: ids });
@@ -118,7 +150,8 @@ export function relevance(book: Book, profile: ReadingProfile): Relevance {
   const author = book.authors.flatMap(authorKeys).some(key => profile.authors.has(key));
   const series = book.series.some(item => profile.seeds.some(seed => seed.series.some(previous => previous.id === item.id ||
     (normalized(previous.name) === normalized(item.name) && seed.authors.flatMap(authorKeys).some(key => book.authors.flatMap(authorKeys).includes(key))))));
-  const related = profile.seeds.some(seed => seed.relatedIDs.includes(book.id) || book.relatedIDs.includes(seed.id) || seed.relatedIDs.some(id => book.providerIDs.hardcover?.some(hc => id === `hc_${hc}`)));
+  const related = profile.seeds.some(seed => seed.relatedIDs.some(id => id === book.id || book.knowledgeWorkIDs?.includes(id))
+    || book.relatedIDs.some(id => id === seed.id || seed.knowledgeWorkIDs?.includes(id)) || seed.relatedIDs.some(id => book.providerIDs.hardcover?.some(hc => id === `hc_${hc}`)));
   const finishedMatches = profile.seeds.filter(seed => {
     const shared = values.filter(value => distinct([...seed.genres, ...seed.subjects, ...seed.tags].map(interest)).includes(value));
     return shared.length >= 2;
@@ -138,11 +171,33 @@ export function categoryScore(category: CategoryID, match: Relevance): number | 
     case "discovery": return multi && match.newAuthor ? match.total + Math.max(0, 8 - Math.log2(1 + match.popularity)) : null;
   }
 }
+
+export function recommendationScore(category: CategoryID, book: Book, profile: ReadingProfile): number | null {
+  const match = relevance(book, profile);
+  let score = categoryScore(category, match);
+  const preferences = profile.preferences;
+  if (!preferences) return score;
+  const evidence = preferenceEvidence(book, preferences);
+  const style = preferences.recommendationStyle;
+  if (preferences.preferredCategory !== "both" && !evidence.categoryMatch) return null;
+  const explicit = evidence.favorites + evidence.current > 0;
+  if (style === "follow_preferences" && (favoriteGenres(preferences).length || preferences.currentlyInterestedIn.length) && !explicit) return null;
+  if (score === null && explicit) {
+    if (category === "similar" || category === "genres" && evidence.favorites > 0 || category === "themes" && evidence.current > 0
+      || (category === "new-authors" || category === "discovery") && match.newAuthor) score = match.total;
+  }
+  if (score === null && evidence.categoryMatch && evidence.specificMetadata > 0 &&
+    (style === "surprise_me" && category === "discovery" && match.newAuthor || !profile.seeds.length && ["similar", "new-authors", "discovery"].includes(category))) score = 4;
+  if (score === null) return null;
+  const boost = style === "follow_preferences" ? 18 : style === "blend_interests" ? 8 : 3;
+  return score * (style === "follow_preferences" ? 0.25 : 1) + evidence.favorites * boost + evidence.current * (boost + 6) + Number(evidence.categoryMatch) * (style === "follow_preferences" ? 8 : 3)
+    + (style === "surprise_me" ? Number(match.newAuthor) * 8 + Math.max(0, 6 - Math.log2(1 + book.popularity)) : 0);
+}
 export function rankCategories(books: Book[], profile: ReadingProfile, library: LibraryBook[], targets: CategoryID[]): Map<CategoryID, Book[]> {
   const usable = books.filter(book => book.language === "eng" && book.title && book.authors.length && (book.coverUrls.length || book.imageID) && !library.some(owned => ownedMatches(owned, book)) && !profile.seeds.some(seed => sameBook(seed, book)));
   const result = new Map<CategoryID, Book[]>();
   for (const category of targets) {
-    const ranked = usable.map(book => ({ book, match: relevance(book, profile), matchedGenres: distinct([...book.genres, ...book.subjects].map(interest)).filter(genre => profile.genres.has(genre)) })).map(item => ({ ...item, score: categoryScore(category, item.match) }))
+    const ranked = usable.map(book => ({ book, match: relevance(book, profile), matchedGenres: distinct([...book.genres, ...book.subjects].map(interest)).filter(genre => profile.genres.has(genre)) })).map(item => ({ ...item, score: recommendationScore(category, item.book, profile) }))
       .filter((item): item is typeof item & { score: number } => item.score !== null)
       .sort((a, b) => b.score - a.score || Math.min(3, Math.log1p(b.match.popularity)) - Math.min(3, Math.log1p(a.match.popularity)) || a.book.id.localeCompare(b.book.id));
     const selected: Book[] = [];

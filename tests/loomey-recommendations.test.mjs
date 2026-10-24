@@ -2,11 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFileSync, readdirSync } from "node:fs";
+import { EventEmitter } from "node:events";
 const require = createRequire(import.meta.url);
 require("ts-node/register/transpile-only");
 const root = "../src/services/loomeyRecommendations/";
 const { emptyBook, isbn, isbnVariants, title, authorKeys, sameBook, mergeBooks, mergeCandidates, libraryIdentity, parseLibrary, catalogBook } = require(root + "normalization.ts");
-const { buildProfile, selectSeeds, profileKey, discoveryPlans, relevance, categoryScore, rankCategories } = require(root + "strategies.ts");
+const { buildProfile, selectSeeds, profileKey, discoveryPlans, relevance, categoryScore, recommendationScore, rankCategories } = require(root + "strategies.ts");
+const { parseReadingPreferences, preferenceEvidence, hasPreferenceInputs } = require(root + "readingPreferences.ts");
 const { RecommendationCatalogCache, allocateSections, RETENTION } = require(root + "catalogCache.ts");
 const { LoomeyRecommendationEngine } = require(root + "engine.ts");
 const { HardcoverProvider, hardcoverBook, HARDCOVER_BOOKS_QUERY } = require(root + "providers/hardcover.ts");
@@ -16,6 +18,9 @@ const { BookDatabaseSupplement } = require(root + "providers/bookDatabase.ts");
 const { ProviderTransport } = require(root + "transport.ts");
 const { categoryIDs, RecommendationError } = require(root + "types.ts");
 const { MongoRecommendationStore } = require(root + "repository.ts");
+const { PostgresBookKnowledgeSource } = require(root + "knowledgeSource.ts");
+const { knowledgeBook, queryKnowledgeBooks } = require("../src/bookKnowledge/queries.ts");
+const { createAutomaticCatalogRouter } = require("../src/routes/automaticCatalogs.ts");
 
 class MemoryStore {
   rows = new Map(); locks = new Map(); reservations = [];
@@ -37,6 +42,312 @@ function fixtureProvider(name, candidates, failure = false) {
     async enrich() { this.calls.push(["enrich"]); if (failure) throw new RecommendationError("PROVIDER_UNAVAILABLE"); return null; } };
 }
 const response = value => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
+const preferences = (changes = {}) => parseReadingPreferences({ preferences: { version: 1, preferredCategory: "both", favoriteFictionGenres: [], favoriteNonfictionGenres: [], currentlyInterestedIn: [], recommendationStyle: "blend_interests", ...changes } });
+
+test("unconfigured preferences preserve the original profile, cache namespace, scores and plans", () => {
+  assert.equal(parseReadingPreferences({ books: [] }), undefined);
+  assert.equal(hasPreferenceInputs(undefined), false);
+  const profile = buildProfile([seed()], []);
+  assert.equal(profile.signature, profileKey([seed()]));
+  assert.equal(recommendationScore("similar", book("new"), profile), categoryScore("similar", relevance(book("new"), profile)));
+  assert.deepEqual(discoveryPlans(profile, categoryIDs, "google-books"), discoveryPlans(buildProfile([seed()], [], undefined), categoryIDs, "google-books"));
+});
+
+test("preference payloads validate schema, bound inputs and normalize duplicates without inventing defaults", () => {
+  for (const value of [false, [], {}, { version: 2 }, { ...preferences(), recommendationStyle: "unknown" }, { ...preferences(), currentlyInterestedIn: Array(21).fill("dragons") }, { ...preferences(), favoriteFictionGenres: [4] }]) {
+    assert.throws(() => parseReadingPreferences({ preferences: value }), error => error.code === "INVALID_READING_PREFERENCES" && error.status === 400);
+  }
+  const value = preferences({ favoriteFictionGenres: [" Fantasy ", "fantasy"], currentlyInterestedIn: ["Ancient history", "Ancient history"] });
+  assert.deepEqual(value.favoriteFictionGenres, ["Fantasy"]);
+  assert.deepEqual(value.currentlyInterestedIn, ["Ancient history"]);
+});
+
+test("Follow My Preferences puts explicit choices ahead of strong conflicting reading-history evidence", () => {
+  const value = preferences({ preferredCategory: "fiction", favoriteFictionGenres: ["Romance"], recommendationStyle: "follow_preferences" });
+  const profile = buildProfile([seed()], [], value);
+  const selected = book("romance", { genres: ["Romance"], subjects: [] });
+  const historical = book("history", { authors: ["Known Author"] });
+  const nonfiction = book("science", { genres: ["Nonfiction", "Science"], subjects: ["Dragons"] });
+  assert.ok(recommendationScore("similar", selected, profile) > recommendationScore("similar", historical, profile));
+  assert.equal(recommendationScore("similar", historical, profile), null);
+  assert.equal(recommendationScore("similar", nonfiction, profile), null);
+  assert.equal(rankCategories([historical, selected, nonfiction], profile, [seed()], ["similar"]).get("similar")[0].id, "romance");
+});
+
+test("Blend My Interests combines explicit genres, current interests and only Finished history", () => {
+  const value = preferences({ favoriteFictionGenres: ["Romance"], currentlyInterestedIn: ["Found family"] });
+  const profile = buildProfile([seed(), seed("reading", "Reading", { genres: ["Horror"] })], [], value);
+  assert.ok(profile.genres.has("romance") && profile.genres.has("fantasy"));
+  assert.ok(profile.themes.has("found family"));
+  assert.equal(profile.genres.has("horror"), false);
+  assert.ok(recommendationScore("similar", book("history"), profile) !== null);
+  assert.ok(recommendationScore("genres", book("explicit", { genres: ["Romance"], subjects: [] }), profile) !== null);
+});
+
+test("Surprise Me broadens discovery without changing author or related-book section meanings", () => {
+  const value = preferences({ preferredCategory: "both", favoriteFictionGenres: ["Romance"], recommendationStyle: "surprise_me" });
+  const profile = buildProfile([seed()], [], value);
+  const unfamiliar = book("unfamiliar", { genres: ["Nonfiction", "History"], subjects: ["Ancient Egypt"] });
+  assert.ok(recommendationScore("discovery", unfamiliar, profile) !== null);
+  assert.equal(recommendationScore("authors-read", unfamiliar, profile), null);
+  assert.equal(recommendationScore("related", unfamiliar, profile), null);
+  assert.equal(recommendationScore("discovery", unfamiliar, buildProfile([seed()], [])), null);
+  const plans = discoveryPlans(profile, ["discovery"], "google-books");
+  assert.ok(plans.some(plan => plan.terms.includes("Nonfiction")));
+  const manyInterests = preferences({ favoriteFictionGenres: ["Fantasy", "Mystery", "Romance", "Thriller"], currentlyInterestedIn: ["Dragons", "Ghosts", "Found family", "Time travel"], recommendationStyle: "surprise_me" });
+  assert.ok(discoveryPlans(buildProfile([seed()], [], manyInterests), categoryIDs, "google-books").some(plan => plan.terms.includes("Nonfiction")));
+});
+
+test("fiction and nonfiction selections stay separate and Science never matches Science Fiction", () => {
+  const value = preferences({ preferredCategory: "nonfiction", favoriteFictionGenres: ["Romance"], favoriteNonfictionGenres: ["Science"] });
+  const profile = buildProfile([], [], value);
+  assert.equal(profile.genres.has("romance"), false);
+  assert.ok(profile.genres.has("science"));
+  const fictional = preferenceEvidence(book("sci-fi", { genres: ["Science Fiction"], subjects: [] }), value);
+  assert.equal(fictional.favorites, 0);
+  assert.equal(fictional.opposedCategory, true);
+  assert.equal(preferenceEvidence(book("real-science", { genres: ["Science"], subjects: [] }), value).favorites, 1);
+  assert.equal(preferenceEvidence(book("historical-novel", { genres: ["Fiction"], subjects: ["History", "Science"] }), value).categoryMatch, false);
+  assert.equal(preferenceEvidence(book("about-fantasy", { genres: ["Nonfiction"], subjects: ["Fantasy", "Science"] }), value).categoryMatch, true);
+});
+
+test("preferences and current interests produce bounded independent discovery plans before historical interests", () => {
+  const value = preferences({ favoriteFictionGenres: ["Romance"], currentlyInterestedIn: ["Found family"] });
+  const profile = buildProfile([seed()], [], value);
+  for (const provider of ["hardcover", "google-books", "open-library"]) {
+    const plans = discoveryPlans(profile, ["genres", "themes", "discovery"], provider);
+    assert.deepEqual(plans[0].terms, ["Romance", "Found family"]);
+    assert.ok(plans.length <= 10);
+  }
+  assert.deepEqual(value.favoriteFictionGenres, ["Romance"]);
+});
+
+test("preference-only users can generate catalogs while every owned status remains excluded", async () => {
+  const value = preferences({ favoriteFictionGenres: ["Romance"], recommendationStyle: "follow_preferences" });
+  const candidates = Array.from({ length: 24 }, (_, index) => book(`romance-${index}`, { genres: ["Romance"], subjects: [] }));
+  const provider = fixtureProvider("google-books", candidates);
+  const library = [seed("owned", "Reading", { title: candidates[0].title, author: candidates[0].authors[0], isbn: "" })];
+  const result = await new LoomeyRecommendationEngine(new MemoryStore(), [provider]).catalogs(library, undefined, false, "preferences-test", categoryIDs, value);
+  assert.ok(result.catalogs.length >= 3);
+  assert.ok(result.catalogs.every(row => row.books.length >= 2));
+  assert.equal(result.catalogs.flatMap(row => row.books).some(book => book.id === candidates[0].id), false);
+  assert.deepEqual(provider.calls.find(call => call[0] === "resolve")[1], []);
+  assert.equal(result.catalogs.some(row => row.id === "authors-read" || row.id === "related"), false);
+});
+
+test("preference cache keys invalidate on meaningful changes but ignore ordering and unfinished book signals", async () => {
+  const a = preferences({ favoriteFictionGenres: ["Fantasy", "Romance"] });
+  const b = preferences({ favoriteFictionGenres: ["Romance", "Fantasy"] });
+  assert.equal(profileKey([seed()], a), profileKey([seed()], b));
+  assert.notEqual(profileKey([seed()], a), profileKey([seed()]));
+  for (const changed of [preferences({ ...a, preferredCategory: "fiction" }), preferences({ ...a, currentlyInterestedIn: ["Dragons"] }), preferences({ ...a, recommendationStyle: "surprise_me" })]) assert.notEqual(profileKey([seed()], a), profileKey([seed()], changed));
+  const store = new MemoryStore();
+  const provider = fixtureProvider("google-books", Array.from({ length: 24 }, (_, index) => book(`persist-${index}`)));
+  await new LoomeyRecommendationEngine(store, [provider]).catalogs([seed()], undefined, false, "test", categoryIDs, a);
+  const unavailable = fixtureProvider("google-books", [], true);
+  const restarted = new LoomeyRecommendationEngine(store, [unavailable]);
+  const cached = await restarted.requestCatalogs([seed()], false, "test", categoryIDs, a);
+  assert.ok(cached.catalogs.length);
+  assert.equal(cached.state, "ready");
+  assert.equal(unavailable.calls.length, 0);
+  const previous = cached.catalogs.flatMap(row => row.books).map(book => book.id);
+  const failed = await restarted.catalogs([seed()], undefined, true, "test", ["genres"], a);
+  assert.ok(failed.catalogs.flatMap(row => row.books).some(book => previous.includes(book.id)));
+});
+
+const knowledgeRow = (changes = {}) => ({ id: "12345678-1234-1234-1234-123456789abc", title: "<b>Stored Novel</b> (Paperback)", language: "eng", authors: ["Stored Writer"],
+  description: "Stored description", genres: ["Fantasy"], subjects: ["Dragons", "Political intrigue"], tags: ["Found family"],
+  isbns: ["0140328726"], provider_ids: { hardcover: ["42"] }, identifiers: [{ provider: "google-books", id: "stored-volume" }],
+  source_names: ["hardcover"], cover_url: "https://covers.example.test/stored.jpg", cover_urls: ["invalid", "https://covers.example.test/alternate.jpg"],
+  series: [{ id: "12345678-1234-1234-1234-000000000000", name: "Stored Series", position: "2" }], related: ["pg_12345678123412341234000000000000"],
+  pages: 300, publisher: "Stored Publisher", first_published_year: 2020, popularity: 20, ...changes });
+
+test("PostgreSQL rows normalize existing identifiers, editions, covers and provenance without inventing missing metadata", () => {
+  const result = knowledgeBook(knowledgeRow());
+  assert.equal(result.title, "Stored Novel");
+  assert.deepEqual(result.isbns, ["9780140328721"]);
+  assert.deepEqual(result.providerIDs, { hardcover: ["42"], "google-books": ["stored-volume"] });
+  assert.equal(result.coverUrls.length, 2);
+  assert.equal(result.pages, 300);
+  assert.equal(result.series[0].position, 2);
+  assert.deepEqual(result.knowledgeWorkIDs, [result.id]);
+  for (const changes of [{ authors: null }, { title: "" }, { language: "fre" }, { language: null }, { id: "invalid" }]) assert.equal(knowledgeBook(knowledgeRow(changes)), null);
+  const partial = knowledgeBook(knowledgeRow({ provider_ids: null, identifiers: null, series: null, isbns: null, description: null, cover_urls: null, cover_url: null, pages: null }));
+  assert.ok(partial && !partial.coverUrls.length && !partial.isbns.length && partial.pages === null);
+});
+
+test("PostgreSQL searches use bounded parameterized read-only transactions over the existing schema", async () => {
+  const queries = []; let released = false;
+  const pool = { async connect() { return { async query(config) { queries.push(config); return { rows: config.text.startsWith("SELECT") ? [knowledgeRow()] : [] }; }, release(error) { assert.equal(error, undefined); released = true; } }; } };
+  const result = await queryKnowledgeBooks({ terms: ["Romance'); DROP TABLE bk_jobs;--"], authors: ["Known Author"], titles: ["Finished Novel"], isbns: ["0140328726"],
+    seriesNames: ["River & Stone"], workIDs: ["pg_12345678123412341234123456789abc"], relatedTo: ["pg_12345678123412341234000000000000"], category: "fiction", limit: 900 }, pool);
+  assert.equal(result.length, 1);
+  assert.equal(queries[0].text, "BEGIN READ ONLY");
+  assert.match(queries[1].text, /statement_timeout = '1500ms'/);
+  const query = queries.find(query => query.text.startsWith("SELECT"));
+  assert.doesNotMatch(query.text, /DROP TABLE|Known Author|Finished Novel|River & Stone|INSERT INTO|UPDATE bk_|DELETE FROM/);
+  assert.ok(query.values.some(value => Array.isArray(value) && value.includes("9780140328721")));
+  assert.ok(query.values.some(value => Array.isArray(value) && value.includes("river stone")));
+  assert.equal(query.values.at(-1), 160);
+  assert.match(query.text, /bk_work_authors|bk_work_series|bk_related|bk_provider_ids/);
+  assert.match(query.text, /w.language IN \('eng','en'\)/);
+  assert.equal(queries.at(-1).text, "COMMIT");
+  assert.ok(queries.every(query => query.query_timeout === 2000));
+  assert.ok(released);
+});
+
+test("empty knowledge searches do not connect; failed SQL disposes the checked-out connection", async () => {
+  assert.deepEqual(await queryKnowledgeBooks({ terms: [] }, { connect() { assert.fail("no unbounded catalog scan"); } }), []);
+  let releaseError;
+  const failure = new Error("database unavailable");
+  const pool = { async connect() { return { async query(config) { if (config.text.startsWith("SELECT")) throw failure; return { rows: [] }; }, release(error) { releaseError = error; } }; } };
+  await assert.rejects(queryKnowledgeBooks({ terms: ["Fantasy"] }, pool), failure);
+  assert.equal(releaseError, failure);
+});
+
+test("knowledge adapter caches and coalesces reads, and forwards category, author, series and related identifiers", async () => {
+  const requests = [];
+  const source = new PostgresBookKnowledgeSource(new MemoryStore(), async query => { requests.push(query); return [knowledgeBook(knowledgeRow())]; }, () => true);
+  const value = preferences({ preferredCategory: "fiction", favoriteFictionGenres: ["Fantasy"] });
+  const plan = { key: "test", kind: "interests", categories: ["genres"], terms: ["Fantasy"], tagIDs: [], workIDs: [] };
+  await Promise.all([source.discover(plan, context(), value), source.discover(plan, context(), value)]);
+  await source.discover(plan, context(), value);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].category, "fiction");
+  await source.discover({ ...plan, kind: "author", author: "Known Author" }, context(), value);
+  await source.discover({ ...plan, kind: "series", seriesName: "Stored Series" }, context(), value);
+  await source.discover({ ...plan, kind: "related", workIDs: ["hc_42", "pg_12345678123412341234123456789abc"] }, context(), value);
+  assert.deepEqual(requests[1].authors, ["Known Author"]);
+  assert.deepEqual(requests[2].seriesNames, ["Stored Series"]);
+  assert.deepEqual(requests[3].providerIDs, [{ provider: "hardcover", id: "42" }]);
+  assert.equal(requests[3].workIDs.length, 1);
+});
+
+test("sufficient PostgreSQL categories populate all seven existing sections without calling any external provider", async () => {
+  const candidates = Array.from({ length: 54 }, (_, index) => book(`stored-${index}`, index < 4 ? { authors: ["Known Author"] } : {}));
+  const reads = [];
+  const source = { available: () => true, async resolve(sources) { reads.push(["resolve", sources]); return []; }, async discover(plan) { reads.push(["discover", plan]); return candidates; } };
+  const providers = ["hardcover", "google-books", "open-library"].map(name => fixtureProvider(name, [], true));
+  const store = new MemoryStore();
+  const engine = new LoomeyRecommendationEngine(store, providers, undefined, 180000, source);
+  const result = await engine.catalogs([seed()]);
+  assert.equal(result.catalogs.length, 7);
+  assert.ok(result.catalogs.every(row => row.books.length >= 4));
+  assert.ok(providers.every(provider => provider.calls.length === 0));
+  const count = reads.length;
+  const restarted = new LoomeyRecommendationEngine(store, providers, undefined, 180000, source);
+  assert.equal((await restarted.requestCatalogs([seed()])).catalogs.length, 7);
+  assert.equal(reads.length, count);
+});
+
+test("underfilled PostgreSQL sections fall back without querying already-sufficient author categories", async () => {
+  const stored = Array.from({ length: 4 }, (_, index) => book(`owned-author-${index}`, { authors: ["Known Author"], genres: [], subjects: [] }));
+  const source = { available: () => true, async resolve() { return []; }, async discover(plan) { return plan.kind === "author" ? stored : []; } };
+  const provider = fixtureProvider("google-books", Array.from({ length: 48 }, (_, index) => book(`fallback-${index}`)));
+  const result = await new LoomeyRecommendationEngine(new MemoryStore(), [provider], undefined, 180000, source).catalogs([seed()]);
+  assert.ok(result.catalogs.some(row => row.id === "authors-read" && row.books.length === 4));
+  assert.ok(result.catalogs.length >= 5);
+  assert.ok(provider.calls.filter(call => call[0] === "discover").every(call => !call[1].categories.includes("authors-read")));
+});
+
+test("empty, broken or unconfigured PostgreSQL never blocks existing external discovery", async () => {
+  for (const mode of ["empty", "failure", "disabled"]) {
+    const source = { available: () => mode !== "disabled", async resolve() { if (mode === "failure") throw new Error("TLS"); return []; },
+      async discover() { if (mode === "failure") throw new Error("timeout"); return []; } };
+    const provider = fixtureProvider("google-books", Array.from({ length: 30 }, (_, index) => book(`${mode}-${index}`)));
+    const result = await new LoomeyRecommendationEngine(new MemoryStore(), [provider], undefined, 180000, source).catalogs([seed()]);
+    assert.ok(result.catalogs.length >= 4, mode);
+    assert.ok(provider.calls.some(call => call[0] === "discover"));
+  }
+});
+
+test("PostgreSQL and external editions deduplicate by provider aliases, ISBN and preserved graph identities", () => {
+  const stored = knowledgeBook(knowledgeRow({ title: "Same Work", authors: ["Same Author"], related: [] }));
+  const external = book("hc_42", { title: "Same Work (Hardcover)", authors: ["Same Author"], providerIDs: { hardcover: ["42"] }, isbns: ["9780140328721"] });
+  const merged = mergeCandidates([stored, external]);
+  assert.equal(merged.length, 1);
+  assert.deepEqual(merged[0].knowledgeWorkIDs, stored.knowledgeWorkIDs);
+  const profile = buildProfile([seed("read", "Finished", { title: "Same Work", author: "Same Author" })], [stored]);
+  const related = book("next", { relatedIDs: stored.knowledgeWorkIDs });
+  assert.equal(relevance(related, profile).related, true);
+  assert.equal(rankCategories([stored, external], profile, [seed("read", "Archived", { isbn: "0140328726" })], ["similar"]).get("similar").length, 0);
+});
+
+test("all recommendation styles respect selected fiction/nonfiction across every section", () => {
+  for (const style of ["follow_preferences", "blend_interests", "surprise_me"]) {
+    const value = preferences({ preferredCategory: "nonfiction", favoriteNonfictionGenres: ["History"], recommendationStyle: style });
+    const profile = buildProfile([seed()], [], value);
+    const fictional = book("fiction", { authors: ["Known Author"], genres: ["Fantasy", "Science Fiction"] });
+    for (const category of categoryIDs) assert.equal(recommendationScore(category, fictional, profile), null, `${style}:${category}`);
+  }
+});
+
+test("preference request data flows through PostgreSQL row normalization into populated saved sections and details", async () => {
+  const value = preferences({ preferredCategory: "fiction", favoriteFictionGenres: ["Fantasy", "Mystery"], currentlyInterestedIn: ["Dragons"], recommendationStyle: "follow_preferences" });
+  const rows = Array.from({ length: 54 }, (_, index) => knowledgeRow({ id: `12345678-1234-1234-1234-${String(index + 1).padStart(12, "0")}`,
+    title: `Stored Recommendation ${index} (Paperback)`, authors: [index < 4 ? "Known Author" : `Catalog Author ${index}`],
+    genres: [index % 2 ? "Fantasy" : "Mystery"], isbns: [], provider_ids: {}, identifiers: [{ provider: "google-books", id: `pg-fixture-${index}` }],
+    cover_url: `https://covers.example.test/pg-${index}.jpg`, cover_urls: [], series: [] }));
+  const executed = [];
+  const pool = { async connect() { return { async query(config) { executed.push(config); return { rows: config.text.startsWith("SELECT") && config.values[0].length ? rows : [] }; }, release() {} }; } };
+  const store = new MemoryStore();
+  const source = new PostgresBookKnowledgeSource(store, search => queryKnowledgeBooks(search, pool), () => true);
+  const provider = fixtureProvider("google-books", [], true);
+  const engine = new LoomeyRecommendationEngine(store, [provider], undefined, 180000, source);
+  const result = await engine.catalogs([seed(), seed("reading", "Reading", { title: rows[4].title, author: rows[4].authors[0], isbn: "", genres: ["Horror"] })], undefined, false, "pg-pipeline", categoryIDs, value);
+  assert.equal(result.catalogs.length, 7);
+  assert.ok(result.catalogs.every(row => row.books.length >= 4));
+  assert.ok(result.catalogs.flatMap(row => row.books).every(book => !book.title.endsWith("(Paperback)") && book.coverUrl.startsWith("https://") && book.author));
+  assert.equal(result.catalogs.flatMap(row => row.books).some(book => book.title === "Stored Recommendation 4"), false);
+  assert.equal(provider.calls.length, 0);
+  assert.ok(executed.some(query => query.text.startsWith("SELECT") && query.values.some(value => typeof value === "string" && value.includes("fiction"))));
+  const genres = result.catalogs.find(row => row.id === "genres");
+  assert.ok(new Set(genres.books.flatMap(book => book.genres)).size >= 2);
+  const card = result.catalogs[0].books[0];
+  assert.equal((await engine.libraryMetadata(card.id)).title, card.title);
+  const restarted = new LoomeyRecommendationEngine(store, [], undefined, 180000, source);
+  const cached = await restarted.requestCatalogs([seed()], false, "pg-pipeline", categoryIDs, value);
+  assert.equal(cached.catalogs.length, 7);
+});
+
+test("an idle PostgreSQL pool error is handled by API wiring without terminating the process", () => {
+  const { bookPool } = require("../src/bookKnowledge/db.ts");
+  assert.ok(bookPool.listenerCount("error") > 0);
+  assert.doesNotThrow(() => bookPool.emit("error", Object.assign(new Error("isolated idle connection failure"), { code: "ECONNRESET" })));
+});
+
+test("request-side PostgreSQL imports never collect books or invoke the protected weekly worker", () => {
+  for (const path of ["src/bookKnowledge/queries.ts", "src/bookKnowledge/knowledgeProvider.ts", "src/services/loomeyRecommendations/knowledgeSource.ts", "src/services/loomeyRecommendations/engine.ts"]) {
+    const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /(?:from|import\s*)[\s\S]{0,30}["'][^"']*\/(?:worker|runner|growth|jobs|sourceBridge)["']/);
+    assert.doesNotMatch(source, /\benqueue\s*\(|\b(?:seedKnowledge|runKnowledgeWorker|scheduleDueWork|ingestProviderBook)\s*\(/);
+  }
+  const runner = readFileSync(new URL("../src/bookKnowledge/runner.ts", import.meta.url), "utf8");
+  assert.match(runner, /const RUN_LIMIT_MS = 10 \* 60 \* 1000/);
+});
+
+test("existing catalog route validates and forwards explicit preferences without requiring another login", async () => {
+  const calls = [];
+  const result = { state: "ready", catalogs: [], partial: false };
+  const service = { async requestCatalogs(...args) { calls.push(["progressive", ...args]); return result; }, async catalogs(...args) { calls.push(["awaited", ...args]); return result; } };
+  const router = createAutomaticCatalogRouter({ service, client: {}, limit: async () => {} });
+  const request = body => new Promise((resolve, reject) => {
+    const response = Object.assign(new EventEmitter(), { locals: {}, statusCode: 200, headers: {}, setHeader(name, value) { this.headers[name] = value; },
+      status(code) { this.statusCode = code; return this; }, json(value) { this.emit("finish"); resolve({ status: this.statusCode, value, headers: this.headers }); } });
+    router.handle({ method: "POST", url: "/", path: "/", body, ip: "unit-test", socket: {}, header() { return undefined; } }, response, reject);
+  });
+  const value = preferences({ preferredCategory: "nonfiction", favoriteNonfictionGenres: ["History"], currentlyInterestedIn: ["Ancient Egypt"] });
+  assert.equal((await request({ books: [seed()], progressive: true, preferences: value })).status, 200);
+  assert.deepEqual(calls[0].at(-1), value);
+  assert.equal((await request({ books: [seed()], preferences: value })).status, 200);
+  assert.deepEqual(calls[1].at(-1), value);
+  assert.equal((await request({ books: [seed()], progressive: true })).status, 200);
+  assert.equal(calls[2].at(-1), undefined);
+  const invalid = await request({ books: [seed()], progressive: true, preferences: { ...value, recommendationStyle: "invalid" } });
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.value.error, "INVALID_READING_PREFERENCES");
+  assert.equal(calls.length, 3);
+});
 
 test("new engine has no dependency on retired recommendation logic, matching, or orchestration", () => {
   const files = readdirSync(new URL("../src/services/loomeyRecommendations/", import.meta.url)).filter(name => name.endsWith(".ts"));

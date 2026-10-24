@@ -98,6 +98,7 @@ export class HardcoverProvider implements DiscoveryProvider {
     else if (plan.kind === "related" && plan.workIDs.length) relationship = { id: { _in: plan.workIDs.map(id => Number(id.replace(/^hc_/, ""))).filter(Number.isInteger) } };
     else if (tagIDs.length >= 2) relationship = { _and: tagIDs.slice(0, 2).map(id => ({ taggings: { tag_id: { _eq: id } } })) };
     else if (plan.kind === "author" && plan.author) relationship = { contributions: { author: { name: { _eq: plan.author } } } };
+    else if (plan.kind === "interests" && plan.preferenceDriven && plan.terms.length) relationship = { _and: plan.terms.slice(0, 2).map(term => ({ taggings: { tag: { tag: { _in: distinct([term, term.toLowerCase()]) } } } })) };
     else return [];
     const where = { _and: [relationship, { canonical_id: { _is_null: true }, compilation: { _eq: false } }, { _or: [{ is_partial_book: { _eq: false } }, { is_partial_book: { _is_null: true } }] }] };
     return this.books(where, context, 24);

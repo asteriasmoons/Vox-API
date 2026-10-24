@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { loomeyRecommendationEngine, bookDatabaseClient, parseLibrary, categoryIDs, RecommendationError } from "../services/loomeyRecommendations";
+import { loomeyRecommendationEngine, bookDatabaseClient, parseLibrary, parseReadingPreferences, categoryIDs, RecommendationError } from "../services/loomeyRecommendations";
 import { CatalogError, limitCatalogRequests } from "../services/automaticCatalogStore";
 import { randomUUID } from "node:crypto";
 import { catalogFailure, catalogLog } from "../services/catalogDiagnostics";
@@ -37,13 +37,14 @@ export function createAutomaticCatalogRouter(dependencies = {
   router.post("/", async (req, res) => {
     try {
       const library = parseLibrary(req.body);
+      const preferences = parseReadingPreferences(req.body);
       const categories = req.body?.categories;
       if (categories !== undefined && (!Array.isArray(categories) || !categories.length || categories.some(id => typeof id !== "string" || !categoryIDs.some(known => known === id)))) throw new CatalogError("INVALID_CATALOG_CATEGORIES", 400);
       if (req.body?.progressive !== true) {
-        res.json(await dependencies.service.catalogs(library, undefined, false, res.locals.catalogTrace));
+        res.json(await dependencies.service.catalogs(library, undefined, false, res.locals.catalogTrace, categories, preferences));
         return;
       }
-      const result = await dependencies.service.requestCatalogs(library, req.body?.forceRefresh === true, res.locals.catalogTrace, categories ? [...new Set<string>(categories)] : undefined);
+      const result = await dependencies.service.requestCatalogs(library, req.body?.forceRefresh === true, res.locals.catalogTrace, categories ? [...new Set<string>(categories)] : undefined, preferences);
       catalogLog("http.progress", { state: result.state, jobTraceID: result.traceID, catalogs: result.catalogs?.map(c => ({ id: c.id, books: c.books.length })), partial: result.partial, errorCode: result.errorCode }, res.locals.catalogTrace);
       if (result.state === "building") res.setHeader("Retry-After", String(result.retryAfter ?? 4));
       res.status(result.state === "building" ? 202 : 200).json(result);

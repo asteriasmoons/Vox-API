@@ -1,29 +1,30 @@
 import { randomUUID } from "node:crypto";
 import { catalogLog } from "../catalogDiagnostics";
-import { RecommendationCatalogCache } from "./catalogCache";
+import { allocateSections, RecommendationCatalogCache } from "./catalogCache";
 import { catalogBook, cleanText, hash, libraryIdentity, mergeBooks, mergeCandidates, ownedMatches, sameBook, text, title } from "./normalization";
 import { BookDatabaseSupplement } from "./providers/bookDatabase";
 import { RecommendationStore } from "./repository";
-import { buildProfile, categoryScore, discoveryPlans, finishedBooks, profileKey, rankCategories, relevance, selectSeeds } from "./strategies";
-import { Book, CatalogResponse, CategoryID, categoryIDs, DiscoveryProvider, ENGINE_VERSION, JobResponse, LibraryBook, ProviderContext, RecommendationError } from "./types";
+import { buildProfile, discoveryPlans, finishedBooks, profileKey, rankCategories, recommendationScore, relevance, selectSeeds } from "./strategies";
+import { hasPreferenceInputs } from "./readingPreferences";
+import { Book, BookKnowledgeSource, CatalogResponse, CategoryID, categoryIDs, DiscoveryProvider, ENGINE_VERSION, JobResponse, LibraryBook, ProviderContext, ReadingPreferences, RecommendationError } from "./types";
 
 type Job = { state: "building" | "ready" | "failed"; traceID: string; deadline: number; targets: CategoryID[]; errorCode?: string };
 export class LoomeyRecommendationEngine {
   readonly cache: RecommendationCatalogCache;
   private running = new Map<string, Promise<CatalogResponse>>();
-  constructor(private store: RecommendationStore, private providers: DiscoveryProvider[], readonly supplement?: BookDatabaseSupplement, private timeoutMs = 180000) {
+  constructor(private store: RecommendationStore, private providers: DiscoveryProvider[], readonly supplement?: BookDatabaseSupplement, private timeoutMs = 180000, private knowledge?: BookKnowledgeSource) {
     this.cache = new RecommendationCatalogCache(store);
   }
   private ownership(library: LibraryBook[]) { return hash(JSON.stringify(library.map(book => libraryIdentity(book)).sort((a, b) => a.title.localeCompare(b.title)))); }
-  private async cached(library: LibraryBook[]) { return this.cache.read(profileKey(library), library, await this.supplement?.available() ?? false); }
+  private async cached(library: LibraryBook[], preferences?: ReadingPreferences) { return this.cache.read(profileKey(library, preferences), library, await this.supplement?.available() ?? false); }
 
-  async requestCatalogs(library: LibraryBook[], forceRefresh = false, traceID = randomUUID(), requested: string[] = categoryIDs): Promise<JobResponse> {
-    const cached = await this.cached(library);
-    if (!finishedBooks(library).length) return { ...cached.response, catalogs: [], state: "ready", partial: false, traceID };
+  async requestCatalogs(library: LibraryBook[], forceRefresh = false, traceID = randomUUID(), requested: string[] = categoryIDs, preferences?: ReadingPreferences): Promise<JobResponse> {
+    const cached = await this.cached(library, preferences);
+    if (!finishedBooks(library).length && !hasPreferenceInputs(preferences)) return { ...cached.response, catalogs: [], state: "ready", partial: false, traceID };
     const ownership = this.ownership(library);
     const targets = (requested as CategoryID[]).filter(id => categoryIDs.includes(id) && (forceRefresh || !cached.records.has(id) || Date.parse(cached.records.get(id)!.refreshAfter) <= Date.now()
       || (cached.records.get(id)!.ownership !== ownership && cached.records.get(id)!.ids.length >= 2 && (cached.pools.get(id)?.length ?? 0) < 2)));
-    const key = `${ENGINE_VERSION}:job:${profileKey(library)}:${ownership}`;
+    const key = `${ENGINE_VERSION}:job:${profileKey(library, preferences)}:${ownership}`;
     const previous = await this.store.get<Job>(key);
     if (previous?.state === "building" && previous.deadline > Date.now()) {
       // Claiming the short lease recovers work interrupted by a server restart, without running two jobs.
@@ -31,7 +32,7 @@ export class LoomeyRecommendationEngine {
         const recovery = randomUUID();
         if (await this.store.claim(key, recovery, 45000)) {
           await this.store.release(key, recovery);
-          this.dispatch(key, library, previous.targets ?? targets, previous.traceID);
+          this.dispatch(key, library, previous.targets ?? targets, previous.traceID, preferences);
         }
       }
       return { ...cached.response, state: "building", partial: true, retryAfter: 4, traceID: previous.traceID };
@@ -40,15 +41,15 @@ export class LoomeyRecommendationEngine {
       const failed = !cached.response.catalogs.length && Object.values(cached.response.categoryStates).some(state => state.state === "error");
       return { ...cached.response, state: failed ? "failed" : "ready", ...(failed ? { errorCode: "PROVIDER_UNAVAILABLE" } : {}), traceID };
     }
-    this.dispatch(key, library, targets, traceID);
+    this.dispatch(key, library, targets, traceID, preferences);
     return { ...cached.response, state: "building", partial: true, retryAfter: 4, traceID };
   }
 
-  private dispatch(key: string, library: LibraryBook[], targets: CategoryID[], traceID: string) {
+  private dispatch(key: string, library: LibraryBook[], targets: CategoryID[], traceID: string, preferences?: ReadingPreferences) {
     if (this.running.has(key)) return;
     const owner = randomUUID();
     const work = (async () => {
-      if (!await this.store.claim(key, owner, 45000)) return (await this.cached(library)).response;
+      if (!await this.store.claim(key, owner, 45000)) return (await this.cached(library, preferences)).response;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(new RecommendationError("CATALOG_TIMED_OUT", 504)), this.timeoutMs);
       const heartbeat = setInterval(() => {
@@ -58,14 +59,14 @@ export class LoomeyRecommendationEngine {
       heartbeat.unref();
       try {
         await this.store.set(key, { state: "building", traceID, deadline: Date.now() + this.timeoutMs, targets } satisfies Job, this.timeoutMs + 60000);
-        const response = await this.generate(library, targets, { signal: controller.signal, traceID, budgets: { hardcover: 24, "google-books": 24, "open-library": 22 }, failures: new Set() });
+        const response = await this.generate(library, targets, { signal: controller.signal, traceID, budgets: { hardcover: 24, "google-books": 24, "open-library": 22 }, failures: new Set() }, preferences);
         await this.store.set(key, { state: "ready", traceID, deadline: 0, targets } satisfies Job, 300000);
         return response;
       } catch (error: any) {
         catalogLog("engine.job_failed", { code: error?.code ?? "CATALOG_UNAVAILABLE", categories: targets }, traceID);
-        for (const id of targets) await this.cache.write(profileKey(library), id, [], this.ownership(library), true, true);
+        for (const id of targets) await this.cache.write(profileKey(library, preferences), id, [], this.ownership(library), true, true);
         await this.store.set(key, { state: "failed", traceID, deadline: 0, targets, errorCode: error?.code ?? "CATALOG_UNAVAILABLE" } satisfies Job, 300000);
-        return (await this.cached(library)).response;
+        return (await this.cached(library, preferences)).response;
       } finally { clearTimeout(timer); clearInterval(heartbeat); await this.store.release(key, owner); }
     })();
     this.running.set(key, work);
@@ -73,17 +74,18 @@ export class LoomeyRecommendationEngine {
   }
 
   // Awaitable entry point for server callers and deterministic, fully mocked tests.
-  async catalogs(library: LibraryBook[], _publish?: (response: CatalogResponse) => Promise<void>, forceRefresh = false, traceID = randomUUID(), requested: string[] = categoryIDs): Promise<CatalogResponse> {
-    const initial = await this.requestCatalogs(library, forceRefresh, traceID, requested);
-    const key = `${ENGINE_VERSION}:job:${profileKey(library)}:${this.ownership(library)}`;
+  async catalogs(library: LibraryBook[], _publish?: (response: CatalogResponse) => Promise<void>, forceRefresh = false, traceID = randomUUID(), requested: string[] = categoryIDs, preferences?: ReadingPreferences): Promise<CatalogResponse> {
+    const initial = await this.requestCatalogs(library, forceRefresh, traceID, requested, preferences);
+    const key = `${ENGINE_VERSION}:job:${profileKey(library, preferences)}:${this.ownership(library)}`;
     const running = this.running.get(key);
     return running ? running : initial;
   }
 
-  private async generate(library: LibraryBook[], targets: CategoryID[], context: ProviderContext): Promise<CatalogResponse> {
+  private async generate(library: LibraryBook[], targets: CategoryID[], context: ProviderContext, preferences?: ReadingPreferences): Promise<CatalogResponse> {
     const selected = selectSeeds(library);
     const active = this.providers.filter(provider => provider.available());
-    catalogLog("engine.started", { engine: ENGINE_VERSION, finishedBooks: finishedBooks(library).length, excludedBooks: library.length, selectedSeeds: selected.length, providers: active.map(provider => provider.name), categories: targets }, context.traceID);
+    catalogLog("engine.started", { engine: ENGINE_VERSION, finishedBooks: finishedBooks(library).length, excludedBooks: library.length, selectedSeeds: selected.length, providers: active.map(provider => provider.name), categories: targets,
+      preferenceStyle: preferences?.recommendationStyle ?? "history_only", favoriteGenres: preferences ? preferences.favoriteFictionGenres.length + preferences.favoriteNonfictionGenres.length : 0, currentInterests: preferences?.currentlyInterestedIn.length ?? 0 }, context.traceID);
     const resolved: Book[] = [];
     const failed = new Set<CategoryID>();
     const isolated = async <T>(provider: DiscoveryProvider, operation: string, categories: CategoryID[], work: () => Promise<T>, fallback: T): Promise<T> => {
@@ -95,12 +97,12 @@ export class LoomeyRecommendationEngine {
         return fallback;
       }
     };
-    await Promise.all(active.map(async provider => {
-      const lookupContext = { ...context, signal: AbortSignal.any([context.signal, AbortSignal.timeout(35000)]) };
-      const books = await isolated(provider, "finished_lookup", [], () => provider.resolve(selected, lookupContext), []);
-      resolved.push(...books.filter(book => selected.some(seed => sameBook(libraryIdentity(seed), book))));
-    }));
-    const profile = buildProfile(library, mergeCandidates(resolved));
+    const knowledge = this.knowledge?.available() ? this.knowledge : undefined;
+    if (knowledge) {
+      try { resolved.push(...await knowledge.resolve(selected, context)); }
+      catch (error: any) { catalogLog("engine.knowledge_failed", { stage: "finished_lookup", code: error?.code ?? "KNOWLEDGE_UNAVAILABLE" }, context.traceID); }
+    }
+    let profile = buildProfile(library, mergeCandidates(resolved), preferences);
     const candidates: Book[] = [];
     const ownership = this.ownership(library);
     let updates: Promise<void> = Promise.resolve();
@@ -116,10 +118,52 @@ export class LoomeyRecommendationEngine {
       });
       await updates;
     };
+    let fallbackTargets = targets;
+    if (knowledge) {
+      let consecutiveFailures = 0;
+      for (const plan of discoveryPlans(profile, targets, "hardcover")) {
+        if (context.signal.aborted || candidates.length >= 192) break;
+        try {
+          const books = await knowledge.discover(plan, context, preferences);
+          consecutiveFailures = 0;
+          for (const book of books) {
+            if (library.some(owned => ownedMatches(owned, book)) || profile.seeds.some(seed => sameBook(seed, book))
+              || !targets.some(id => recommendationScore(id, book, profile) !== null)) continue;
+            const existing = candidates.find(candidate => sameBook(candidate, book));
+            const merged = existing ? mergeBooks(existing, book) : book;
+            if (existing) candidates.splice(candidates.indexOf(existing), 1);
+            if (existing || candidates.length < 192) { candidates.push(merged); await this.cache.saveBook(merged); }
+          }
+          await publish();
+        } catch (error: any) {
+          catalogLog("engine.knowledge_failed", { stage: plan.kind, code: error?.code ?? "KNOWLEDGE_UNAVAILABLE" }, context.traceID);
+          if (++consecutiveFailures >= 2) break;
+        }
+      }
+      const localSections = allocateSections(rankCategories(mergeCandidates(candidates), profile, library, targets));
+      fallbackTargets = targets.filter(id => {
+        if (id === "authors-read" && !profile.authors.size || id === "related" && !profile.seeds.length
+          || id === "genres" && !profile.genres.size || id === "themes" && !profile.themes.size) return false;
+        return (localSections.get(id)?.length ?? 0) < 4;
+      });
+      catalogLog("engine.knowledge_coverage", { candidates: candidates.length, fallbackCategories: fallbackTargets }, context.traceID);
+      if (!fallbackTargets.length) {
+        await publish(true);
+        return { ...(await this.cached(library, preferences)).response, traceID: context.traceID };
+      }
+    }
+    const missingSeeds = selected.filter(seed => !resolved.some(book => sameBook(libraryIdentity(seed), book)));
+    await Promise.all(active.map(async provider => {
+      if (knowledge && !missingSeeds.length) return;
+      const lookupContext = { ...context, signal: AbortSignal.any([context.signal, AbortSignal.timeout(35000)]) };
+      const books = await isolated(provider, "finished_lookup", [], () => provider.resolve(knowledge ? missingSeeds : selected, lookupContext), []);
+      resolved.push(...books.filter(book => selected.some(seed => sameBook(libraryIdentity(seed), book))));
+    }));
+    profile = buildProfile(library, mergeCandidates(resolved), preferences);
     await Promise.all(active.map(async provider => {
       let consecutiveFailures = 0;
       let accepted = 0;
-      const plans = discoveryPlans(profile, targets, provider.name);
+      const plans = discoveryPlans(profile, fallbackTargets, provider.name);
       for (const plan of plans) {
         if (context.signal.aborted) break;
         const books = await isolated(provider, plan.kind, plan.categories, () => provider.discover(plan, context), null);
@@ -132,7 +176,7 @@ export class LoomeyRecommendationEngine {
         }
         consecutiveFailures = 0;
         const relevant = books.filter(book => !library.some(owned => ownedMatches(owned, book)) && !profile.seeds.some(seed => sameBook(seed, book))
-          && targets.some(id => categoryScore(id, relevance(book, profile)) !== null));
+          && targets.some(id => recommendationScore(id, book, profile) !== null));
         for (const book of relevant) {
           const existing = candidates.find(candidate => sameBook(candidate, book));
           const merged = existing ? mergeBooks(existing, book) : book;
@@ -144,7 +188,8 @@ export class LoomeyRecommendationEngine {
       }
     }));
     // Enrich the strongest incomplete candidates, not every search result.
-    const strongest = mergeCandidates(candidates).sort((a, b) => relevance(b, profile).total - relevance(a, profile).total || a.id.localeCompare(b.id));
+    const enrichmentScore = (book: Book) => preferences ? Math.max(0, ...targets.map(id => recommendationScore(id, book, profile) ?? 0)) : relevance(book, profile).total;
+    const strongest = mergeCandidates(candidates).sort((a, b) => enrichmentScore(b) - enrichmentScore(a) || a.id.localeCompare(b.id));
     let supplementalCalls = 0;
     for (const candidate of strongest.filter(book => !book.coverUrls.length || book.coverQuality === "thumbnail" || !book.description || !book.isbns.length).slice(0, 12)) {
       if (context.signal.aborted) break;
@@ -168,7 +213,7 @@ export class LoomeyRecommendationEngine {
       if (index >= 0) candidates[index] = enriched;
     }
     await publish(true);
-    const response = (await this.cached(library)).response;
+    const response = (await this.cached(library, preferences)).response;
     catalogLog("engine.completed", { candidates: candidates.length, sections: response.catalogs.map(row => ({ id: row.id, books: row.books.length })), failedProviders: [...context.failures ?? []], partial: response.partial }, context.traceID);
     return { ...response, traceID: context.traceID };
   }
@@ -184,7 +229,8 @@ export class LoomeyRecommendationEngine {
         genres: [], subjects: [], status: "Lookup", rating: 0, favorite: false, activity: 0 };
       const context: ProviderContext = { traceID: randomUUID(), signal: AbortSignal.timeout(25000), budgets: { hardcover: 6, "google-books": 3, "open-library": 3 } };
       // Compatibility for a previously saved catalog card: identify metadata, never use it as a reading signal.
-      const resolved = await Promise.all(this.providers.filter(provider => provider.available()).map(async provider => {
+      const local = this.knowledge?.available() ? await this.knowledge.resolve([lookup], context).catch(() => []) : [];
+      const resolved = local.length ? [local] : await Promise.all(this.providers.filter(provider => provider.available()).map(async provider => {
         try { return (await provider.resolve([lookup], context)).filter(candidate => sameBook(libraryIdentity(lookup), candidate)); }
         catch (error: any) { catalogLog("engine.library_lookup_failed", { provider: provider.name, code: error?.code ?? "PROVIDER_UNAVAILABLE" }, context.traceID); return []; }
       }));
