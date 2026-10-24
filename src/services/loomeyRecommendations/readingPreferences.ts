@@ -51,7 +51,17 @@ function containsTerm(value: string, term: string): boolean {
 
 export function preferenceEvidence(book: Book, preferences: ReadingPreferences) {
   const labels = distinct([...book.genres, ...book.subjects, ...book.tags].map(preferenceTerm));
-  const matches = (term: string) => labels.some(label => containsTerm(label, preferenceTerm(term)));
+  // Providers often index a concept under a broader subject rather than the exact
+  // preference phrase. Require all meaningful tokens for a phrase-level match,
+  // allowing word-order and punctuation differences without fuzzy single-word hits.
+  const tokens = (value: string) => preferenceTerm(value).split(/[^a-z0-9]+/).filter(Boolean);
+  const matches = (term: string) => labels.some(label => {
+    const needle = preferenceTerm(term);
+    if (containsTerm(label, needle)) return true;
+    const words = tokens(needle);
+    const available = new Set(tokens(label));
+    return words.length >= 2 && words.every(word => available.has(word));
+  });
   const classify = (values: string[]) => {
     const has = (term: string) => values.some(label => containsTerm(label, term));
     const explicitFiction = has('fiction');
