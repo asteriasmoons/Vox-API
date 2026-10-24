@@ -34,7 +34,7 @@ class MemoryStore {
 }
 const context = () => ({ signal: new AbortController().signal, traceID: "unit-test", budgets: { hardcover: 100, "google-books": 100, "open-library": 100 }, failures: new Set() });
 const seed = (id = "finished", status = "Finished", changes = {}) => ({ id, title: "Completed Novel", author: "Known Author", isbn: "9780140328721", genres: ["Fantasy"], subjects: ["Dragons", "Political intrigue"], rating: 4, favorite: false, activity: 0, status, ...changes });
-const book = (id, changes = {}) => ({ ...emptyBook("google-books", id), title: `Novel ${id}`, authors: [`Writer ${id}`], description: "Verified provider description", isbns: [], genres: ["Fantasy"], subjects: ["Dragons", "Political intrigue"], language: "eng", coverUrls: [`https://covers.example.test/${id}.jpg`], ...changes });
+const book = (id, changes = {}) => ({ ...emptyBook("google-books", id), title: `Novel ${id}`, authors: [`Writer ${id}`], description: "Verified provider description", isbns: [], genres: ["Fantasy"], subjects: ["Dragons", "Political intrigue"], language: "eng", releaseYear: 2024, coverUrls: [`https://covers.example.test/${id}.jpg`], ...changes });
 function fixtureProvider(name, candidates, failure = false) {
   return { name, calls: [], available: () => true,
     async resolve(sources) { this.calls.push(["resolve", sources]); if (failure) throw new RecommendationError("PROVIDER_TLS_FAILED"); return []; },
@@ -43,6 +43,34 @@ function fixtureProvider(name, candidates, failure = false) {
 }
 const response = value => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 const preferences = (changes = {}) => parseReadingPreferences({ preferences: { version: 1, preferredCategory: "both", favoriteFictionGenres: [], favoriteNonfictionGenres: [], currentlyInterestedIn: [], recommendationStyle: "blend_interests", ...changes } });
+
+test("Google Books transient 503 retries with backoff and preserves the eventual success", async () => {
+  let attempts = 0;
+  const transport = new ProviderTransport(new MemoryStore(), async () => {
+    attempts++;
+    return attempts === 1
+      ? new Response(JSON.stringify({ error: { errors: [{ reason: "backendFailed" }] } }), { status: 503 })
+      : response({ totalItems: 1, items: [] });
+  });
+  const started = Date.now();
+  const result = await new GoogleBooksProvider(transport).search("subject:fiction", context());
+  assert.equal(result.total, 1);
+  assert.equal(attempts, 2);
+  assert.ok(Date.now() - started >= 1000, "retry must wait at least one second");
+});
+
+test("merged editions retain the earliest known publication year rather than a newer reprint", () => {
+  const oldWork = book("ol-work", { title: "Reprinted Classic", authors: ["Author"], releaseYear: 1980 });
+  const newEdition = book("google-edition", { title: "Reprinted Classic", authors: ["Author"], releaseYear: 2024 });
+  assert.equal(mergeBooks(newEdition, oldWork).releaseYear, 1980);
+  assert.equal(rankCategories([mergeBooks(newEdition, oldWork)], buildProfile([seed()], []), [seed()], ["similar"]).get("similar").length, 0);
+});
+
+test("2010 publication cutoff rejects unknown and old books but accepts contemporary releases", () => {
+  const profile = buildProfile([seed()], []);
+  const candidates = [book("old", { releaseYear: 1999 }), book("unknown", { releaseYear: null }), book("new", { releaseYear: 2024 })];
+  assert.deepEqual(rankCategories(candidates, profile, [seed()], ["similar"]).get("similar").map(item => item.id), ["new"]);
+});
 
 test("unconfigured preferences preserve the original profile, cache namespace, scores and plans", () => {
   assert.equal(parseReadingPreferences({ books: [] }), undefined);

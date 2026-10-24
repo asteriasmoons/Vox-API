@@ -100,7 +100,7 @@ export function mergeBooks(a: Book, b: Book): Book {
     series: [...a.series, ...b.series.filter(series => !a.series.some(existing => existing.id === series.id))],
     relatedIDs: distinct([...a.relatedIDs, ...b.relatedIDs]), knowledgeWorkIDs: distinct([...(a.knowledgeWorkIDs ?? []), ...(b.knowledgeWorkIDs ?? [])]), coverUrls: covers, coverQuality: coverFirst.coverQuality ?? "cover",
     language: a.language === "eng" || b.language === "eng" ? "eng" : "unknown",
-    pages: first.pages ?? second.pages, publisher: first.publisher || second.publisher, releaseYear: first.releaseYear ?? second.releaseYear,
+    pages: first.pages ?? second.pages, publisher: first.publisher || second.publisher, releaseYear: [a.releaseYear, b.releaseYear].filter((year): year is number => year !== null).sort((x, y) => x - y)[0] ?? null,
     popularity: Math.max(a.popularity, b.popularity), sources: (distinct([...a.sources, ...b.sources]) as ProviderName[]).sort((x, y) => order.indexOf(x) - order.indexOf(y)),
     ...((a.imageID || b.imageID) ? { imageID: a.imageID || b.imageID } : {}),
     ...((a.metadataExpiresAt || b.metadataExpiresAt) ? { metadataExpiresAt: a.metadataExpiresAt || b.metadataExpiresAt } : {}) };
