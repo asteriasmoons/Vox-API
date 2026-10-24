@@ -219,7 +219,8 @@ export function recommendationScore(category: CategoryID, book: Book, profile: R
     + (style === "surprise_me" ? Number(match.newAuthor) * 8 + Math.max(0, 6 - Math.log2(1 + book.popularity)) : 0);
 }
 export function rankCategories(books: Book[], profile: ReadingProfile, library: LibraryBook[], targets: CategoryID[]): Map<CategoryID, Book[]> {
-  const usable = books.filter(book => book.language === "eng" && book.title && book.authors.length && (book.coverUrls.length || book.imageID) && !library.some(owned => ownedMatches(owned, book)) && !profile.seeds.some(seed => sameBook(seed, book)));
+  const minimumYear = Number(process.env.LOOMEY_MIN_PUBLICATION_YEAR?.replace(' ', '') ?? 2010);
+  const usable = books.filter(book => book.releaseYear !== null && book.releaseYear >= minimumYear && book.releaseYear <= new Date().getUTCFullYear() + 1 && book.language === "eng" && book.title && book.authors.length && (book.coverUrls.length || book.imageID) && !library.some(owned => ownedMatches(owned, book)) && !profile.seeds.some(seed => sameBook(seed, book)));
   const result = new Map<CategoryID, Book[]>();
   for (const category of targets) {
     const ranked = usable.map(book => ({ book, match: relevance(book, profile), matchedGenres: distinct([...book.genres, ...book.subjects].map(interest)).filter(genre => profile.genres.has(genre)) })).map(item => ({ ...item, score: recommendationScore(category, item.book, profile) }))
