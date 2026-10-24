@@ -83,7 +83,7 @@ export function sameBook(a: Identity, b: Identity): boolean {
 }
 export function mergeBooks(a: Book, b: Book): Book {
   if (!sameBook(a, b)) return a;
-  const order: ProviderName[] = ["hardcover", "google-books", "open-library", "bookdatabase.io"];
+  const order: ProviderName[] = ["hardcover", "google-books", "open-library", "isbndb", "bookdatabase.io"];
   const priority = (book: Book) => Math.min(...book.sources.map(source => order.indexOf(source)), 99);
   const [first, second] = priority(b) < priority(a) ? [b, a] : [a, b];
   const ids = { ...a.providerIDs };

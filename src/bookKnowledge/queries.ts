@@ -22,11 +22,11 @@ export function knowledgeBook(row: any): Book | null {
   if (!authors.length) return null;
   const id = 'pg_' + row.id.replace(/-/g, '');
   const ids: Book['providerIDs'] = {};
-  for (const provider of ['hardcover', 'google-books', 'open-library'] as const) {
+  for (const provider of ['hardcover', 'google-books', 'open-library', 'isbndb'] as const) {
     const values = distinct([...list(row.provider_ids?.[provider]), ...(Array.isArray(row.identifiers) ? row.identifiers.filter((entry: any) => entry?.provider === provider).map((entry: any) => text(entry.id)) : [])]);
     if (values.length) ids[provider] = values;
   }
-  const sources = distinct([...list(row.source_names), ...Object.keys(ids)]).filter(value => ['hardcover', 'google-books', 'open-library'].includes(value)) as ProviderName[];
+  const sources = distinct([...list(row.source_names), ...Object.keys(ids)]).filter(value => ['hardcover', 'google-books', 'open-library', 'isbndb'].includes(value)) as ProviderName[];
   const covers = distinct([...list(row.cover_urls), ...list(row.edition_covers), text(row.cover_url)].map(coverURL).filter((value): value is string => !!value));
   const series = (Array.isArray(row.series) ? row.series : []).flatMap((item: any) => {
     const name = cleanText(item?.name);

@@ -9,10 +9,11 @@ import { MongoRecommendationStore } from '../services/loomeyRecommendations/repo
 import { HardcoverProvider } from '../services/loomeyRecommendations/providers/hardcover';
 import { GoogleBooksProvider } from '../services/loomeyRecommendations/providers/googleBooks';
 import { OpenLibraryProvider } from '../services/loomeyRecommendations/providers/openLibrary';
+import { IsbnDbProvider } from '../services/loomeyRecommendations/providers/isbnDb';
 import type { DiscoveryPlan,ProviderContext,DiscoveryProvider } from '../services/loomeyRecommendations/types';
 const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms));
-export function existingProviders():DiscoveryProvider[]{const transport=new ProviderTransport(new MongoRecommendationStore());return [new HardcoverProvider(transport),new GoogleBooksProvider(transport),new OpenLibraryProvider(transport)];}
-function context(signal?:AbortSignal):ProviderContext{return {traceID:randomUUID(),signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000),budgets:{hardcover:8,'google-books':8,'open-library':8}};}
+export function existingProviders():DiscoveryProvider[]{const transport=new ProviderTransport(new MongoRecommendationStore());return [new HardcoverProvider(transport),new GoogleBooksProvider(transport),new OpenLibraryProvider(transport),new IsbnDbProvider(transport)];}
+function context(signal?:AbortSignal):ProviderContext{return {traceID:randomUUID(),signal:signal ? AbortSignal.any([signal,AbortSignal.timeout(90000)]) : AbortSignal.timeout(90000),budgets:{hardcover:8,'google-books':8,'open-library':8,isbndb:2}};}
 function plan(term:string):DiscoveryPlan {const [prefix,...rest]=term.split(':');const value=rest.join(':').trim();
  if(prefix==='inauthor')return {key:term,kind:'author',categories:['authors-read'],author:value,terms:[],tagIDs:[],workIDs:[]};
  return {key:term,kind:'interests',categories:['genres','themes','discovery'],terms:[prefix==='subject'?value:term],tagIDs:[],workIDs:[]};}

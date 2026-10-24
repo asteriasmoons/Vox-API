@@ -10,7 +10,7 @@ export const categoryTitles = {
 } as const;
 export type CategoryID = keyof typeof categoryTitles;
 export const categoryIDs = Object.keys(categoryTitles) as CategoryID[];
-export type ProviderName = "hardcover" | "google-books" | "open-library" | "bookdatabase.io";
+export type ProviderName = "hardcover" | "google-books" | "open-library" | "isbndb" | "bookdatabase.io";
 export type LibraryBook = {
   id: string; title: string; author: string; isbn?: string; genres: string[]; subjects: string[];
   status: string; rating: number; favorite: boolean; activity: number; providerBookID?: string;
