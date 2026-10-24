@@ -13,7 +13,9 @@ export async function ingestProviderBook(
   book: Book,
   depth = 0,
 ): Promise<string | null> {
-  if (!book.title || !book.authors.length || book.language !== "eng") {
+  const minYear = Number(process.env.BOOK_KNOWLEDGE_MIN_YEAR ?? 2010);
+  if (!book.title || !book.authors.length || book.language !== "eng" ||
+    book.releaseYear === null || book.releaseYear < minYear || book.releaseYear > new Date().getUTCFullYear() + 1) {
     return null;
   }
 
