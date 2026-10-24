@@ -141,12 +141,21 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
   while (groups.some(group => group.length)) for (const group of groups) { const next = group.shift(); if (next) queue.push(next); }
   // Rotate the plan window per profile and UTC day so every selected interest
   // receives discovery opportunities across refreshes instead of always favoring the first four.
-  const budget = provider === "hardcover" ? 12 : 10;
+  const budget = provider === "hardcover" ? 10 : 9;
   if (queue.length <= budget) return queue;
+  // Keep author/relationship meaning and a broad surprise query, then rotate
+  // preference searches across days. Never strand a broad category behind
+  // hundreds of selected interests.
+  const pinned = queue.filter(plan => plan.kind !== "interests" ||
+    (profile.preferences?.recommendationStyle === "surprise_me" &&
+      plan.terms.length === 1 && ["Fiction", "Nonfiction"].includes(plan.terms[0] ?? "")));
+  const selected = pinned.slice(0, Math.min(budget, 3));
+  const remaining = queue.filter(plan => !selected.includes(plan));
   const day = Math.floor(Date.now() / 86400000);
   const seed = Number.parseInt(hash(`${profile.signature}:${provider}:${day}`).slice(0, 8), 16);
-  const start = seed % queue.length;
-  return Array.from({ length: budget }, (_, i) => queue[(start + i) % queue.length]!);
+  const start = seed % remaining.length;
+  for (let i = 0; i < budget - selected.length; i++) selected.push(remaining[(start + i) % remaining.length]!);
+  return selected;
 }
 
 export type Relevance = { total: number; author: boolean; series: boolean; related: boolean; genres: number; themes: number; finishedMatches: number; newAuthor: boolean; popularity: number };
