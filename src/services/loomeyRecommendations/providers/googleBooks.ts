@@ -26,9 +26,9 @@ export class GoogleBooksProvider implements DiscoveryProvider {
   readonly name = "google-books" as const;
   constructor(private http: ProviderTransport, private key = () => process.env.GOOGLE_BOOKS_API_KEY ?? "") {}
   available() { return true; }
-  async search(query: string, context: ProviderContext, startIndex = 0, maxResults = 24): Promise<{ books: Book[]; total: number }> {
+  async search(query: string, context: ProviderContext, startIndex = 0, maxResults = 24, orderBy: "relevance" | "newest" = "relevance"): Promise<{ books: Book[]; total: number }> {
     const url = new URL("https://www.googleapis.com/books/v1/volumes");
-    Object.entries({ q: query, langRestrict: "en", printType: "books", maxResults: String(maxResults), startIndex: String(startIndex), orderBy: "relevance" }).forEach(([key, value]) => url.searchParams.set(key, value));
+    Object.entries({ q: query, langRestrict: "en", printType: "books", maxResults: String(maxResults), startIndex: String(startIndex), orderBy }).forEach(([key, value]) => url.searchParams.set(key, value));
     // Books documents the key query parameter. Only a request digest, never query strings, is logged.
     const key = this.key().trim();
     if (key) url.searchParams.set("key", key);
@@ -57,7 +57,14 @@ export class GoogleBooksProvider implements DiscoveryProvider {
     const query = plan.kind === "author" && plan.author ? `inauthor:${googleTerm(plan.author)}`
       : plan.terms.slice(0, 2).map(term => `subject:${googleTerm(term)}`).join(" ");
     if (!query) return [];
+    // Newer results complement relevance-ranked searches and improve fresh-title discovery.
     const first = await this.search(query, context);
+    if (plan.kind === "interests") {
+      try {
+        const newest = await this.search(query, context, 0, 24, "newest");
+        first.books.push(...newest.books);
+      } catch { /* Keep relevance results when the provider rejects newest ordering. */ }
+    }
     // A second page is useful for broad bibliographies without unbounded catalog crawling.
     if (first.total > 24 && first.books.length < 12) first.books.push(...(await this.search(query, context, 24)).books);
     return first.books;
