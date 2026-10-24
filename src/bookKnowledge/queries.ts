@@ -82,7 +82,11 @@ export async function queryKnowledgeBooks(search: KnowledgeBookSearch, pool: Pic
     COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'name',s.name,'position',ws.position)) FROM bk_work_series ws JOIN bk_series s ON s.id=ws.series_id WHERE ws.work_id=w.id),'[]'::jsonb) series,
     COALESCE((SELECT array_agg('pg_'||replace(CASE WHEN r.from_work=w.id THEN r.to_work::text ELSE r.from_work::text END,'-','')) FROM bk_related r WHERE r.from_work=w.id OR r.to_work=w.id),'{}') related
     FROM bk_works w WHERE w.language IN ('eng','en') AND (${selectors.join(' OR ')}) ${categoryFilter}
-    ORDER BY (SELECT count(*) FROM unnest(${termParameter}::text[]) t WHERE ${termMatch}) DESC,w.popularity DESC,w.id
+    ORDER BY (SELECT count(*) FROM unnest(${termParameter}::text[]) t WHERE ${termMatch}) DESC,
+      CASE WHEN w.first_published_year BETWEEN EXTRACT(YEAR FROM CURRENT_DATE)::int - 5 AND EXTRACT(YEAR FROM CURRENT_DATE)::int THEN 0
+           WHEN w.first_published_year BETWEEN EXTRACT(YEAR FROM CURRENT_DATE)::int - 10 AND EXTRACT(YEAR FROM CURRENT_DATE)::int THEN 1
+           WHEN w.first_published_year IS NULL THEN 3 ELSE 2 END,
+      w.popularity DESC,w.id
     LIMIT ${limit}`;
 
   // Bound connection acquisition as well as SQL execution; a read can never enqueue ingestion.
