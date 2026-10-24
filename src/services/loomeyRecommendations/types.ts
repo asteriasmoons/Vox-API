@@ -1,4 +1,4 @@
-export const ENGINE_VERSION = "loomey-1";
+export const ENGINE_VERSION = "loomey-2";
 export const categoryTitles = {
   similar: "You Might Also Like",
   genres: "Based on Your Favorite Genres",
