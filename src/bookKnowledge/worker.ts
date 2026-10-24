@@ -23,7 +23,9 @@ export async function processDiscovery(payload:{term:string;depth?:number;origin
    const id=await ingestProviderBook(book,payload.depth??0);if(id)ids.push(id);
   }}catch(e){console.warn('[bookKnowledge]',provider.name,e instanceof Error?e.message:'provider failure');}
  }
- await relateWorks([...new Set(ids)],payload.origin);return ids.length;
+ await relateWorks([...new Set(ids)],payload.origin);
+ console.log('[bookKnowledge] Discovery complete', {term:payload.term,ingested:ids.length});
+ return ids.length;
 }
 export async function refreshWork(workId:string,providers=existingProviders()){
  const row=await bookPool.query(`SELECT w.title,COALESCE((SELECT array_agg(a.name ORDER BY wa.ordinal) FROM bk_work_authors wa JOIN bk_authors a ON a.id=wa.author_id WHERE wa.work_id=w.id),'{}') authors FROM bk_works w WHERE id=$1`,[workId]);
