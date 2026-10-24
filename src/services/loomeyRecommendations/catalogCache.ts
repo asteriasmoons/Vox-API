@@ -77,7 +77,7 @@ export function allocateSections(pools: Map<CategoryID, Book[]>): Map<CategoryID
   const used: Book[] = [];
   const authorCounts = new Map<string, number>();
   const take = (id: CategoryID): boolean => {
-    const next = (pools.get(id) ?? []).find(book => !used.some(previous => sameBook(previous, book)) && (authorCounts.get(authorKeys(book.authors[0] ?? "")[0] ?? "") ?? 0) < 5);
+    const next = (pools.get(id) ?? []).find(book => !used.some(previous => sameBook(previous, book)) && (authorCounts.get(authorKeys(book.authors[0] ?? "")[0] ?? "") ?? 0) < 3);
     if (!next) return false;
     selected.set(id, [...(selected.get(id) ?? []), next]); used.push(next);
     const author = authorKeys(next.authors[0] ?? "")[0] ?? "";
