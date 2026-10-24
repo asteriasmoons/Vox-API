@@ -48,7 +48,7 @@ async function main(): Promise<void> {
       'true crime', 'health', 'business', 'poetry', 'graphic novels', 'young adult',
     ];
     const runIndex = Math.floor((Date.now() / 86_400_000 - FIRST_RUN_DAY) / 2);
-    const rotated = Array.from({ length: 10 }, (_, index) => topics[(runIndex * 10 + index) % topics.length]);
+    const rotated = Array.from({ length: 10 }, (_, index) => topics[(runIndex * 10 + index) % topics.length]!);
     await seedKnowledge(rotated);
     console.log('[bookKnowledge] Every-other-day run started (5-minute maximum)');
     await runKnowledgeWorker(deadline);
