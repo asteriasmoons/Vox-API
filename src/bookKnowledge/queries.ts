@@ -63,6 +63,8 @@ export async function queryKnowledgeBooks(search: KnowledgeBookSearch, pool: Pic
   add(search.relatedTo, workID, p => `EXISTS(SELECT 1 FROM bk_related r WHERE (r.from_work=ANY(${p}::uuid[]) AND r.to_work=w.id) OR (r.to_work=ANY(${p}::uuid[]) AND r.from_work=w.id))`);
   for (const item of (search.providerIDs ?? []).slice(0, 24)) selectors.push(`EXISTS(SELECT 1 FROM bk_provider_ids p WHERE p.work_id=w.id AND p.provider=${parameter(item.provider)} AND p.provider_id=${parameter(item.id)})`);
   if (!selectors.length) return [];
+  // A work's first publication year, not the date of a recent reprint.
+  selectors.push(`w.first_published_year >= ${parameter(Number(process.env.LOOMEY_MIN_PUBLICATION_YEAR?.replace(' ', '') ?? 2010))} AND w.first_published_year <= EXTRACT(YEAR FROM CURRENT_DATE)::int + 1`);
   const category = search.category ?? 'both';
   const categoryFilter = category === 'both' ? '' : `AND EXISTS(SELECT 1 FROM (
       SELECT s.normalized_label AS label FROM bk_work_subjects ws JOIN bk_subjects s ON s.id=ws.subject_id WHERE ws.work_id=w.id
