@@ -141,7 +141,7 @@ export function discoveryPlans(profile: ReadingProfile, targets: CategoryID[], p
   while (groups.some(group => group.length)) for (const group of groups) { const next = group.shift(); if (next) queue.push(next); }
   // Rotate the plan window per profile and UTC day so every selected interest
   // receives discovery opportunities across refreshes instead of always favoring the first four.
-  const budget = provider === "hardcover" ? 24 : 20;
+  const budget = provider === "hardcover" ? 12 : 10;
   if (queue.length <= budget) return queue;
   const day = Math.floor(Date.now() / 86400000);
   const seed = Number.parseInt(hash(`${profile.signature}:${provider}:${day}`).slice(0, 8), 16);
@@ -227,7 +227,7 @@ export function rankCategories(books: Book[], profile: ReadingProfile, library: 
       pending.sort((a, b) => adjusted(b) - adjusted(a) || b.score - a.score || a.book.id.localeCompare(b.book.id));
       const { book, matchedGenres } = pending.shift()!;
       const author = authorKeys(book.authors[0] ?? "")[0] ?? "";
-      if ((authorCounts.get(author) ?? 0) >= (category === "authors-read" ? 4 : 2) || book.series.some(series => (seriesCounts.get(series.id) ?? 0) >= 2)) continue;
+      if ((authorCounts.get(author) ?? 0) >= (category === "authors-read" ? 3 : 1) || book.series.some(series => (seriesCounts.get(series.id) ?? 0) >= 1)) continue;
       selected.push(book); authorCounts.set(author, (authorCounts.get(author) ?? 0) + 1);
       for (const series of book.series) seriesCounts.set(series.id, (seriesCounts.get(series.id) ?? 0) + 1);
       for (const genre of matchedGenres) genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1);
