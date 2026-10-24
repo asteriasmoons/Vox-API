@@ -183,7 +183,11 @@ export function recommendationScore(category: CategoryID, book: Book, profile: R
   const match = relevance(book, profile);
   let score = categoryScore(category, match);
   const preferences = profile.preferences;
-  if (!preferences) return score;
+  if (!preferences) {
+    if (score === null) return null;
+    const age = book.releaseYear === null ? null : new Date().getUTCFullYear() - book.releaseYear;
+    return score + (age !== null && age >= 0 && age <= 5 ? 16 : age !== null && age > 20 ? -10 : 0);
+  }
   const evidence = preferenceEvidence(book, preferences);
   const style = preferences.recommendationStyle;
   if (preferences.preferredCategory !== "both" && !evidence.categoryMatch) return null;
