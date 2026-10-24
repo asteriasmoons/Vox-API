@@ -4,6 +4,7 @@ import { knowledgeConfig } from './config';
 import { expandWork,relateWorks,scheduleDueWork } from './growth';
 import { ingestProviderBook } from './sourceBridge';
 import { enqueue,workOnce } from './jobs';
+import { isReadingDiscoverySubject } from './discoverySubjects';
 import { ProviderTransport } from '../services/loomeyRecommendations/transport';
 import { MongoRecommendationStore } from '../services/loomeyRecommendations/repository';
 import { HardcoverProvider } from '../services/loomeyRecommendations/providers/hardcover';
@@ -18,6 +19,10 @@ function plan(term:string):DiscoveryPlan {const [prefix,...rest]=term.split(':')
  if(prefix==='inauthor')return {key:term,kind:'author',categories:['authors-read'],author:value,terms:[],tagIDs:[],workIDs:[]};
  return {key:term,kind:'interests',categories:['genres','themes','discovery'],terms:[prefix==='subject'?value:term],tagIDs:[],workIDs:[]};}
 export async function processDiscovery(payload:{term:string;depth?:number;origin?:string},providers=existingProviders(),signal?:AbortSignal) {
+ if (payload.term.startsWith('subject:') && !isReadingDiscoverySubject(payload.term.slice(8))) {
+  console.log('[bookKnowledge] Skipping unrelated subject discovery', {term:payload.term});
+  return 0;
+ }
  const ids:string[]=[];const ctx=context(signal);
  const providerCounts:Record<string,{returned:number;ingested:number;failed:boolean}>={};
  for(const provider of providers.filter(p=>p.available())){

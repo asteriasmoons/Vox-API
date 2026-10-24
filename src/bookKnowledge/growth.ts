@@ -1,15 +1,14 @@
 import { bookPool } from './db';
 import { enqueue } from './jobs';
 import { knowledgeConfig } from './config';
-import { norm } from './identity';
-const common=new Set(['fiction','nonfiction','books','literature','general','adult','english']);
+import { isReadingDiscoverySubject } from './discoverySubjects';
 export async function expandWork(workId:string,depth:number) {
  const cfg=knowledgeConfig();if(depth>=cfg.maxDepth)return 0;
  const row=await bookPool.query(`SELECT w.title,w.expansion_depth,
  COALESCE((SELECT array_agg(a.name) FROM bk_work_authors wa JOIN bk_authors a ON a.id=wa.author_id WHERE wa.work_id=w.id),'{}') authors,
  COALESCE((SELECT array_agg(s.label) FROM bk_work_subjects ws JOIN bk_subjects s ON s.id=ws.subject_id WHERE ws.work_id=w.id),'{}') subjects
  FROM bk_works w WHERE w.id=$1`,[workId]);if(!row.rowCount)return 0;
- const b=row.rows[0];const terms=[...b.authors.slice(0,2).map((a:string)=>`inauthor:${a}`),...b.subjects.filter((s:string)=>!common.has(norm(s))).slice(0,3).map((s:string)=>`subject:${s}`)].slice(0,cfg.expansionPerBook);
+ const b=row.rows[0];const terms=[...b.authors.slice(0,2).map((a:string)=>`inauthor:${a}`),...b.subjects.filter((s:string)=>isReadingDiscoverySubject(s)).slice(0,3).map((s:string)=>`subject:${s}`)].slice(0,cfg.expansionPerBook);
  for(const term of terms)await enqueue('discover',{term,depth:depth+1,origin:workId});
  await bookPool.query('UPDATE bk_works SET expanded_at=now() WHERE id=$1',[workId]);return terms.length;
 }
