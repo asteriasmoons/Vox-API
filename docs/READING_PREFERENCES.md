@@ -19,7 +19,9 @@ POST `/api/books/automatic-catalogs` retains the existing books/progressive/forc
 }
 ```
 
-Categories are `fiction`, `nonfiction`, `both`. Styles are `follow_preferences`, `blend_interests`, `surprise_me`. Omit `preferences` for the original history-only behavior and cache namespace. Invalid configured preferences return `400 INVALID_READING_PREFERENCES`, not silently fabricated defaults. Favorite lists are bounded at 64 values each, current interests at 20, and normalized terms at 96 characters.
+Categories are `fiction`, `nonfiction`, `both`. Styles are `follow_preferences`, `blend_interests`, `surprise_me`. Omit `preferences` for the original history-only behavior and cache namespace. Invalid configured preferences return `400 INVALID_READING_PREFERENCES`, not silently fabricated defaults. Genre and interest arrays have no selection-count cap. Terms retain the existing type/length validation, text sanitation and 96-character normalization. Every selected value participates in preference profiles, scoring and cache keys; existing provider request budgets remain bounded independently of selection counts. Witchcraft is recognized as nonfiction, without overriding an explicit fiction classification.
+
+The selection-cap and Witchcraft update was reviewed at source level only. Its updated regression tests have not been run; the verification results later in this report predate this update. No compilation, application launch, live provider/database testing or deployment was performed for it. Deploy this API change alongside the iOS selection-catalog update; no new environment variables, database migration, worker schedule or shared material change is required.
 
 No new login, endpoint, credential exchange or user table is needed. Preferences persist in Loomey's existing private CloudKit-backed `UserSettings`; they are supplied per request. PostgreSQL contains reusable book knowledge, not the user's private reading preferences or library history. Request-derived cache keys are hashed; diagnostic events contain counts/style, not the selected interest text.
 

@@ -13,9 +13,9 @@ export function parseReadingPreferences(body: unknown): ReadingPreferences | und
   const value = raw as Record<string, unknown>;
   if (value.version !== 1 || !["fiction", "nonfiction", "both"].includes(String(value.preferredCategory))
     || !["follow_preferences", "blend_interests", "surprise_me"].includes(String(value.recommendationStyle))) throw invalid();
-  const values = (key: string, limit: number): string[] => {
+  const values = (key: string): string[] => {
     const entries = value[key];
-    if (!Array.isArray(entries) || entries.length > limit || entries.some(entry => typeof entry !== "string" || entry.length > 384)) throw invalid();
+    if (!Array.isArray(entries) || entries.some(entry => typeof entry !== "string" || entry.length > 384)) throw invalid();
     const terms = new Map<string, string>();
     for (const entry of entries) {
       const text = cleanText(entry).slice(0, 96);
@@ -25,8 +25,8 @@ export function parseReadingPreferences(body: unknown): ReadingPreferences | und
   };
   return { version: 1, preferredCategory: value.preferredCategory as ReadingPreferences["preferredCategory"],
     recommendationStyle: value.recommendationStyle as ReadingPreferences["recommendationStyle"],
-    favoriteFictionGenres: values("favoriteFictionGenres", 64), favoriteNonfictionGenres: values("favoriteNonfictionGenres", 64),
-    currentlyInterestedIn: values("currentlyInterestedIn", 20) };
+    favoriteFictionGenres: values("favoriteFictionGenres"), favoriteNonfictionGenres: values("favoriteNonfictionGenres"),
+    currentlyInterestedIn: values("currentlyInterestedIn") };
 }
 
 export function favoriteGenres(value: ReadingPreferences): string[] {
@@ -39,7 +39,7 @@ export function hasPreferenceInputs(value?: ReadingPreferences): boolean {
 }
 
 export const readingCategoryTerms = {
-  nonfiction: ["nonfiction", "non fiction", "history", "biography", "autobiography", "memoir", "psychology", "science", "spirituality", "self help", "personal development", "productivity", "philosophy", "politics", "technology", "wellness", "writing craft", "art design", "art and design", "mindfulness", "trauma recovery", "habit building"],
+  nonfiction: ["nonfiction", "non fiction", "history", "biography", "autobiography", "memoir", "psychology", "science", "spirituality", "witchcraft", "self help", "personal development", "productivity", "philosophy", "politics", "technology", "wellness", "writing craft", "art design", "art and design", "mindfulness", "trauma recovery", "habit building"],
   fiction: ["fiction", "fantasy", "romance", "mystery", "thriller", "horror", "science fiction", "novel", "novels", "young adult", "dark academia", "adventure", "paranormal", "mythology", "folklore", "manga", "graphic novel", "graphic", "comic", "dystopian", "magical realism", "litrpg"],
 };
 

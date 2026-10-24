@@ -53,13 +53,46 @@ test("unconfigured preferences preserve the original profile, cache namespace, s
   assert.deepEqual(discoveryPlans(profile, categoryIDs, "google-books"), discoveryPlans(buildProfile([seed()], [], undefined), categoryIDs, "google-books"));
 });
 
-test("preference payloads validate schema, bound inputs and normalize duplicates without inventing defaults", () => {
-  for (const value of [false, [], {}, { version: 2 }, { ...preferences(), recommendationStyle: "unknown" }, { ...preferences(), currentlyInterestedIn: Array(21).fill("dragons") }, { ...preferences(), favoriteFictionGenres: [4] }]) {
+test("preference payloads validate schema and text and normalize duplicates without inventing defaults", () => {
+  for (const value of [false, [], {}, { version: 2 }, { ...preferences(), recommendationStyle: "unknown" }, { ...preferences(), currentlyInterestedIn: "dragons" }, { ...preferences(), currentlyInterestedIn: ["a".repeat(385)] }, { ...preferences(), favoriteFictionGenres: [4] }]) {
     assert.throws(() => parseReadingPreferences({ preferences: value }), error => error.code === "INVALID_READING_PREFERENCES" && error.status === 400);
   }
   const value = preferences({ favoriteFictionGenres: [" Fantasy ", "fantasy"], currentlyInterestedIn: ["Ancient history", "Ancient history"] });
   assert.deepEqual(value.favoriteFictionGenres, ["Fantasy"]);
   assert.deepEqual(value.currentlyInterestedIn, ["Ancient history"]);
+});
+
+test("all genre and interest selections are accepted and participate in profiles, ranking and cache keys", () => {
+  const value = preferences({
+    favoriteFictionGenres: Array.from({ length: 128 }, (_, index) => "Genre " + index),
+    favoriteNonfictionGenres: Array.from({ length: 100 }, (_, index) => "Nonfiction Genre " + index),
+    currentlyInterestedIn: Array.from({ length: 96 }, (_, index) => "Interest " + index),
+    recommendationStyle: "follow_preferences",
+  });
+  assert.equal(value.favoriteFictionGenres.length, 128);
+  assert.equal(value.favoriteNonfictionGenres.length, 100);
+  assert.equal(value.currentlyInterestedIn.length, 96);
+  assert.deepEqual(JSON.parse(JSON.stringify(value)), value);
+  const profile = buildProfile([], [], value);
+  assert.ok(profile.genres.has("genre 127") && profile.genres.has("nonfiction genre 99"));
+  assert.ok(profile.themes.has("interest 95"));
+  const candidate = book("late-selection", { genres: ["Genre 127"], subjects: ["Interest 95"] });
+  assert.equal(preferenceEvidence(candidate, value).favorites, 1);
+  assert.equal(preferenceEvidence(candidate, value).current, 1);
+  assert.ok(recommendationScore("themes", candidate, profile) !== null);
+  const changed = preferences({ ...value, currentlyInterestedIn: value.currentlyInterestedIn.filter(term => term !== "Interest 95") });
+  assert.notEqual(profileKey([], value), profileKey([], changed));
+  assert.ok(discoveryPlans(profile, categoryIDs, "google-books").length <= 9, "removing selection caps does not remove provider request budgets");
+});
+
+test("Witchcraft is a nonfiction preference while explicit fiction classifications keep precedence", () => {
+  const value = preferences({ preferredCategory: "nonfiction", favoriteNonfictionGenres: ["Witchcraft"], recommendationStyle: "follow_preferences" });
+  const candidate = book("witchcraft-nonfiction", { genres: ["Witchcraft"], subjects: [] });
+  const evidence = preferenceEvidence(candidate, value);
+  assert.equal(evidence.categoryMatch, true);
+  assert.equal(evidence.favorites, 1);
+  assert.ok(recommendationScore("genres", candidate, buildProfile([], [], value)) !== null);
+  assert.equal(preferenceEvidence(book("witchcraft-novel", { genres: ["Fiction"], subjects: ["Witchcraft"] }), value).categoryMatch, false);
 });
 
 test("Follow My Preferences puts explicit choices ahead of strong conflicting reading-history evidence", () => {
