@@ -11,7 +11,7 @@ async function main(): Promise<void> {
   await mongoose.connect(process.env.MONGODB_URI);
   console.log('[bookKnowledge] MongoDB connected');
   await recoverInterruptedJobs();
-  await seedKnowledge(['fantasy', 'mystery', 'historical fiction', 'science fiction', 'romance']);
+  await seedKnowledge(['fantasy', 'mystery', 'historical fiction', 'science fiction', 'romance', 'literary fiction']);
   console.log('[bookKnowledge] Worker starting');
   await runKnowledgeWorker();
 }
