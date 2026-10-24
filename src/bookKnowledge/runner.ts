@@ -31,6 +31,13 @@ async function main(): Promise<void> {
   }
 
   const deadline = AbortSignal.timeout(RUN_LIMIT_MS);
+  // Last-resort guard: a hung database operation must not leave a cron
+  // execution running indefinitely after the normal cancellation deadline.
+  const shutdownGuard = setTimeout(() => {
+    console.warn('[bookKnowledge] Shutdown grace period expired; ending timed run');
+    process.exit(0);
+  }, RUN_LIMIT_MS + 15_000);
+  shutdownGuard.unref();
   if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is required for provider cache and rate limits');
   await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 10000 });
   console.log('[bookKnowledge] MongoDB connected');
@@ -61,6 +68,7 @@ async function main(): Promise<void> {
     }
   } finally {
     await Promise.allSettled([bookPool.end(), mongoose.disconnect()]);
+    clearTimeout(shutdownGuard);
     console.log('[bookKnowledge] Worker run finished');
   }
 }
