@@ -38,8 +38,9 @@ export async function runKnowledgeWorker(signal?:AbortSignal){
  let lastSchedule=0;
  while(!signal?.aborted){
   if(Date.now()-lastSchedule>60000){await scheduleDueWork();lastSchedule=Date.now();}
+  signal?.throwIfAborted();
   const did=await workOnce({discover:async payload=>{await processDiscovery(payload);},expand:async ({workId,depth})=>{await expandWork(workId,depth);},refresh:async ({workId})=>{await refreshWork(workId);}});
-  if(!did)await wait(cfg.pollMs);
+  if(!did)await wait(Math.min(cfg.pollMs,1000));
  }
 }
 export async function seedKnowledge(terms:string[]){for(const term of terms)await enqueue('discover',{term,depth:0});}
