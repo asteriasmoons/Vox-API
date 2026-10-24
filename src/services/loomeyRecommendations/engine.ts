@@ -144,7 +144,10 @@ export class LoomeyRecommendationEngine {
       fallbackTargets = targets.filter(id => {
         if (id === "authors-read" && !profile.authors.size || id === "related" && !profile.seeds.length
           || id === "genres" && !profile.genres.size || id === "themes" && !profile.themes.size) return false;
-        return (localSections.get(id)?.length ?? 0) < 4;
+        // Four older matches do not constitute sufficient coverage for discovery.
+        const section = localSections.get(id) ?? [];
+        const recent = section.filter(book => book.releaseYear !== null && book.releaseYear >= new Date().getUTCFullYear() - 5);
+        return section.length < 8 || recent.length < 4;
       });
       catalogLog("engine.knowledge_coverage", { candidates: candidates.length, fallbackCategories: fallbackTargets }, context.traceID);
       if (!fallbackTargets.length) {
