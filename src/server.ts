@@ -44,6 +44,8 @@ import dottiRoutes from "./routes/dotti";
 import dictionaryRoutes from "./routes/dictionary";
 import { createLureliaRouter } from "./routes/lurelia";
 import vellixPhotoRoutes from "./routes/vellixPhotos";
+import celestialRoutes from "./routes/celestial";
+import { startCelestialGenerationWorker } from "./services/celestial/celestialGenerationWorker";
 
 import path from "path";
 dotenv.config();
@@ -95,6 +97,7 @@ app.use("/api/buddy", createBuddyRouter(io));
 app.use("/api/sprint", createSprintRouter(io));
 app.use("/api/user", userRouter);
 app.use("/api/spiritual", spiritualRoutes);
+app.use("/api/celestial", celestialRoutes);
 app.use("/api/spiritual/current-correspondences", currentCorrespondencesRoutes);
 app.use("/api/spiritual/working-timing", workingTimingRoutes);
 app.use("/api/mood", moodRoutes);
@@ -166,6 +169,7 @@ mongoose
     console.log("MongoDB Atlas connected");
     startAutomaticCatalogMaintenance();
     await restoreActiveSprintTimers(io);
+    startCelestialGenerationWorker();
   })
   .catch((err) => {
     console.error("MongoDB connection error:", err);
