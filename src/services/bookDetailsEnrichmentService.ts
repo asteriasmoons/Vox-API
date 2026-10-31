@@ -2,6 +2,7 @@ import { regularSecondaryGroqChatJson } from "./regularRecs/regularRecsProviders
 
 const GOOGLE_BOOKS_SEARCH_URL = "https://www.googleapis.com/books/v1/volumes";
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
+const ITUNES_SEARCH_URL = "https://itunes.apple.com/search";
 
 const CATALOG_TIMEOUT_MS = 12_000;
 const AI_MAX_TOKENS = 1600;
@@ -12,7 +13,7 @@ type BookDetailsEnrichmentRequest = {
 };
 
 type CatalogCandidate = {
-  source: "Google Books" | "Open Library";
+  source: "Google Books" | "Open Library" | "Apple Books";
   score: number;
   title: string;
   author: string;
@@ -71,6 +72,20 @@ type OpenLibrarySearchResponse = {
     publisher?: string[];
     number_of_pages_median?: number;
   }>;
+};
+
+type ITunesEbookResult = {
+  trackName?: string;
+  artistName?: string;
+  description?: string;
+  genres?: string[];
+  releaseDate?: string;
+  kind?: string;
+};
+
+type ITunesSearchResponse = {
+  resultCount?: number;
+  results?: ITunesEbookResult[];
 };
 
 type AIBookDetails = {
@@ -485,6 +500,62 @@ async function searchOpenLibrary(
     .sort((a, b) => b.score - a.score);
 }
 
+async function searchAppleBooks(
+  input: BookDetailsEnrichmentRequest,
+): Promise<CatalogCandidate[]> {
+  const url = new URL(ITUNES_SEARCH_URL);
+
+  url.searchParams.set("term", `${input.title} ${input.author}`);
+  url.searchParams.set("media", "ebook");
+  url.searchParams.set("entity", "ebook");
+  url.searchParams.set("country", "US");
+  url.searchParams.set("lang", "en_us");
+  url.searchParams.set("limit", "8");
+
+  const data = await fetchJson<ITunesSearchResponse>(url);
+  console.log("[book-details-debug] apple books query", {
+    title: input.title,
+    author: input.author,
+    resultCount: Array.isArray(data.results) ? data.results.length : 0,
+  });
+  const results = Array.isArray(data.results) ? data.results : [];
+
+  return results
+    .filter(
+      (result) =>
+        cleanText(result.trackName) && cleanText(result.kind) === "ebook",
+    )
+    .map((result) => {
+      const candidateAuthor = cleanText(result.artistName) || input.author;
+      const score = scoreTitleAuthorMatch(
+        input.title,
+        input.author,
+        cleanText(result.trackName),
+        candidateAuthor,
+      );
+      const publicationYear = extractYear(result.releaseDate);
+      const summary = stripHtml(cleanText(result.description));
+      const genres = uniqueStrings(result.genres ?? [], 12).filter(
+        (genre) => genre.toLowerCase() !== "books",
+      );
+      const candidate: CatalogCandidate = {
+        source: "Apple Books",
+        score,
+        title: cleanText(result.trackName),
+        author: candidateAuthor,
+        categories: genres,
+        subjects: [],
+      };
+
+      if (publicationYear !== undefined) candidate.publicationYear = publicationYear;
+      if (summary) candidate.summary = summary;
+
+      return candidate;
+    })
+    .filter((candidate) => candidate.score >= 18)
+    .sort((a, b) => b.score - a.score);
+}
+
 function mergeCatalogEvidence(
   input: BookDetailsEnrichmentRequest,
   candidates: CatalogCandidate[],
@@ -497,12 +568,14 @@ function mergeCatalogEvidence(
   const openLibrary = ranked.find(
     (candidate) => candidate.source === "Open Library",
   );
-  const sources = uniqueStrings(ranked.map((candidate) => candidate.source), 2);
+  const apple = ranked.find((candidate) => candidate.source === "Apple Books");
+  const sources = uniqueStrings(ranked.map((candidate) => candidate.source), 3);
   const publisher = google?.publisher ?? openLibrary?.publisher;
-  const publicationYear = google?.publicationYear ?? openLibrary?.publicationYear;
+  const publicationYear =
+    google?.publicationYear ?? openLibrary?.publicationYear ?? apple?.publicationYear;
   const isbn = google?.isbn ?? openLibrary?.isbn;
   const totalPages = google?.totalPages ?? openLibrary?.totalPages;
-  const summary = google?.summary ?? openLibrary?.summary;
+  const summary = google?.summary ?? openLibrary?.summary ?? apple?.summary;
   const evidence: CatalogEvidence = {
     title: primary.title || input.title,
     author: primary.author || input.author,
@@ -731,22 +804,30 @@ export async function enrichBookDetails(
   const request = { title: title.slice(0, 160), author: author.slice(0, 120) };
   console.log("[book-details-enrichment] start", request);
 
-  const [googleCandidates, openLibraryCandidates] = await Promise.all([
-    searchGoogleBooks(request).catch((error) => {
-      console.error("[book-details-enrichment] google lookup failed", {
-        ...request,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return [] as CatalogCandidate[];
-    }),
-    searchOpenLibrary(request).catch((error) => {
-      console.error("[book-details-enrichment] open library lookup failed", {
-        ...request,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return [] as CatalogCandidate[];
-    }),
-  ]);
+  const [googleCandidates, openLibraryCandidates, appleCandidates] =
+    await Promise.all([
+      searchGoogleBooks(request).catch((error) => {
+        console.error("[book-details-enrichment] google lookup failed", {
+          ...request,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return [] as CatalogCandidate[];
+      }),
+      searchOpenLibrary(request).catch((error) => {
+        console.error("[book-details-enrichment] open library lookup failed", {
+          ...request,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return [] as CatalogCandidate[];
+      }),
+      searchAppleBooks(request).catch((error) => {
+        console.error("[book-details-enrichment] apple books lookup failed", {
+          ...request,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return [] as CatalogCandidate[];
+      }),
+    ]);
 
   console.log("[book-details-debug] candidate scores", {
     google: googleCandidates.map((candidate) => ({
@@ -759,15 +840,23 @@ export async function enrichBookDetails(
       author: candidate.author,
       score: candidate.score,
     })),
+    apple: appleCandidates.map((candidate) => ({
+      title: candidate.title,
+      author: candidate.author,
+      score: candidate.score,
+    })),
   });
 
   const catalog = mergeCatalogEvidence(request, [
     ...googleCandidates,
     ...openLibraryCandidates,
+    ...appleCandidates,
   ]);
 
   if (!catalog) {
-    throw new Error("No confident Google Books or Open Library match was found");
+    throw new Error(
+      "No confident Google Books, Open Library, or Apple Books match was found",
+    );
   }
 
   const ai = await generateAIEnrichment(request, catalog);
