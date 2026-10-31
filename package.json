@@ -6,7 +6,9 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "test": "node --test tests/*.test.mjs",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "loomey:cover-upload": "node scripts/upload-loomey-cover.mjs",
+    "loomey:import-covers": "node scripts/import-existing-loomey-covers.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",

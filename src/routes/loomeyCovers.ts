@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import multer from "multer";
 import { createHash } from "crypto";
 import { LoomeyBookCover } from "../models/LoomeyBookCover";
-import { deleteLoomeyCover, signedLoomeyCoverURL, uploadLoomeyCover } from "../services/loomeyCoverStorage";
+import { signedLoomeyCoverURL, uploadLoomeyCover } from "../services/loomeyCoverStorage";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -41,7 +41,10 @@ router.get("/", async (req, res) => {
     const query = requestedISBN
       ? { isbns: requestedISBN }
       : { normalizedTitle: normalize(title), normalizedAuthor: normalize(author) };
-    const covers = await LoomeyBookCover.find(query).limit(30).lean();
+    let covers = await LoomeyBookCover.find(query).limit(30).lean();
+    if (!covers.length && requestedISBN && title && author) {
+      covers = await LoomeyBookCover.find({ normalizedTitle: normalize(title), normalizedAuthor: normalize(author) }).limit(30).lean();
+    }
     return res.json({ covers: covers.map(serialize) });
   } catch (error) {
     console.error("[loomey covers] lookup:", error);
@@ -95,7 +98,7 @@ router.post("/", requireCoverWriteToken, upload.single("cover"), async (req, res
         const duplicate = await LoomeyBookCover.findOne({ sha256: hash });
         if (duplicate) return res.json({ cover: serialize(duplicate), reused: true });
       }
-      await deleteLoomeyCover(key).catch(() => {});
+      // Keep the uploaded object on metadata failure; a retry can safely reuse its hash.
       throw error;
     }
   } catch (error) {
