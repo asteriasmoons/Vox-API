@@ -66,7 +66,26 @@ router.get("/:id/image", async (req, res) => {
   }
 });
 
-router.post("/", requireCoverWriteToken, upload.single("cover"), async (req, res) => {
+// Public app contribution endpoint with bounded per-IP requests and strict image validation.
+const contributionHits = new Map<string, { count: number; expires: number }>();
+function limitCoverContributions(req: Request, res: Response, next: NextFunction) {
+  const now = Date.now();
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const hit = contributionHits.get(ip);
+  const entry = !hit || hit.expires < now ? { count: 0, expires: now + 60 * 60 * 1000 } : hit;
+  entry.count++;
+  contributionHits.set(ip, entry);
+  if (contributionHits.size > 5000) for (const [key, value] of contributionHits) {
+    if (value.expires < now) contributionHits.delete(key);
+  }
+  if (entry.count > 30) { res.status(429).json({ error: "Cover upload limit reached. Try again later." }); return; }
+  next();
+}
+
+router.post(["/", "/contribute"], (req, res, next) => {
+  if (req.path === "/contribute") return limitCoverContributions(req, res, next);
+  return requireCoverWriteToken(req, res, next);
+}, upload.single("cover"), async (req, res) => {
   try {
     const title = safe(req.body?.title);
     const author = safe(req.body?.author);
