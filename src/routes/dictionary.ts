@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { aggregateWordDetails } from "../services/dictionaryAggregator";
-import { fetchRandomWordCandidates } from "../services/dictionaryRandomWordProviders";
+import { generateDiscoveryCandidates } from "../services/dictionaryDiscoveryGenerator";
 
 const router = Router();
 
@@ -62,9 +62,10 @@ router.get("/random", async (req, res) => {
       : [];
     const attempted = new Set(exclude.map((word) => word.toLowerCase()));
 
-    // Obtain candidates from external random-word APIs, not a local word pool.
-    const candidates = await fetchRandomWordCandidates(attempted);
-    for (const word of candidates.slice(0, 12)) {
+    // Groq selects vocabulary by shuffled letter and category.
+    // Existing dictionary aggregation verifies and enriches each candidate.
+    const candidates = await generateDiscoveryCandidates(attempted);
+    for (const word of candidates) {
       attempted.add(word.toLowerCase());
       try {
         const details = await aggregateWordDetails(word);

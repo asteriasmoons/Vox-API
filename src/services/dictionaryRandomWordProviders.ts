@@ -16,7 +16,9 @@ async function fetchJSON(url: string, headers: Record<string, string> = {}): Pro
 }
 
 function normalizeWords(data: unknown): string[] {
-  const values = Array.isArray(data) ? data : typeof data === "string" ? [data] : [];
+  const values = Array.isArray(data) ? data : typeof data === "string" ? [data] :
+    data && typeof data === "object" && "word" in data
+      ? [(data as { word: unknown }).word] : [];
   return values.filter((value): value is string =>
     typeof value === "string" &&
     /^[a-z]+(?:[-'][a-z]+)*$/i.test(value.trim()) &&
@@ -27,10 +29,10 @@ function normalizeWords(data: unknown): string[] {
 async function requestProvider(provider: Provider): Promise<string[]> {
   switch (provider) {
     case "random-word-api": {
-      // diff ranges from 1 (common) to 5 (rare), with up to 5 words.
-      const diff = 1 + Math.floor(Math.random() * 5);
+      // Favor the provider's highest difficulty settings for advanced vocabulary.
+      const diff = 4 + Math.floor(Math.random() * 2);
       return normalizeWords(await fetchJSON(
-        `https://random-word-api.herokuapp.com/word?number=5&diff=${diff}`
+        `https://random-word-api.herokuapp.com/word?number=30&diff=${diff}`
       ));
     }
     case "api-ninjas": {
