@@ -114,8 +114,7 @@ challengePostSchema.pre("validate", function (next) {
     typeof this.photoURL === "string" && this.photoURL.trim().length > 0;
 
   const hasPhotoBase64 =
-    typeof this.photoBase64 === "string" &&
-    this.photoBase64.trim().length > 0;
+    typeof this.photoBase64 === "string" && this.photoBase64.trim().length > 0;
 
   if (!hasText && !hasPhotoURL && !hasPhotoBase64) {
     return next(new Error("A post must contain text, a photo, or both."));

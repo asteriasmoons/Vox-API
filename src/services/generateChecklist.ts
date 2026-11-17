@@ -5,7 +5,7 @@ function pickModel() {
 }
 
 export async function generateTaskInstructions(
-  taskName: string
+  taskName: string,
 ): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("Missing GROQ_API_KEY");
@@ -62,7 +62,7 @@ Rules:
 
 export async function generateChecklist(
   taskNames: string[],
-  prompt?: string
+  prompt?: string,
 ): Promise<string[]> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("Missing GROQ_API_KEY");

@@ -21,7 +21,9 @@ router.post("/suggestions", async (req, res) => {
     return res.json(result);
   } catch (error) {
     console.error("Dotti suggestions generation error:", error);
-    return res.status(500).json({ error: "Failed to generate Dotti suggestions" });
+    return res
+      .status(500)
+      .json({ error: "Failed to generate Dotti suggestions" });
   }
 });
 

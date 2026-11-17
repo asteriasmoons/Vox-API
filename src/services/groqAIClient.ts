@@ -1,4 +1,5 @@
-const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_CHAT_COMPLETIONS_URL =
+  "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_GROQ_MODEL = "groq/compound";
 const GROQ_LOG_PREFIX = "[vox:groq]";
 const GROQ_TIMEOUT_MS = 30_000;
@@ -188,7 +189,9 @@ async function groqChat(
       }
 
       const content = cleanText(
-        contentToText((json as GroqChatResponse | null)?.choices?.[0]?.message?.content),
+        contentToText(
+          (json as GroqChatResponse | null)?.choices?.[0]?.message?.content,
+        ),
       );
       console.log(`${GROQ_LOG_PREFIX} success`, {
         stage: options.stage,
@@ -196,8 +199,8 @@ async function groqChat(
         attempt: attempt + 1,
         durationMs,
         promptTokens: (json as GroqChatResponse | null)?.usage?.prompt_tokens,
-        completionTokens:
-          (json as GroqChatResponse | null)?.usage?.completion_tokens,
+        completionTokens: (json as GroqChatResponse | null)?.usage
+          ?.completion_tokens,
         totalTokens: (json as GroqChatResponse | null)?.usage?.total_tokens,
       });
 
@@ -214,7 +217,9 @@ async function groqChat(
           durationMs,
           timeoutMs: GROQ_TIMEOUT_MS,
         });
-      } else if (!(error instanceof Error && error.message.startsWith("Groq "))) {
+      } else if (
+        !(error instanceof Error && error.message.startsWith("Groq "))
+      ) {
         console.error(`${GROQ_LOG_PREFIX} failure`, {
           stage: options.stage,
           model,

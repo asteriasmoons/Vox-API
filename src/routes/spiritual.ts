@@ -238,18 +238,22 @@ router.post("/tarot", async (req, res) => {
     const parsed = parseAIResponse(raw);
 
     if (!parsed) {
-      return res.status(500).json({ error: "AI returned unparseable response", raw });
+      return res
+        .status(500)
+        .json({ error: "AI returned unparseable response", raw });
     }
 
     // Enforce single-word keywords server-side
     parsed.keywords = parsed.keywords.filter(
-      (k) => typeof k === "string" && k.trim().split(/\s+/).length === 1
+      (k) => typeof k === "string" && k.trim().split(/\s+/).length === 1,
     );
 
     return res.json(parsed);
   } catch (error) {
     console.error("[spiritual/tarot] error:", error);
-    return res.status(500).json({ error: "Failed to generate tarot interpretation" });
+    return res
+      .status(500)
+      .json({ error: "Failed to generate tarot interpretation" });
   }
 });
 
@@ -271,18 +275,22 @@ router.post("/lenormand", async (req, res) => {
     const parsed = parseAIResponse(raw);
 
     if (!parsed) {
-      return res.status(500).json({ error: "AI returned unparseable response", raw });
+      return res
+        .status(500)
+        .json({ error: "AI returned unparseable response", raw });
     }
 
     // Enforce single-word keywords server-side
     parsed.keywords = parsed.keywords.filter(
-      (k) => typeof k === "string" && k.trim().split(/\s+/).length === 1
+      (k) => typeof k === "string" && k.trim().split(/\s+/).length === 1,
     );
 
     return res.json(parsed);
   } catch (error) {
     console.error("[spiritual/lenormand] error:", error);
-    return res.status(500).json({ error: "Failed to generate lenormand interpretation" });
+    return res
+      .status(500)
+      .json({ error: "Failed to generate lenormand interpretation" });
   }
 });
 

@@ -18,7 +18,9 @@ router.get("/conversations", async (req: Request, res: Response) => {
     const userID = String(req.query.userID || "").trim();
 
     if (!userID) {
-      return res.status(400).json({ message: "userID query param is required." });
+      return res
+        .status(400)
+        .json({ message: "userID query param is required." });
     }
 
     const conversations = await getConversations(userID);
@@ -152,7 +154,9 @@ router.get("/messageable-users", async (req: Request, res: Response) => {
     const userID = String(req.query.userID || "").trim();
 
     if (!userID) {
-      return res.status(400).json({ message: "userID query param is required." });
+      return res
+        .status(400)
+        .json({ message: "userID query param is required." });
     }
 
     const users = await getMessageableUsers(userID);

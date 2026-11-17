@@ -75,10 +75,12 @@ export async function pullChanges({ sharedEventID, since }: PullInput) {
     // Reactions are keyed by commentID / replyID rather than sharedEventID —
     // do a two-step lookup instead of the shared filter.
     (async () => {
-      const commentIDs = (await Comment.find({ sharedEventID }).select("_id").lean())
-        .map((c: any) => String(c._id));
-      const replyIDs = (await CommentReply.find({ sharedEventID }).select("_id").lean())
-        .map((r: any) => String(r._id));
+      const commentIDs = (
+        await Comment.find({ sharedEventID }).select("_id").lean()
+      ).map((c: any) => String(c._id));
+      const replyIDs = (
+        await CommentReply.find({ sharedEventID }).select("_id").lean()
+      ).map((r: any) => String(r._id));
       return await CommentReaction.find({
         $or: [
           { commentID: { $in: commentIDs } },

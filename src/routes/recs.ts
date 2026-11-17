@@ -35,7 +35,9 @@ router.post("/", async (req, res) => {
       .trim()
       .slice(0, REGULAR_MAX_REQUEST_TEXT_LENGTH);
     if (!requestText) {
-      return res.status(400).json({ error: "Recommendation query is required" });
+      return res
+        .status(400)
+        .json({ error: "Recommendation query is required" });
     }
 
     const desiredCount =

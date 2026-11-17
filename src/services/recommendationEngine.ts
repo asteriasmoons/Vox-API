@@ -60,13 +60,18 @@ function clampCount(value: number | undefined, fallback: number): number {
   return Math.max(1, Math.min(Math.floor(value), MAX_RESULT_COUNT));
 }
 
-function normalizeRequest(input: BuildRecommendationsInput): RecommendationRequest {
+function normalizeRequest(
+  input: BuildRecommendationsInput,
+): RecommendationRequest {
   const query = cleanText(input.query).slice(0, 240);
   const desiredCount = clampCount(input.desiredCount, DEFAULT_RESULT_COUNT);
   const minVerifiedResults =
     input.minVerifiedResults === undefined
       ? MIN_VERIFIED_RESULTS
-      : Math.max(1, Math.min(Math.floor(input.minVerifiedResults), desiredCount));
+      : Math.max(
+          1,
+          Math.min(Math.floor(input.minVerifiedResults), desiredCount),
+        );
 
   return {
     query,
@@ -74,10 +79,14 @@ function normalizeRequest(input: BuildRecommendationsInput): RecommendationReque
     desiredCount,
     minVerifiedResults,
     ...(input.groqModel ? { groqModel: input.groqModel } : {}),
-    ...(input.requestTypeHint ? { requestTypeHint: input.requestTypeHint } : {}),
+    ...(input.requestTypeHint
+      ? { requestTypeHint: input.requestTypeHint }
+      : {}),
     ...(input.seedBook ? { seedBook: input.seedBook } : {}),
     ...(input.readerContext ? { readerContext: input.readerContext } : {}),
-    ...(input.excludeBookKeys ? { excludeBookKeys: input.excludeBookKeys } : {}),
+    ...(input.excludeBookKeys
+      ? { excludeBookKeys: input.excludeBookKeys }
+      : {}),
   };
 }
 
@@ -225,7 +234,9 @@ export async function buildRecommendations(
                     author: resolvedSeedBook.author,
                     summary: resolvedSeedBook.description,
                   },
-                  request.groqModel ? { groqModel: request.groqModel } : undefined,
+                  request.groqModel
+                    ? { groqModel: request.groqModel }
+                    : undefined,
                 ),
         }
       : null;
@@ -295,13 +306,14 @@ export async function buildRecommendations(
         minVerifiedResults: request.minVerifiedResults,
         excludedTitleCount: excludedTitles.length,
       });
-      const fallbackGroups = await recommendationAIService.generateFallbackCandidates({
-        request,
-        intent,
-        profile,
-        seedBook,
-        excludedTitles,
-      });
+      const fallbackGroups =
+        await recommendationAIService.generateFallbackCandidates({
+          request,
+          intent,
+          profile,
+          seedBook,
+          excludedTitles,
+        });
       const fallbackCandidates = removeSeedAndExcludedCandidates(
         flattenCandidateGroups(fallbackGroups),
         seedBook,

@@ -1,4 +1,5 @@
-const PUTER_OPENAI_URL = "https://api.puter.com/puterai/openai/v1/chat/completions";
+const PUTER_OPENAI_URL =
+  "https://api.puter.com/puterai/openai/v1/chat/completions";
 const MODEL =
   process.env.PUTER_CHALLENGE_PHOTO_MODEL ||
   process.env.PUTER_MODEL ||

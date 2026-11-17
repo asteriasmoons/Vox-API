@@ -18,9 +18,16 @@ router.post("/display-name", async (req: Request, res: Response) => {
     const userId = str(req.body.userId).trim();
     const displayName = str(req.body.displayName).trim();
 
-    if (!userId) return res.status(400).json({ success: false, error: "MISSING_USER_ID" });
-    if (!displayName) return res.status(400).json({ success: false, error: "MISSING_DISPLAY_NAME" });
-    if (displayName.length > 30) return res.status(400).json({ success: false, error: "DISPLAY_NAME_TOO_LONG" });
+    if (!userId)
+      return res.status(400).json({ success: false, error: "MISSING_USER_ID" });
+    if (!displayName)
+      return res
+        .status(400)
+        .json({ success: false, error: "MISSING_DISPLAY_NAME" });
+    if (displayName.length > 30)
+      return res
+        .status(400)
+        .json({ success: false, error: "DISPLAY_NAME_TOO_LONG" });
 
     const [lumeyProfile] = await Promise.all([
       LumeyUserProfile.findOneAndUpdate(
@@ -45,7 +52,8 @@ router.post("/display-name", async (req: Request, res: Response) => {
 router.get("/display-name/:userId", async (req: Request, res: Response) => {
   try {
     const userId = str(req.params.userId);
-    if (!userId) return res.status(400).json({ success: false, error: "MISSING_USER_ID" });
+    if (!userId)
+      return res.status(400).json({ success: false, error: "MISSING_USER_ID" });
 
     const profile =
       (await LumeyUserProfile.findOne({ userId })) ??

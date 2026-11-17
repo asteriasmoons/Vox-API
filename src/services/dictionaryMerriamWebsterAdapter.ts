@@ -9,7 +9,8 @@ import {
 } from "./dictionaryShared";
 
 const SOURCE_NAME = "Merriam-Webster's Collegiate Dictionary";
-const BASE_URL = "https://www.dictionaryapi.com/api/v3/references/collegiate/json/";
+const BASE_URL =
+  "https://www.dictionaryapi.com/api/v3/references/collegiate/json/";
 const TIMEOUT_MS = 20_000;
 
 type MWPronunciation = { mw?: unknown };
@@ -33,7 +34,8 @@ function etymology(entry: MWEntry): string {
   for (const item of entry.et) {
     if (!Array.isArray(item)) continue;
     for (const part of item) {
-      if (typeof part === "string" && part !== "text") pieces.push(stripDictionaryMarkup(part));
+      if (typeof part === "string" && part !== "text")
+        pieces.push(stripDictionaryMarkup(part));
     }
   }
   return pieces.filter(Boolean).join(" ");
@@ -42,24 +44,30 @@ function supplementalExamples(entry: MWEntry): string[] {
   if (!entry.suppl || typeof entry.suppl !== "object") return [];
   const examples = (entry.suppl as Record<string, unknown>).examples;
   if (!Array.isArray(examples)) return [];
-  return examples.map((item) => {
-    if (!item || typeof item !== "object") return "";
-    return stripDictionaryMarkup((item as Record<string, unknown>).t);
-  }).filter(Boolean);
+  return examples
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      return stripDictionaryMarkup((item as Record<string, unknown>).t);
+    })
+    .filter(Boolean);
 }
 
-export async function fetchMerriamWebster(word: string): Promise<AdapterResult | null> {
+export async function fetchMerriamWebster(
+  word: string,
+): Promise<AdapterResult | null> {
   const key = process.env.MERRIAM_WEBSTER_KEY || "";
   if (!key) {
     console.error("[vox:dictionary] Merriam-Webster unavailable", {
-      word, message: "Missing MERRIAM_WEBSTER_KEY environment variable",
+      word,
+      message: "Missing MERRIAM_WEBSTER_KEY environment variable",
     });
     return null;
   }
 
   const cleaned = word.trim().toLowerCase();
   if (!cleaned) return null;
-  const url = BASE_URL + encodeURIComponent(cleaned) + "?key=" + encodeURIComponent(key);
+  const url =
+    BASE_URL + encodeURIComponent(cleaned) + "?key=" + encodeURIComponent(key);
 
   let rows: unknown[];
   try {
@@ -67,7 +75,9 @@ export async function fetchMerriamWebster(word: string): Promise<AdapterResult |
     const response = await fetchWithTimeout(url, { timeoutMs: TIMEOUT_MS });
     if (!response.ok) {
       console.error("[vox:dictionary] Merriam-Webster HTTP failure", {
-        word, status: response.status, statusText: response.statusText,
+        word,
+        status: response.status,
+        statusText: response.statusText,
         durationMs: Date.now() - startedAt,
       });
       return null;
@@ -76,16 +86,21 @@ export async function fetchMerriamWebster(word: string): Promise<AdapterResult |
     if (!Array.isArray(json)) return null;
     rows = json;
     console.log("[vox:dictionary] Merriam-Webster success", {
-      word, durationMs: Date.now() - startedAt, results: rows.length,
+      word,
+      durationMs: Date.now() - startedAt,
+      results: rows.length,
     });
   } catch (error) {
     console.error("[vox:dictionary] Merriam-Webster lookup failed", {
-      word, message: error instanceof Error ? error.message : String(error),
+      word,
+      message: error instanceof Error ? error.message : String(error),
     });
     return null;
   }
   // A string-only response is Merriam-Webster's spelling-suggestion response.
-  const entries = rows.filter((row) => row && typeof row === "object") as MWEntry[];
+  const entries = rows.filter(
+    (row) => row && typeof row === "object",
+  ) as MWEntry[];
   if (!entries.length) return null;
 
   const partsOfSpeech: string[] = [];
@@ -110,12 +125,21 @@ export async function fetchMerriamWebster(word: string): Promise<AdapterResult |
     }
   }
 
-  const contributed = partsOfSpeech.length || writtenPronunciation.length ||
-    definitions.length || examples.length || origin.length;
+  const contributed =
+    partsOfSpeech.length ||
+    writtenPronunciation.length ||
+    definitions.length ||
+    examples.length ||
+    origin.length;
   if (!contributed) return null;
 
   return {
-    source: { name: SOURCE_NAME, url: "https://www.merriam-webster.com/dictionary/" + encodeURIComponent(cleaned) },
+    source: {
+      name: SOURCE_NAME,
+      url:
+        "https://www.merriam-webster.com/dictionary/" +
+        encodeURIComponent(cleaned),
+    },
     partsOfSpeech,
     ipa: [],
     writtenPronunciation,

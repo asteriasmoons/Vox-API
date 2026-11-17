@@ -7,7 +7,9 @@ const CATEGORIES = ["uncommon", "sophisticated", "obscure"] as const;
 const LETTERS = "abcdefghijklmnopqrstuvwxyz";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
-export async function generateDiscoveryCandidates(excluded: ReadonlySet<string>): Promise<string[]> {
+export async function generateDiscoveryCandidates(
+  excluded: ReadonlySet<string>,
+): Promise<string[]> {
   const key = process.env.GROQ_API_KEY;
   if (!key) throw new Error("Missing GROQ_API_KEY");
 
@@ -22,7 +24,9 @@ export async function generateDiscoveryCandidates(excluded: ReadonlySet<string>)
     "Vary the parts of speech. Prefer interesting, distinctive words with established dictionary definitions.",
     excludedWords.length ? `Do not include: ${excludedWords.join(", ")}.` : "",
     'Return ONLY a JSON object with a "words" array of 20 lowercase strings. No explanations.',
-  ].filter(Boolean).join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const response = await fetch(GROQ_URL, {
     method: "POST",
@@ -31,9 +35,14 @@ export async function generateDiscoveryCandidates(excluded: ReadonlySet<string>)
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.DICTIONARY_DISCOVERY_GROQ_MODEL || "openai/gpt-oss-120b",
+      model:
+        process.env.DICTIONARY_DISCOVERY_GROQ_MODEL || "openai/gpt-oss-120b",
       messages: [
-        { role: "system", content: "You are an expert English lexicographer. Produce only genuine, uncommon or advanced dictionary headwords. Follow the requested initial letter and JSON format exactly." },
+        {
+          role: "system",
+          content:
+            "You are an expert English lexicographer. Produce only genuine, uncommon or advanced dictionary headwords. Follow the requested initial letter and JSON format exactly.",
+        },
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
@@ -44,21 +53,27 @@ export async function generateDiscoveryCandidates(excluded: ReadonlySet<string>)
   });
   if (!response.ok) throw new Error(`Groq discovery HTTP ${response.status}`);
 
-  const payload = await response.json() as {
+  const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
   };
   const raw = payload.choices?.[0]?.message?.content;
   if (!raw) throw new Error("Groq discovery returned no content");
   const parsed = JSON.parse(raw) as { words?: unknown };
-  if (!Array.isArray(parsed.words)) throw new Error("Groq discovery returned no word list");
+  if (!Array.isArray(parsed.words))
+    throw new Error("Groq discovery returned no word list");
 
   const seen = new Set([...excluded].map((word) => word.toLowerCase()));
   const candidates: string[] = [];
   for (const item of parsed.words) {
     if (typeof item !== "string") continue;
     const word = item.trim().toLowerCase();
-    if (!/^[a-z]+(?:[-'][a-z]+)*$/.test(word) || word.length > 60 ||
-        !word.startsWith(letter) || seen.has(word)) continue;
+    if (
+      !/^[a-z]+(?:[-'][a-z]+)*$/.test(word) ||
+      word.length > 60 ||
+      !word.startsWith(letter) ||
+      seen.has(word)
+    )
+      continue;
     seen.add(word);
     candidates.push(word);
   }

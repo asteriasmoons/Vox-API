@@ -128,7 +128,8 @@ export async function dispatchNotification(input: DispatchInput) {
     .lean<any>();
   const enrichedPayload = {
     ...input.payload,
-    eventTitle: evt?.title || (input.payload.eventTitle as string) || "Shared event",
+    eventTitle:
+      evt?.title || (input.payload.eventTitle as string) || "Shared event",
     sharedEventID: input.sharedEventID,
   };
 

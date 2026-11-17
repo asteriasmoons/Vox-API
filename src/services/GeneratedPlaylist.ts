@@ -49,4 +49,7 @@ GeneratedPlaylistSchema.index({ deviceId: 1, createdAt: -1 });
 
 export const GeneratedPlaylist: Model<GeneratedPlaylistDoc> =
   (octaviaDB.models.GeneratedPlaylist as Model<GeneratedPlaylistDoc>) ||
-  octaviaDB.model<GeneratedPlaylistDoc>("GeneratedPlaylist", GeneratedPlaylistSchema);
+  octaviaDB.model<GeneratedPlaylistDoc>(
+    "GeneratedPlaylist",
+    GeneratedPlaylistSchema,
+  );

@@ -123,7 +123,9 @@ async function cmdBoard() {
 
   for (const a of announcements) {
     const spots = a.spotsLeft ?? "?";
-    const pending = a.pendingMemberCount ? yellow(` ${a.pendingMemberCount} waiting`) : "";
+    const pending = a.pendingMemberCount
+      ? yellow(` ${a.pendingMemberCount} waiting`)
+      : "";
     console.log(
       `${shortId(a._id)}  ${bold(a.bookTitle)} ${dim("by " + a.ownerDisplayName)}  ${spots} spot(s)${pending}`,
     );
@@ -143,12 +145,15 @@ async function cmdPost(who, ...titleParts) {
     maxMembers: 4,
   });
 
-  ok(`${reader.displayName} posted ${bold(bookTitle)}  ${shortId(announcement._id)}`);
+  ok(
+    `${reader.displayName} posted ${bold(bookTitle)}  ${shortId(announcement._id)}`,
+  );
 }
 
 async function cmdRequest(who, announcementId) {
   const reader = bot(who);
-  if (!announcementId) fail("Need an announcement id. Run `board` to list them.");
+  if (!announcementId)
+    fail("Need an announcement id. Run `board` to list them.");
 
   const { group } = await post("/api/buddy/groups/request", {
     announcementId,
@@ -161,7 +166,9 @@ async function cmdRequest(who, announcementId) {
     `${reader.displayName} → ${bold(group.bookTitle)} (${me?.status})  group ${shortId(group._id)}`,
   );
   if (me?.status === "pending") {
-    console.log(dim("  Check Join Requests in the app — it should be there now."));
+    console.log(
+      dim("  Check Join Requests in the app — it should be there now."),
+    );
   }
 }
 
@@ -218,7 +225,9 @@ async function cmdLeave(who, groupId) {
   await post(`/api/buddy/groups/${groupId}/leave`, { userId });
   ok(`${who} left ${shortId(groupId)}`);
   console.log(
-    dim("  If they posted the announcement, it is now closed — reopen with `reopen <id>`."),
+    dim(
+      "  If they posted the announcement, it is now closed — reopen with `reopen <id>`.",
+    ),
   );
 }
 
@@ -239,7 +248,8 @@ async function cmdMine(who = "me") {
         (pending.length ? yellow(`  ${pending.length} pending`) : ""),
     );
     for (const m of joined) console.log(dim(`    joined   ${m.displayName}`));
-    for (const m of pending) console.log(yellow(`    pending  ${m.displayName}`));
+    for (const m of pending)
+      console.log(yellow(`    pending  ${m.displayName}`));
   }
 }
 
@@ -302,7 +312,9 @@ async function cmdSprintJoin(who, sprintId, startPage = 1) {
     startPage: Number(startPage),
   });
 
-  ok(`${reader.displayName} joined from page ${startPage} (${sprint.participants.length} readers)`);
+  ok(
+    `${reader.displayName} joined from page ${startPage} (${sprint.participants.length} readers)`,
+  );
 }
 
 async function cmdSprintSubmit(who, sprintId, endPage) {
@@ -316,7 +328,9 @@ async function cmdSprintSubmit(who, sprintId, endPage) {
   });
 
   const me = sprint.participants.find((p) => p.userId === reader.userId);
-  ok(`${reader.displayName} submitted p.${endPage} → ${me?.pagesRead} pages, ${me?.pointsAwarded} pts`);
+  ok(
+    `${reader.displayName} submitted p.${endPage} → ${me?.pagesRead} pages, ${me?.pointsAwarded} pts`,
+  );
 }
 
 async function cmdSprintSay(who, ...words) {
@@ -341,7 +355,9 @@ async function cmdLeaderboard() {
   leaderboard.forEach((entry, i) => {
     console.log(
       `${String(i + 1).padStart(2)}. ${bold(entry.displayName)}  ${entry.totalPoints} pts  ` +
-        dim(`${entry.totalPagesRead} pages / ${entry.sprintsParticipated} sprints`),
+        dim(
+          `${entry.totalPagesRead} pages / ${entry.sprintsParticipated} sprints`,
+        ),
     );
   });
 }
@@ -352,7 +368,9 @@ async function cmdLeaderboard() {
 
 /** Ivy posts a read, Wren and Juno request to join it. */
 async function cmdScenarioRequests() {
-  console.log(bold("\nScenario: two readers request to join one announcement\n"));
+  console.log(
+    bold("\nScenario: two readers request to join one announcement\n"),
+  );
 
   const { announcement } = await post("/api/buddy/announcements", {
     ownerUserId: BOTS.ivy.userId,
@@ -372,7 +390,9 @@ async function cmdScenarioRequests() {
       requesterDisplayName: reader.displayName,
     });
     const state = group.members.find((m) => m.userId === reader.userId)?.status;
-    ok(`${reader.displayName} requested → ${state}   group ${shortId(group._id)}`);
+    ok(
+      `${reader.displayName} requested → ${state}   group ${shortId(group._id)}`,
+    );
   }
 
   console.log(
@@ -420,7 +440,10 @@ async function cmdScenarioSprint(minutes = 5) {
   });
   ok(`Ivy started a ${minutes}m sprint  ${shortId(sprint._id)}`);
 
-  for (const [name, page] of [["wren", 40], ["juno", 120]]) {
+  for (const [name, page] of [
+    ["wren", 40],
+    ["juno", 120],
+  ]) {
     const reader = BOTS[name];
     await post(`/api/sprint/${sprint._id}/join`, {
       userId: reader.userId,
@@ -475,7 +498,9 @@ const COMMANDS = {
 const HELP = `
 ${bold("sim.mjs")} — multiplayer test harness for Lumey
 
-${bold("Readers")}   ${Object.entries(BOTS).map(([k, v]) => `${k} (${v.displayName})`).join(", ")}
+${bold("Readers")}   ${Object.entries(BOTS)
+  .map(([k, v]) => `${k} (${v.displayName})`)
+  .join(", ")}
 ${bold("API")}       ${API}
 ${bold("You")}       ${ME}
 

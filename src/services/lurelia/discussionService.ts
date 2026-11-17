@@ -112,10 +112,14 @@ export async function createComment(
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
     body: input.body.trim(),
-    mentionedUserIDs: await resolveMentionedUserIDs(input.sharedEventID, input.body, [
-      { userID: input.authorUserID, displayName: input.authorDisplayName },
-    ]),
-    attachmentIDs: Array.isArray(input.attachmentIDs) ? input.attachmentIDs : [],
+    mentionedUserIDs: await resolveMentionedUserIDs(
+      input.sharedEventID,
+      input.body,
+      [{ userID: input.authorUserID, displayName: input.authorDisplayName }],
+    ),
+    attachmentIDs: Array.isArray(input.attachmentIDs)
+      ? input.attachmentIDs
+      : [],
   });
 
   await SharedEvent.findByIdAndUpdate(input.sharedEventID, {
@@ -210,14 +214,15 @@ export async function listComments(
     .sort({ isPinned: -1, createdAt: -1 })
     .lean();
   const commentIDs = comments.map((comment: any) => String(comment._id));
-  const replies = commentIDs.length > 0
-    ? await CommentReply.find({
-        parentCommentID: { $in: commentIDs },
-        deletedAt: null,
-      })
-        .sort({ createdAt: 1 })
-        .lean()
-    : [];
+  const replies =
+    commentIDs.length > 0
+      ? await CommentReply.find({
+          parentCommentID: { $in: commentIDs },
+          deletedAt: null,
+        })
+          .sort({ createdAt: 1 })
+          .lean()
+      : [];
 
   let likedCommentIDs = new Set<string>();
   let likedReplyIDs = new Set<string>();
@@ -226,10 +231,7 @@ export async function listComments(
     const reactions = await CommentReaction.find({
       userID: viewerUserID,
       kind: "like",
-      $or: [
-        { commentID: { $in: commentIDs } },
-        { replyID: { $in: replyIDs } },
-      ],
+      $or: [{ commentID: { $in: commentIDs } }, { replyID: { $in: replyIDs } }],
     }).lean<any[]>();
 
     likedCommentIDs = new Set(
@@ -247,7 +249,9 @@ export async function listComments(
   return comments.map((comment: any) => ({
     ...attachLikedState(comment, likedCommentIDs),
     replies: buildReplyTree(
-      replies.filter((reply: any) => String(reply.parentCommentID) === String(comment._id)),
+      replies.filter(
+        (reply: any) => String(reply.parentCommentID) === String(comment._id),
+      ),
       likedReplyIDs,
     ),
   }));
@@ -264,9 +268,11 @@ export async function editComment(
   if (comment.authorUserID !== actorUserID) throw new Error("FORBIDDEN");
   if (!body?.trim()) throw new Error("body_REQUIRED");
   comment.body = body.trim();
-  comment.mentionedUserIDs = await resolveMentionedUserIDs(comment.sharedEventID, body, [
-    { userID: comment.authorUserID, displayName: comment.authorDisplayName },
-  ]);
+  comment.mentionedUserIDs = await resolveMentionedUserIDs(
+    comment.sharedEventID,
+    body,
+    [{ userID: comment.authorUserID, displayName: comment.authorDisplayName }],
+  );
   comment.editedAt = new Date();
   await comment.save();
   io.to(eventRoomName(comment.sharedEventID)).emit(
@@ -342,11 +348,14 @@ export async function createReply(io: SocketIOServer, input: CreateReplyInput) {
 
   let parentReplyID = "";
   if (input.parentReplyID) {
-    const parentReply = await CommentReply.findById(input.parentReplyID).lean<any>();
-    if (!parentReply || parentReply.deletedAt) throw new Error("PARENT_REPLY_NOT_FOUND");
+    const parentReply = await CommentReply.findById(
+      input.parentReplyID,
+    ).lean<any>();
+    if (!parentReply || parentReply.deletedAt)
+      throw new Error("PARENT_REPLY_NOT_FOUND");
     if (
-      String(parentReply.parentCommentID) !== String(parent._id)
-      || parentReply.sharedEventID !== parent.sharedEventID
+      String(parentReply.parentCommentID) !== String(parent._id) ||
+      parentReply.sharedEventID !== parent.sharedEventID
     ) {
       throw new Error("PARENT_REPLY_MISMATCH");
     }
@@ -362,9 +371,11 @@ export async function createReply(io: SocketIOServer, input: CreateReplyInput) {
     authorDisplayName: input.authorDisplayName,
     authorAvatarURL: input.authorAvatarURL ?? "",
     body: input.body.trim(),
-    mentionedUserIDs: await resolveMentionedUserIDs(parent.sharedEventID, input.body, [
-      { userID: input.authorUserID, displayName: input.authorDisplayName },
-    ]),
+    mentionedUserIDs: await resolveMentionedUserIDs(
+      parent.sharedEventID,
+      input.body,
+      [{ userID: input.authorUserID, displayName: input.authorDisplayName }],
+    ),
   });
   parent.replyCount = (parent.replyCount || 0) + 1;
   await parent.save();
@@ -387,7 +398,10 @@ export async function createReply(io: SocketIOServer, input: CreateReplyInput) {
   return reply.toObject();
 }
 
-export async function listReplies(parentCommentID: string, viewerUserID?: string) {
+export async function listReplies(
+  parentCommentID: string,
+  viewerUserID?: string,
+) {
   const replies = await CommentReply.find({ parentCommentID, deletedAt: null })
     .sort({ createdAt: 1 })
     .lean();
@@ -400,7 +414,9 @@ export async function listReplies(parentCommentID: string, viewerUserID?: string
       kind: "like",
       replyID: { $in: replyIDs },
     }).lean<any[]>();
-    likedReplyIDs = new Set(reactions.map((reaction) => String(reaction.replyID)));
+    likedReplyIDs = new Set(
+      reactions.map((reaction) => String(reaction.replyID)),
+    );
   }
 
   return buildReplyTree(replies, likedReplyIDs);
@@ -417,9 +433,11 @@ export async function editReply(
   if (reply.authorUserID !== actorUserID) throw new Error("FORBIDDEN");
   if (!body?.trim()) throw new Error("body_REQUIRED");
   reply.body = body.trim();
-  reply.mentionedUserIDs = await resolveMentionedUserIDs(reply.sharedEventID, body, [
-    { userID: reply.authorUserID, displayName: reply.authorDisplayName },
-  ]);
+  reply.mentionedUserIDs = await resolveMentionedUserIDs(
+    reply.sharedEventID,
+    body,
+    [{ userID: reply.authorUserID, displayName: reply.authorDisplayName }],
+  );
   reply.editedAt = new Date();
   await reply.save();
   io.to(eventRoomName(reply.sharedEventID)).emit(
@@ -441,7 +459,10 @@ export async function deleteReply(
     throw new Error("FORBIDDEN");
   }
   const deletedAt = new Date();
-  const replyIDs = await collectReplyThreadIDs(reply.parentCommentID, String(reply._id));
+  const replyIDs = await collectReplyThreadIDs(
+    reply.parentCommentID,
+    String(reply._id),
+  );
   await CommentReply.updateMany(
     { _id: { $in: replyIDs } },
     { $set: { deletedAt } },

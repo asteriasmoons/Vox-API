@@ -55,7 +55,11 @@ export function scoreRegularRelevance(
   const group = rec.candidateGroup ?? "adjacent";
   let score = REGULAR_CANDIDATE_GROUP_BONUS[group];
 
-  const recTags = uniqueStrings([...rec.genres, ...rec.subjects, ...rec.matchTags]);
+  const recTags = uniqueStrings([
+    ...rec.genres,
+    ...rec.subjects,
+    ...rec.matchTags,
+  ]);
   score += overlapCount(profile.primaryGenres, recTags) * 12;
   score += overlapCount(profile.subgenres, recTags) * 10;
   score += overlapCount(profile.tropes, recTags) * 6;

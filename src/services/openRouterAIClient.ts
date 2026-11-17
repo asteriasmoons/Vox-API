@@ -59,7 +59,9 @@ function safeErrorMessage(body: ProviderErrorBody | null): string {
   if (typeof error === "string") return error;
   if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
-    return cleanText(record.message) || cleanText(record.type) || "OpenRouter error";
+    return (
+      cleanText(record.message) || cleanText(record.type) || "OpenRouter error"
+    );
   }
 
   return cleanText(body?.message) || "OpenRouter error";
@@ -166,7 +168,10 @@ export async function openRouterChatJson(
         );
         lastError = error;
 
-        if (!isTransientStatus(response.status) || attempt >= OPENROUTER_RETRIES) {
+        if (
+          !isTransientStatus(response.status) ||
+          attempt >= OPENROUTER_RETRIES
+        ) {
           throw error;
         }
 
@@ -175,17 +180,22 @@ export async function openRouterChatJson(
       }
 
       const content = cleanText(
-        contentToText((json as OpenRouterChatResponse | null)?.choices?.[0]?.message?.content),
+        contentToText(
+          (json as OpenRouterChatResponse | null)?.choices?.[0]?.message
+            ?.content,
+        ),
       );
       console.log("[recommendations:openrouter] success", {
         stage: options.stage,
         model,
         attempt: attempt + 1,
         durationMs,
-        promptTokens: (json as OpenRouterChatResponse | null)?.usage?.prompt_tokens,
-        completionTokens:
-          (json as OpenRouterChatResponse | null)?.usage?.completion_tokens,
-        totalTokens: (json as OpenRouterChatResponse | null)?.usage?.total_tokens,
+        promptTokens: (json as OpenRouterChatResponse | null)?.usage
+          ?.prompt_tokens,
+        completionTokens: (json as OpenRouterChatResponse | null)?.usage
+          ?.completion_tokens,
+        totalTokens: (json as OpenRouterChatResponse | null)?.usage
+          ?.total_tokens,
       });
 
       return content;
@@ -201,7 +211,9 @@ export async function openRouterChatJson(
           durationMs,
           timeoutMs: OPENROUTER_TIMEOUT_MS,
         });
-      } else if (!(error instanceof Error && error.message.startsWith("OpenRouter "))) {
+      } else if (
+        !(error instanceof Error && error.message.startsWith("OpenRouter "))
+      ) {
         console.error("[recommendations:openrouter] failure", {
           stage: options.stage,
           model,
@@ -212,7 +224,8 @@ export async function openRouterChatJson(
       }
 
       if (attempt >= OPENROUTER_RETRIES) break;
-      if (error instanceof Error && error.message.startsWith("OpenRouter ")) break;
+      if (error instanceof Error && error.message.startsWith("OpenRouter "))
+        break;
       await sleep(Math.min(750 * 2 ** attempt, 8_000));
     } finally {
       clearTimeout(timeout);

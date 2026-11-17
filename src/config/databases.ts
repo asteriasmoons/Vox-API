@@ -5,7 +5,7 @@ import mongoose, { Connection } from "mongoose";
 export const authDB: Connection = mongoose.connection.useDb("auth");
 export const lumeyDB: Connection = mongoose.connection.useDb("lumey");
 export const lunixiaDB: Connection = mongoose.connection.useDb("lunixia");
-export const voxTermDB: Connection = mongoose.connection.useDb("voxTerm")
+export const voxTermDB: Connection = mongoose.connection.useDb("voxTerm");
 export const asteriumDB: Connection = mongoose.connection.useDb("asterium");
 export const octaviaDB: Connection = mongoose.connection.useDb("octavia");
 export const lureliaDB: Connection = mongoose.connection.useDb("lurelia");

@@ -12,7 +12,10 @@ import {
   snapshot,
   regenerate,
 } from "../services/celestial/celestialGenerationWorker";
-import { CelestialEventPayload, computeFingerprint } from "../services/celestial/celestialTypes";
+import {
+  CelestialEventPayload,
+  computeFingerprint,
+} from "../services/celestial/celestialTypes";
 
 const router = Router();
 
@@ -36,13 +39,16 @@ function parseEvent(body: unknown): CelestialEventPayload | null {
 // Open an event: return existing interpretation or create/resume a job (only here).
 router.post("/open", async (req, res) => {
   const event = parseEvent(req.body);
-  if (!event) return res.status(400).json({ error: "A valid event payload is required" });
+  if (!event)
+    return res.status(400).json({ error: "A valid event payload is required" });
   try {
     const snap = await ensureGeneration(event);
     return res.json(snap);
   } catch (error) {
     console.error("[celestial] open error:", error);
-    return res.status(500).json({ error: "Failed to prepare celestial interpretation" });
+    return res
+      .status(500)
+      .json({ error: "Failed to prepare celestial interpretation" });
   }
 });
 
@@ -54,7 +60,10 @@ router.get("/:fingerprint", async (req, res) => {
   }
   try {
     const snap = await snapshot(fingerprint);
-    if (!snap) return res.status(404).json({ error: "No interpretation for this event yet" });
+    if (!snap)
+      return res
+        .status(404)
+        .json({ error: "No interpretation for this event yet" });
     return res.json(snap);
   } catch (error) {
     console.error("[celestial] snapshot error:", error);
@@ -69,20 +78,24 @@ router.post("/regenerate", async (req, res) => {
     return res.status(403).json({ error: "Not authorized to regenerate" });
   }
   const event = parseEvent(req.body);
-  if (!event) return res.status(400).json({ error: "A valid event payload is required" });
+  if (!event)
+    return res.status(400).json({ error: "A valid event payload is required" });
   try {
     const snap = await regenerate(event);
     return res.json(snap);
   } catch (error) {
     console.error("[celestial] regenerate error:", error);
-    return res.status(500).json({ error: "Failed to regenerate interpretation" });
+    return res
+      .status(500)
+      .json({ error: "Failed to regenerate interpretation" });
   }
 });
 
 // Convenience: compute the canonical fingerprint for a payload (client cross-check).
 router.post("/fingerprint", (req, res) => {
   const event = parseEvent(req.body);
-  if (!event) return res.status(400).json({ error: "A valid event payload is required" });
+  if (!event)
+    return res.status(400).json({ error: "A valid event payload is required" });
   return res.json({ fingerprint: computeFingerprint(event) });
 });
 

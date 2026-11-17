@@ -6,7 +6,7 @@ const FREE_TIER_HEADROOM_TOKENS = 700;
 const MAX_OUTPUT_TOKENS = 1_600;
 const MIN_OUTPUT_TOKENS = 700;
 const MAX_ENTRY_TEXT_CHARS = 18_000;
-     
+
 export interface JournalAnalysisResult {
   themes: string[];
   mood: string;
@@ -59,18 +59,16 @@ function truncateForFreeTier(value: string): string {
   return `${value.slice(0, MAX_ENTRY_TEXT_CHARS).trim()}\n\n[Entry shortened to fit Groq Free Plan token limits.]`;
 }
 
-function freeTierOutputBudget(systemPrompt: string, userPrompt: string): number {
+function freeTierOutputBudget(
+  systemPrompt: string,
+  userPrompt: string,
+): number {
   const estimatedPromptTokens =
     estimatedTokenCount(systemPrompt) + estimatedTokenCount(userPrompt) + 250;
   const available =
-    FREE_TIER_TPM_LIMIT -
-    FREE_TIER_HEADROOM_TOKENS -
-    estimatedPromptTokens;
+    FREE_TIER_TPM_LIMIT - FREE_TIER_HEADROOM_TOKENS - estimatedPromptTokens;
 
-  return Math.max(
-    MIN_OUTPUT_TOKENS,
-    Math.min(MAX_OUTPUT_TOKENS, available),
-  );
+  return Math.max(MIN_OUTPUT_TOKENS, Math.min(MAX_OUTPUT_TOKENS, available));
 }
 
 function assertRequiredReflectionStructure(reflection: string): void {
@@ -147,7 +145,6 @@ function buildEntryText(entries: EntryInput[]): string {
   return truncateForFreeTier(entryText);
 }
 
-
 function buildCompactSystemPrompt(): string {
   return `Write a grounded daily journal reflection for Lunixia. You are not a therapist, evaluator, problem-finder, or advice giver.
 
@@ -171,8 +168,7 @@ function buildCompactUserPrompt(entryText: string): string {
 
 function isProviderJsonValidationFailure(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    error.message.includes("Failed to validate JSON")
+    error instanceof Error && error.message.includes("Failed to validate JSON")
   );
 }
 

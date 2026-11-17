@@ -9,11 +9,15 @@ const router = Router();
  */
 router.post("/", async (req, res) => {
   try {
-    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
-    const author = typeof req.body?.author === "string" ? req.body.author.trim() : "";
+    const title =
+      typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const author =
+      typeof req.body?.author === "string" ? req.body.author.trim() : "";
 
     if (!title || !author) {
-      return res.status(400).json({ error: "Book title and author are required" });
+      return res
+        .status(400)
+        .json({ error: "Book title and author are required" });
     }
 
     const stringArray = (value: unknown): string[] | undefined =>

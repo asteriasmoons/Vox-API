@@ -1,6 +1,9 @@
 // src/services/buddy-service.ts
 
-import { BuddyAnnouncement, IBuddyAnnouncement } from "../models/BuddyAnnouncement";
+import {
+  BuddyAnnouncement,
+  IBuddyAnnouncement,
+} from "../models/BuddyAnnouncement";
 import { BuddyGroup, IBuddyGroup } from "../models/BuddyGroup";
 import { BuddyMessage, IBuddyMessage } from "../models/BuddyMessage";
 import { Server as SocketIOServer } from "socket.io";
@@ -123,10 +126,14 @@ function serializeAnnouncement(
 async function loadGroupsForAnnouncements(
   announcements: IBuddyAnnouncement[],
 ): Promise<Map<string, IBuddyGroup>> {
-  const announcementIds = announcements.map((announcement) => String(announcement._id));
+  const announcementIds = announcements.map((announcement) =>
+    String(announcement._id),
+  );
   if (announcementIds.length === 0) return new Map();
 
-  const groups = await BuddyGroup.find({ announcementId: { $in: announcementIds } });
+  const groups = await BuddyGroup.find({
+    announcementId: { $in: announcementIds },
+  });
   return new Map(groups.map((group) => [group.announcementId, group]));
 }
 
@@ -152,7 +159,8 @@ async function assertOwnedAnnouncement(
 ): Promise<IBuddyAnnouncement> {
   const announcement = await BuddyAnnouncement.findById(input.announcementId);
   if (!announcement) throw new Error("ANNOUNCEMENT_NOT_FOUND");
-  if (announcement.ownerUserId !== input.ownerUserId) throw new Error("FORBIDDEN");
+  if (announcement.ownerUserId !== input.ownerUserId)
+    throw new Error("FORBIDDEN");
   return announcement;
 }
 
@@ -216,11 +224,14 @@ export async function getBoard(
       const isMyGroup =
         !!currentUserId &&
         group.members.some(
-          (member) => member.userId === currentUserId && member.status === "joined",
+          (member) =>
+            member.userId === currentUserId && member.status === "joined",
         );
       if (isMyGroup) return true;
 
-      return activeJoinedCount(group) < (group.maxMembers ?? announcement.maxMembers);
+      return (
+        activeJoinedCount(group) < (group.maxMembers ?? announcement.maxMembers)
+      );
     })
     .map((announcement) =>
       serializeAnnouncement(
@@ -252,7 +263,10 @@ export async function removeAnnouncement(
   announcementId: string,
   ownerUserId: string,
 ): Promise<void> {
-  const announcement = await assertOwnedAnnouncement({ announcementId, ownerUserId });
+  const announcement = await assertOwnedAnnouncement({
+    announcementId,
+    ownerUserId,
+  });
   announcement.isActive = false;
   announcement.status = "deleted";
   announcement.deletedAt = new Date();
@@ -309,9 +323,11 @@ export async function updateAnnouncement(
 ): Promise<IBuddyAnnouncement> {
   const announcement = await BuddyAnnouncement.findById(input.announcementId);
   if (!announcement) throw new Error("ANNOUNCEMENT_NOT_FOUND");
-  if (announcement.ownerUserId !== input.ownerUserId) throw new Error("FORBIDDEN");
+  if (announcement.ownerUserId !== input.ownerUserId)
+    throw new Error("FORBIDDEN");
 
-  if (typeof input.message !== "undefined") announcement.message = input.message;
+  if (typeof input.message !== "undefined")
+    announcement.message = input.message;
   if (typeof input.currentChapter !== "undefined")
     announcement.currentChapter = input.currentChapter;
   if (typeof input.currentPage !== "undefined")
@@ -335,7 +351,9 @@ export async function requestToJoin(
   if (!announcement || !isAnnouncementOpen(announcement))
     throw new Error("ANNOUNCEMENT_NOT_FOUND");
 
-  let group = await BuddyGroup.findOne({ announcementId: input.announcementId });
+  let group = await BuddyGroup.findOne({
+    announcementId: input.announcementId,
+  });
 
   if (!group) {
     group = await BuddyGroup.create({
@@ -367,7 +385,9 @@ export async function requestToJoin(
   // up with its author sitting at "left" — from a group that predates the
   // owner-leaves-closes-announcement rule, or from an admin reopen — and the
   // next requester would walk into an apparently empty group without approval.
-  const owner = group.members.find((m) => m.userId === announcement.ownerUserId);
+  const owner = group.members.find(
+    (m) => m.userId === announcement.ownerUserId,
+  );
   let restoredOwner = false;
   if (!owner) {
     group.members.push({
@@ -384,7 +404,9 @@ export async function requestToJoin(
     restoredOwner = true;
   }
 
-  const existing = group.members.find((m) => m.userId === input.requesterUserId);
+  const existing = group.members.find(
+    (m) => m.userId === input.requesterUserId,
+  );
   let joinedMember: typeof existing | null = null;
   if (existing) {
     if (existing.status === "joined") {
@@ -418,7 +440,7 @@ export async function requestToJoin(
     const newMember = {
       userId: input.requesterUserId,
       displayName: input.requesterDisplayName,
-      status: joinsImmediately ? "joined" as const : "pending" as const,
+      status: joinsImmediately ? ("joined" as const) : ("pending" as const),
       joinedAt: joinsImmediately ? new Date() : null,
       requestedAt: new Date(),
     };
@@ -468,7 +490,8 @@ export async function respondToJoinRequest(
   if (!actor || actor.status !== "joined") throw new Error("FORBIDDEN");
 
   const target = group.members.find((m) => m.userId === input.targetUserId);
-  if (!target || target.status !== "pending") throw new Error("REQUEST_NOT_FOUND");
+  if (!target || target.status !== "pending")
+    throw new Error("REQUEST_NOT_FOUND");
 
   if (input.accept) {
     const announcement = await BuddyAnnouncement.findById(group.announcementId);

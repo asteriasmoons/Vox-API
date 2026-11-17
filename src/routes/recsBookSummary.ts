@@ -23,24 +23,48 @@ router.post("/", async (req, res) => {
     const title = String(req.body?.title || "").trim();
     const author = String(req.body?.author || "").trim();
     if (!title || !author) {
-      return res.status(400).json({ error: "Book title and author are required" });
+      return res
+        .status(400)
+        .json({ error: "Book title and author are required" });
     }
 
     const input: RegularRecSummaryInput = {
       title,
       author,
-      ...(typeof req.body?.summary === "string" ? { summary: req.body.summary } : {}),
-      ...(typeof req.body?.rationale === "string" ? { rationale: req.body.rationale } : {}),
-      ...(typeof req.body?.strategyLabel === "string" ? { strategyLabel: req.body.strategyLabel } : {}),
-      ...(stringArray(req.body?.genres) ? { genres: stringArray(req.body?.genres) } : {}),
-      ...(stringArray(req.body?.moods) ? { moods: stringArray(req.body?.moods) } : {}),
-      ...(stringArray(req.body?.tropes) ? { tropes: stringArray(req.body?.tropes) } : {}),
-      ...(stringArray(req.body?.themes) ? { themes: stringArray(req.body?.themes) } : {}),
-      ...(stringArray(req.body?.tags) ? { tags: stringArray(req.body?.tags) } : {}),
+      ...(typeof req.body?.summary === "string"
+        ? { summary: req.body.summary }
+        : {}),
+      ...(typeof req.body?.rationale === "string"
+        ? { rationale: req.body.rationale }
+        : {}),
+      ...(typeof req.body?.strategyLabel === "string"
+        ? { strategyLabel: req.body.strategyLabel }
+        : {}),
+      ...(stringArray(req.body?.genres)
+        ? { genres: stringArray(req.body?.genres) }
+        : {}),
+      ...(stringArray(req.body?.moods)
+        ? { moods: stringArray(req.body?.moods) }
+        : {}),
+      ...(stringArray(req.body?.tropes)
+        ? { tropes: stringArray(req.body?.tropes) }
+        : {}),
+      ...(stringArray(req.body?.themes)
+        ? { themes: stringArray(req.body?.themes) }
+        : {}),
+      ...(stringArray(req.body?.tags)
+        ? { tags: stringArray(req.body?.tags) }
+        : {}),
       ...(typeof req.body?.pages === "number" ? { pages: req.body.pages } : {}),
-      ...(typeof req.body?.releaseYear === "number" ? { releaseYear: req.body.releaseYear } : {}),
-      ...(typeof req.body?.rating === "number" ? { rating: req.body.rating } : {}),
-      ...(typeof req.body?.source === "string" ? { source: req.body.source } : {}),
+      ...(typeof req.body?.releaseYear === "number"
+        ? { releaseYear: req.body.releaseYear }
+        : {}),
+      ...(typeof req.body?.rating === "number"
+        ? { rating: req.body.rating }
+        : {}),
+      ...(typeof req.body?.source === "string"
+        ? { source: req.body.source }
+        : {}),
     };
 
     const result = await buildRegularRecBookSummary(input);

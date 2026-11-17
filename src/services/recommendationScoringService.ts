@@ -47,7 +47,11 @@ function words(value: string): string[] {
     .filter((word) => word.length > 2);
 }
 
-function overlapScore(source: string[], target: string[], weight: number): number {
+function overlapScore(
+  source: string[],
+  target: string[],
+  weight: number,
+): number {
   if (source.length === 0 || target.length === 0) return 0;
 
   const sourceNorm = source.map(normalizeText).filter(Boolean);
@@ -105,10 +109,12 @@ function metadataScore(candidate: VerifiedRecommendationCandidate): number {
     score += 18;
   }
   if (candidate.coverUrl) score += 14;
-  if (candidate.tags.length > 0) score += Math.min(candidate.tags.length * 2, 14);
+  if (candidate.tags.length > 0)
+    score += Math.min(candidate.tags.length * 2, 14);
   if (candidate.pages !== undefined) score += 7;
   if (candidate.releaseYear !== undefined) score += 7;
-  if (candidate.rating !== undefined) score += Math.min(candidate.rating * 3, 15);
+  if (candidate.rating !== undefined)
+    score += Math.min(candidate.rating * 3, 15);
   if (candidate.genres.length > 0) score += 4;
   if (candidate.moods.length > 0) score += 3;
   if (candidate.tropes.length > 0) score += 3;
@@ -128,7 +134,10 @@ function matchScore(
 
   score += Math.min(candidate.catalogScore * 0.25, 20);
   score -= Math.min(candidate.candidateRank * 0.35, 14);
-  score += publicationPreferenceScore(candidate.strategy, candidate.releaseYear);
+  score += publicationPreferenceScore(
+    candidate.strategy,
+    candidate.releaseYear,
+  );
 
   const candidateTags = candidate.tags;
   score += overlapScore(candidateTags, [profile.genre], 5);
@@ -167,7 +176,9 @@ function seriesKey(candidate: VerifiedRecommendationCandidate): string {
   const colonPrefix = candidate.title.includes(":")
     ? candidate.title.split(":")[0]
     : "";
-  const seriesHint = normalizeText(parenthetical || colonPrefix || normalizedTitle);
+  const seriesHint = normalizeText(
+    parenthetical || colonPrefix || normalizedTitle,
+  );
 
   return `${normalizeText(candidate.author)}|${seriesHint}`;
 }
@@ -182,7 +193,9 @@ function toResult(score: IntermediateScore): RecommendationResult {
     finalScore: Math.round(score.finalScore),
     ...(score.coverUrl ? { coverUrl: score.coverUrl } : {}),
     ...(score.pages !== undefined ? { pages: score.pages } : {}),
-    ...(score.releaseYear !== undefined ? { releaseYear: score.releaseYear } : {}),
+    ...(score.releaseYear !== undefined
+      ? { releaseYear: score.releaseYear }
+      : {}),
     ...(score.rating !== undefined ? { rating: score.rating } : {}),
     ...(score.tags.length > 0 ? { tags: score.tags } : {}),
     ...(score.genres.length > 0 ? { genres: score.genres } : {}),

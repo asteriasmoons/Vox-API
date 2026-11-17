@@ -11,7 +11,8 @@ const router = Router();
 function dateKeyRange(period: string) {
   const now = new Date();
   const fmt = (d: Date) => chicagoDateKey(d);
-  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const startOfDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
   if (period === "week") {
     const dayOfWeek = now.getDay();
@@ -100,7 +101,9 @@ function aggregateCategory(
   const coOccurrences = new Map<string, Map<string, number>>();
 
   for (const doc of currentDocs) {
-    const raw: string[] = (doc[field] || []).map((t: string) => normalizeTag(t));
+    const raw: string[] = (doc[field] || []).map((t: string) =>
+      normalizeTag(t),
+    );
     const unique = deduplicateTags(raw);
 
     for (const theme of unique) {
@@ -133,7 +136,9 @@ function aggregateCategory(
 
   const previousCounts = new Map<string, number>();
   for (const doc of previousDocs) {
-    const raw: string[] = (doc[field] || []).map((t: string) => normalizeTag(t));
+    const raw: string[] = (doc[field] || []).map((t: string) =>
+      normalizeTag(t),
+    );
     const unique = deduplicateTags(raw);
     for (const theme of unique) {
       const key = tagKey(theme);
@@ -145,7 +150,9 @@ function aggregateCategory(
   const lastSeen = new Map<string, string>();
 
   for (const doc of allDocs) {
-    const raw: string[] = (doc[field] || []).map((t: string) => normalizeTag(t));
+    const raw: string[] = (doc[field] || []).map((t: string) =>
+      normalizeTag(t),
+    );
     const unique = deduplicateTags(raw);
     for (const theme of unique) {
       const key = tagKey(theme);
@@ -182,8 +189,7 @@ function aggregateCategory(
         totalCurrentEntries > 0
           ? Math.round((data.count / totalCurrentEntries) * 100)
           : 0,
-      firstUsedDate:
-        firstSeen.get(key) || data.dates[0] || "",
+      firstUsedDate: firstSeen.get(key) || data.dates[0] || "",
       lastUsedDate:
         lastSeen.get(key) || data.dates[data.dates.length - 1] || "",
       currentPeriodCount: data.count,
@@ -276,7 +282,9 @@ router.get("/", async (req, res) => {
     // Split themes by trend
     const themesEmerging = themeInsights.filter((i) => i.trend === "emerging");
     const themesNew = themeInsights.filter((i) => i.trend === "new");
-    const themesDeclining = themeInsights.filter((i) => i.trend === "declining");
+    const themesDeclining = themeInsights.filter(
+      (i) => i.trend === "declining",
+    );
 
     return res.json({
       period,
@@ -284,25 +292,19 @@ router.get("/", async (req, res) => {
       overview: {
         totalEntries: totalCurrentEntries,
         totalMindfulMinutes: totalMinutes,
-        uniqueThemes: new Set(
-          themeInsights.map((t) => tagKey(t.name)),
-        ).size,
+        uniqueThemes: new Set(themeInsights.map((t) => tagKey(t.name))).size,
         uniqueTags: new Set(tagInsights.map((t) => tagKey(t.name))).size,
       },
       // AI Themes — broad canonical categories
       themes: {
-        mostCommon: themeInsights
-          .filter((t) => t.entryCount > 0)
-          .slice(0, 6),
+        mostCommon: themeInsights.filter((t) => t.entryCount > 0).slice(0, 6),
         emerging: themesEmerging.slice(0, 3),
         new: themesNew.slice(0, 5),
         declining: themesDeclining.slice(0, 5),
       },
       // User Tags — specific labels
       tags: {
-        mostCommon: tagInsights
-          .filter((t) => t.entryCount > 0)
-          .slice(0, 6),
+        mostCommon: tagInsights.filter((t) => t.entryCount > 0).slice(0, 6),
       },
     });
   } catch (error) {
@@ -454,9 +456,7 @@ router.get("/:theme", async (req, res) => {
       entryCount: matchingDocs.length,
       totalEntries: totalDocs,
       percentage:
-        totalDocs > 0
-          ? Math.round((matchingDocs.length / totalDocs) * 100)
-          : 0,
+        totalDocs > 0 ? Math.round((matchingDocs.length / totalDocs) * 100) : 0,
       mindfulMinutes: totalMinutes,
       firstUsedDate: matchingDocs[0]?.dateKey ?? "",
       lastUsedDate: matchingDocs[matchingDocs.length - 1]?.dateKey ?? "",

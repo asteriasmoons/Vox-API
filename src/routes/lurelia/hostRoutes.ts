@@ -41,34 +41,40 @@ export function createHostRouter(io: SocketIOServer): Router {
 
   // ── Attendee moderation ──────────────────────────────────────────────
 
-  router.post("/:id/attendees/:userID/ban", async (req: Request, res: Response) => {
-    try {
-      const attendee = await banAttendee(
-        io,
-        String(req.params.id),
-        String(req.body.actorUserID),
-        String(req.params.userID),
-        String(req.body.reason || ""),
-      );
-      return res.json({ success: true, attendee });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/:id/attendees/:userID/ban",
+    async (req: Request, res: Response) => {
+      try {
+        const attendee = await banAttendee(
+          io,
+          String(req.params.id),
+          String(req.body.actorUserID),
+          String(req.params.userID),
+          String(req.body.reason || ""),
+        );
+        return res.json({ success: true, attendee });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
-  router.post("/:id/attendees/:userID/unban", async (req: Request, res: Response) => {
-    try {
-      const attendee = await unbanAttendee(
-        io,
-        String(req.params.id),
-        String(req.body.actorUserID),
-        String(req.params.userID),
-      );
-      return res.json({ success: true, attendee });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/:id/attendees/:userID/unban",
+    async (req: Request, res: Response) => {
+      try {
+        const attendee = await unbanAttendee(
+          io,
+          String(req.params.id),
+          String(req.body.actorUserID),
+          String(req.params.userID),
+        );
+        return res.json({ success: true, attendee });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
   router.get("/:id/attendees/banned", async (req: Request, res: Response) => {
     try {
@@ -79,33 +85,39 @@ export function createHostRouter(io: SocketIOServer): Router {
     }
   });
 
-  router.post("/:id/attendees/:userID/promote", async (req: Request, res: Response) => {
-    try {
-      const attendee = await promoteToCoHost(
-        io,
-        String(req.params.id),
-        String(req.body.actorUserID),
-        String(req.params.userID),
-      );
-      return res.json({ success: true, attendee });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/:id/attendees/:userID/promote",
+    async (req: Request, res: Response) => {
+      try {
+        const attendee = await promoteToCoHost(
+          io,
+          String(req.params.id),
+          String(req.body.actorUserID),
+          String(req.params.userID),
+        );
+        return res.json({ success: true, attendee });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
-  router.post("/:id/attendees/:userID/demote", async (req: Request, res: Response) => {
-    try {
-      const attendee = await demoteCoHost(
-        io,
-        String(req.params.id),
-        String(req.body.actorUserID),
-        String(req.params.userID),
-      );
-      return res.json({ success: true, attendee });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/:id/attendees/:userID/demote",
+    async (req: Request, res: Response) => {
+      try {
+        const attendee = await demoteCoHost(
+          io,
+          String(req.params.id),
+          String(req.body.actorUserID),
+          String(req.params.userID),
+        );
+        return res.json({ success: true, attendee });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
   // ── Event settings ───────────────────────────────────────────────────
 

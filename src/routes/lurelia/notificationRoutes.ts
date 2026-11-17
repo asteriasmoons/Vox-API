@@ -36,7 +36,11 @@ export function createNotificationRouter(_io: SocketIOServer): Router {
   router.post("/unsubscribe", async (req: Request, res: Response) => {
     try {
       const { sharedEventID, userID, deviceToken } = req.body;
-      const subscription = await unsubscribe(sharedEventID, userID, deviceToken);
+      const subscription = await unsubscribe(
+        sharedEventID,
+        userID,
+        deviceToken,
+      );
       return res.json({ success: true, subscription });
     } catch (error) {
       return handleError(res, error);
@@ -60,17 +64,14 @@ export function createNotificationRouter(_io: SocketIOServer): Router {
   });
 
   // GET /api/lurelia/notifications/subscriptions/:eventID
-  router.get(
-    "/subscriptions/:eventID",
-    async (req: Request, res: Response) => {
-      try {
-        const subscriptions = await listSubscriptions(String(req.params.eventID));
-        return res.json({ success: true, subscriptions });
-      } catch (error) {
-        return handleError(res, error);
-      }
-    },
-  );
+  router.get("/subscriptions/:eventID", async (req: Request, res: Response) => {
+    try {
+      const subscriptions = await listSubscriptions(String(req.params.eventID));
+      return res.json({ success: true, subscriptions });
+    } catch (error) {
+      return handleError(res, error);
+    }
+  });
 
   return router;
 }

@@ -7,7 +7,8 @@ export const REGULAR_GROQ_CHAT_COMPLETIONS_URL =
   "https://api.groq.com/openai/v1/chat/completions";
 export const REGULAR_GOOGLE_BOOKS_SEARCH_URL =
   "https://www.googleapis.com/books/v1/volumes";
-export const REGULAR_OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
+export const REGULAR_OPEN_LIBRARY_SEARCH_URL =
+  "https://openlibrary.org/search.json";
 
 export const REGULAR_GROQ_MODEL = process.env.GROQ_MODEL || "groq/compound";
 

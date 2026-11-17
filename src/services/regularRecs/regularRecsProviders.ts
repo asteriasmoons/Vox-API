@@ -11,7 +11,8 @@ import { REGULAR_GROQ_TIMEOUT_MS } from "./regularRecsConfig";
 import { cleanText, fetchWithRetry } from "./regularRecsUtils";
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
-const SECONDARY_GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions";
+const SECONDARY_GROQ_CHAT_URL =
+  "https://api.groq.com/openai/v1/chat/completions";
 
 export const REGULAR_OPENROUTER_MODEL =
   process.env.OPENROUTER_MODEL || "nvidia/nemotron-3-super-120b-a12b:free";
@@ -81,7 +82,9 @@ async function providerChatJson(
   if (!response.ok) {
     throw new Error(`${label} responded ${response.status}`);
   }
-  const json = (await response.json().catch(() => null)) as ProviderChatResponse | null;
+  const json = (await response
+    .json()
+    .catch(() => null)) as ProviderChatResponse | null;
   return cleanText(contentToText(json?.choices?.[0]?.message?.content));
 }
 
@@ -108,7 +111,8 @@ export async function regularSecondaryGroqChatJson(
 ): Promise<string> {
   return providerChatJson(
     SECONDARY_GROQ_CHAT_URL,
-    cleanText(process.env.GROQ_API_KEY_ALT) || cleanText(process.env.GROQ_API_KEY),
+    cleanText(process.env.GROQ_API_KEY_ALT) ||
+      cleanText(process.env.GROQ_API_KEY),
     options.model ?? REGULAR_SECONDARY_GROQ_MODEL,
     "Groq",
     systemPrompt,

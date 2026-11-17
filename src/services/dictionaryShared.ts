@@ -120,7 +120,10 @@ export function stripDictionaryMarkup(value: unknown): string {
     value
       .replace(/\{bc\}/g, ": ")
       .replace(/\{sx\|([^|}]+)(?:\|[^}]*)?\}/g, "$1")
-      .replace(/\{(?:it|b|sc|inf|sup)\}([^{}]*)\{\/(?:it|b|sc|inf|sup)\}/g, "$1")
+      .replace(
+        /\{(?:it|b|sc|inf|sup)\}([^{}]*)\{\/(?:it|b|sc|inf|sup)\}/g,
+        "$1",
+      )
       .replace(/\{[^{}]*\}/g, " "),
   ).replace(/^:\s*/, "");
 }
@@ -157,7 +160,10 @@ export async function fetchWithTimeout(
   options: { timeoutMs?: number; headers?: Record<string, string> } = {},
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    options.timeoutMs ?? 20_000,
+  );
   try {
     const init: RequestInit = {
       method: "GET",

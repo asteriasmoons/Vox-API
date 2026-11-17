@@ -23,8 +23,14 @@ const FINAL_RESPONSE_CACHE_VERSION = "generated-descriptions-v1";
 const seedBooks = new Map<string, CacheEntry<SeedBook | null>>();
 const requestIntents = new Map<string, CacheEntry<RecommendationIntent>>();
 const requestProfiles = new Map<string, CacheEntry<RecommendationProfile>>();
-const catalogLookups = new Map<string, CacheEntry<CatalogBookMetadata | null>>();
-const finalResponses = new Map<string, CacheEntry<RecommendationEngineResponse>>();
+const catalogLookups = new Map<
+  string,
+  CacheEntry<CatalogBookMetadata | null>
+>();
+const finalResponses = new Map<
+  string,
+  CacheEntry<RecommendationEngineResponse>
+>();
 const generatedDescriptions = new Map<string, CacheEntry<string>>();
 
 function now(): number {
@@ -70,29 +76,35 @@ export function normalizeBookKey(title: string, author = ""): string {
 export function makeRequestCacheKey(request: RecommendationRequest): string {
   const exclusions = [...(request.excludeBookKeys ?? [])].sort().join(",");
   const readerContext = request.readerContext
-      ? JSON.stringify({
-          libraryBookKeys: request.readerContext.libraryBookKeys?.slice().sort(),
-          finishedBookKeys: request.readerContext.finishedBookKeys?.slice().sort(),
-          ratings: request.readerContext.ratings
-            ?.slice()
-            .sort((a, b) =>
-              `${a.title}|${a.author ?? ""}`.localeCompare(
-                `${b.title}|${b.author ?? ""}`,
-              ),
+    ? JSON.stringify({
+        libraryBookKeys: request.readerContext.libraryBookKeys?.slice().sort(),
+        finishedBookKeys: request.readerContext.finishedBookKeys
+          ?.slice()
+          .sort(),
+        ratings: request.readerContext.ratings
+          ?.slice()
+          .sort((a, b) =>
+            `${a.title}|${a.author ?? ""}`.localeCompare(
+              `${b.title}|${b.author ?? ""}`,
             ),
-          readingSessions: request.readerContext.readingSessions
-            ?.slice()
-            .sort((a, b) => a.bookKey.localeCompare(b.bookKey)),
-          pagePreferences: request.readerContext.pagePreferences,
-          favoriteGenres: request.readerContext.favoriteGenres?.slice().sort(),
-          favoriteSubgenres: request.readerContext.favoriteSubgenres?.slice().sort(),
-          favoriteTropes: request.readerContext.favoriteTropes?.slice().sort(),
+          ),
+        readingSessions: request.readerContext.readingSessions
+          ?.slice()
+          .sort((a, b) => a.bookKey.localeCompare(b.bookKey)),
+        pagePreferences: request.readerContext.pagePreferences,
+        favoriteGenres: request.readerContext.favoriteGenres?.slice().sort(),
+        favoriteSubgenres: request.readerContext.favoriteSubgenres
+          ?.slice()
+          .sort(),
+        favoriteTropes: request.readerContext.favoriteTropes?.slice().sort(),
         favoriteMoods: request.readerContext.favoriteMoods?.slice().sort(),
         favoriteThemes: request.readerContext.favoriteThemes?.slice().sort(),
         favoriteAuthors: request.readerContext.favoriteAuthors?.slice().sort(),
         favoriteTags: request.readerContext.favoriteTags?.slice().sort(),
         recentBookKeys: request.readerContext.recentBookKeys?.slice().sort(),
-        dismissedBookKeys: request.readerContext.dismissedBookKeys?.slice().sort(),
+        dismissedBookKeys: request.readerContext.dismissedBookKeys
+          ?.slice()
+          .sort(),
         alreadyRecommendedBookKeys:
           request.readerContext.alreadyRecommendedBookKeys?.slice().sort(),
       })
@@ -115,7 +127,9 @@ export const recommendationCacheService = {
   getSeedBook(key: string): SeedBook | null | undefined {
     const cacheKey = normalizeCacheText(key);
     const cached = get(seedBooks, cacheKey);
-    return cached === null && seedBooks.has(cacheKey) ? null : cached ?? undefined;
+    return cached === null && seedBooks.has(cacheKey)
+      ? null
+      : (cached ?? undefined);
   },
 
   setSeedBook(key: string, value: SeedBook | null): void {
@@ -143,7 +157,7 @@ export const recommendationCacheService = {
     const cached = get(catalogLookups, cacheKey);
     return cached === null && catalogLookups.has(cacheKey)
       ? null
-      : cached ?? undefined;
+      : (cached ?? undefined);
   },
 
   setCatalogLookup(key: string, value: CatalogBookMetadata | null): void {

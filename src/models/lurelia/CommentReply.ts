@@ -34,8 +34,4 @@ commentReplySchema.pre("validate", function (next) {
 
 export const LureliaCommentReply =
   lureliaDB.models.LureliaCommentReply ||
-  lureliaDB.model(
-    "LureliaCommentReply",
-    commentReplySchema,
-    "commentreplies",
-  );
+  lureliaDB.model("LureliaCommentReply", commentReplySchema, "commentreplies");

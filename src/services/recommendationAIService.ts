@@ -207,7 +207,9 @@ function fallbackProfile(
       ? [
           {
             title: intent.entities.title,
-            ...(intent.entities.author ? { author: intent.entities.author } : {}),
+            ...(intent.entities.author
+              ? { author: intent.entities.author }
+              : {}),
           },
         ]
       : [],
@@ -226,7 +228,9 @@ function formatSeedContext(seedBook: SeedBook | null, query: string): string {
     seedBook.subjects.length > 0
       ? `Subjects and tags: ${seedBook.subjects.join(", ")}`
       : "",
-    seedBook.description ? `Description: ${seedBook.description.slice(0, 900)}` : "",
+    seedBook.description
+      ? `Description: ${seedBook.description.slice(0, 900)}`
+      : "",
     seedBook.releaseYear ? `Publication year: ${seedBook.releaseYear}` : "",
     seedBook.source ? `Catalog source: ${seedBook.source}` : "",
   ]
@@ -276,7 +280,10 @@ function formatReaderContext(request: RecommendationRequest): string {
     context.ratings?.length
       ? `Rated books: ${context.ratings
           .slice(0, 10)
-          .map((rating) => `${rating.title}${rating.author ? ` by ${rating.author}` : ""} (${rating.rating}/5)`)
+          .map(
+            (rating) =>
+              `${rating.title}${rating.author ? ` by ${rating.author}` : ""} (${rating.rating}/5)`,
+          )
           .join("; ")}`
       : "",
     context.pagePreferences
@@ -321,18 +328,17 @@ function compactTastePayload(input: {
   candidateCount: string;
 }) {
   const context = input.request.readerContext;
-  const highestRatedBooks =
-    context?.highestRatedBooks?.length
-      ? context.highestRatedBooks.slice(0, 15).map(compactBookSignal)
-      : (context?.ratings ?? [])
-          .filter((book) => book.rating >= 4)
-          .sort((a, b) => b.rating - a.rating)
-          .slice(0, 15)
-          .map((book) => ({
-            title: book.title,
-            ...(book.author ? { author: book.author } : {}),
-            rating: book.rating,
-          }));
+  const highestRatedBooks = context?.highestRatedBooks?.length
+    ? context.highestRatedBooks.slice(0, 15).map(compactBookSignal)
+    : (context?.ratings ?? [])
+        .filter((book) => book.rating >= 4)
+        .sort((a, b) => b.rating - a.rating)
+        .slice(0, 15)
+        .map((book) => ({
+          title: book.title,
+          ...(book.author ? { author: book.author } : {}),
+          rating: book.rating,
+        }));
   const lowestRatedBooks = (context?.ratings ?? [])
     .filter((book) => book.rating > 0 && book.rating <= 2.5)
     .sort((a, b) => a.rating - b.rating)
@@ -429,11 +435,7 @@ function formatCandidateHandoff(input: {
 }): string {
   return [
     "Compact AI candidate input:",
-    JSON.stringify(
-      compactTastePayload(input),
-      null,
-      2,
-    ),
+    JSON.stringify(compactTastePayload(input), null, 2),
     "",
     "Owned, finished, current, dismissed, and already recommended books are filtered by backend code after candidate generation. They are intentionally not included in this AI payload.",
   ].join("\n");
@@ -509,7 +511,7 @@ function candidateSchemaRetryInstruction(error: unknown): string {
     "Return one complete JSON object only.",
     "Do not use markdown, code fences, comments, explanations, or trailing prose.",
     "Do not truncate the JSON.",
-    "The top-level object must be exactly shaped like {\"strategy\":\"closest_match\",\"label\":\"Closest Match\",\"books\":[...]} with valid arrays.",
+    'The top-level object must be exactly shaped like {"strategy":"closest_match","label":"Closest Match","books":[...]} with valid arrays.',
     "Every book must include non-empty string title and author fields.",
   ].join("\n");
 }
@@ -574,12 +576,15 @@ function parseProviderCandidateGroup(input: {
   for (const [source, sourceRaw] of repairSources) {
     try {
       const group = parseCandidateGroup(sourceRaw, input.strategy, input.label);
-      console.log("[recommendations:engine] using provider candidates without final Groq parse", {
-        stage: input.stage,
-        strategy: input.strategy,
-        source,
-        candidates: group.candidates.length,
-      });
+      console.log(
+        "[recommendations:engine] using provider candidates without final Groq parse",
+        {
+          stage: input.stage,
+          strategy: input.strategy,
+          source,
+          candidates: group.candidates.length,
+        },
+      );
       return group;
     } catch {
       // Try the next provider source.
@@ -695,17 +700,24 @@ async function finalizeCandidateGroupWithGroq(input: {
       stage: input.stage,
     });
     if (providerGroup) {
-      console.log("[recommendations:groq] final parse skipped for oversized prompt", {
-        stage: input.stage,
-        strategy: input.strategy,
-        promptChars: prompt.length,
-        maxPromptChars: FINAL_GROQ_PROMPT_MAX_CHARS,
-      });
+      console.log(
+        "[recommendations:groq] final parse skipped for oversized prompt",
+        {
+          stage: input.stage,
+          strategy: input.strategy,
+          promptChars: prompt.length,
+          maxPromptChars: FINAL_GROQ_PROMPT_MAX_CHARS,
+        },
+      );
       return providerGroup;
     }
   }
 
-  for (let attempt = 0; attempt <= GROQ_CANDIDATE_SCHEMA_RETRIES; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt <= GROQ_CANDIDATE_SCHEMA_RETRIES;
+    attempt += 1
+  ) {
     let raw: string;
     try {
       raw = await groqChatJson(
@@ -774,12 +786,16 @@ async function finalizeCandidateGroupWithGroq(input: {
   }
 
   // Instead of crashing the shelf, return an empty group so other strategies can still contribute.
-  console.error("[recommendations:groq] all final parse attempts exhausted, returning empty group", {
-    stage: input.stage,
-    strategy: input.strategy,
-    label: input.label,
-    message: lastError instanceof Error ? lastError.message : String(lastError),
-  });
+  console.error(
+    "[recommendations:groq] all final parse attempts exhausted, returning empty group",
+    {
+      stage: input.stage,
+      strategy: input.strategy,
+      label: input.label,
+      message:
+        lastError instanceof Error ? lastError.message : String(lastError),
+    },
+  );
   return {
     strategy: input.strategy,
     label: input.label,
@@ -802,11 +818,15 @@ async function finalizeCandidateGroupWithOpenRouterAndGroq(input: {
 }): Promise<CandidateGroup> {
   let openRouterRaw = "";
   try {
-    openRouterRaw = await openRouterChatJson(input.systemPrompt, input.userPrompt, {
-      stage: `${input.stage}:openrouter-final-candidates`,
-      temperature: input.temperature,
-      maxTokens: input.maxTokens,
-    });
+    openRouterRaw = await openRouterChatJson(
+      input.systemPrompt,
+      input.userPrompt,
+      {
+        stage: `${input.stage}:openrouter-final-candidates`,
+        temperature: input.temperature,
+        maxTokens: input.maxTokens,
+      },
+    );
   } catch (error) {
     if (!shouldContinueAfterOpenRouterError(error)) throw error;
 
@@ -879,14 +899,15 @@ async function generateCandidateGroupWithProviders(input: {
   const finalJsonJob = input.isFullShelfRequest
     ? "Use the Groq profile, constraints, exclusions, and Mistral draft to return final valid JSON for the full opened shelf."
     : "Use the Groq profile, constraints, exclusions, and Mistral draft to return the final valid JSON.";
-  const finalMistralDraft = compactCandidateSourceForRepair({
-    raw: mistralDraft,
-    strategy: input.strategy,
-    label: input.label,
-    maxBooks: input.isFullShelfRequest
-      ? FINAL_SHELF_REPAIR_BOOKS
-      : numericCandidateLimit(input.booksPerStrategy, 10),
-  }) || mistralDraft.slice(0, FINAL_GROQ_SOURCE_MAX_CHARS);
+  const finalMistralDraft =
+    compactCandidateSourceForRepair({
+      raw: mistralDraft,
+      strategy: input.strategy,
+      label: input.label,
+      maxBooks: input.isFullShelfRequest
+        ? FINAL_SHELF_REPAIR_BOOKS
+        : numericCandidateLimit(input.booksPerStrategy, 10),
+    }) || mistralDraft.slice(0, FINAL_GROQ_SOURCE_MAX_CHARS);
   const finalPrompt = [
     input.userPrompt,
     "",
@@ -1133,9 +1154,9 @@ async function groqChatJson(
         signal: controller.signal,
       });
 
-      const json = (await response.json().catch(() => null)) as
-        | GroqChatResponse
-        | null;
+      const json = (await response
+        .json()
+        .catch(() => null)) as GroqChatResponse | null;
       const durationMs = Date.now() - startedAt;
 
       if (!response.ok) {
@@ -1176,12 +1197,15 @@ async function groqChatJson(
         break;
       }
       if (status === 413 && options.stage === "request-analysis") {
-        console.warn("[recommendations:groq] retrying small prompt after payload error", {
-          stage: options.stage,
-          promptChars: userPrompt.length,
-          maxSmallPromptChars: GROQ_SMALL_PROMPT_413_RETRY_CHARS,
-          attempt: attempt + 1,
-        });
+        console.warn(
+          "[recommendations:groq] retrying small prompt after payload error",
+          {
+            stage: options.stage,
+            promptChars: userPrompt.length,
+            maxSmallPromptChars: GROQ_SMALL_PROMPT_413_RETRY_CHARS,
+            attempt: attempt + 1,
+          },
+        );
       }
       await sleep(groqRateLimitDelayMs(error, attempt) ?? 350 * (attempt + 1));
     } finally {
@@ -1201,7 +1225,10 @@ async function groqChatJson(
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-function parseIntent(raw: string, request: RecommendationRequest): RecommendationIntent {
+function parseIntent(
+  raw: string,
+  request: RecommendationRequest,
+): RecommendationIntent {
   const parsed = parseJsonObject(raw);
   if (!parsed || typeof parsed !== "object") return fallbackIntent(request);
 
@@ -1212,7 +1239,7 @@ function parseIntent(raw: string, request: RecommendationRequest): Recommendatio
       : {};
   const requestType = isRecommendationRequestType(record.requestType)
     ? record.requestType
-    : request.requestTypeHint ?? "natural_language";
+    : (request.requestTypeHint ?? "natural_language");
 
   const intent: RecommendationIntent = {
     requestType,
@@ -1308,7 +1335,9 @@ export function parseCandidateGroups(raw: string): CandidateGroup[] {
     const candidates = parseCandidateBooks(record.books, strategy, label);
 
     if (candidates.length === 0) {
-      throw new Error("Candidate final JSON stage returned no usable candidates");
+      throw new Error(
+        "Candidate final JSON stage returned no usable candidates",
+      );
     }
 
     return [
@@ -1421,7 +1450,9 @@ function parseCandidateBooks(
 }
 
 export const recommendationAIService = {
-  async analyzeRequest(request: RecommendationRequest): Promise<RecommendationIntent> {
+  async analyzeRequest(
+    request: RecommendationRequest,
+  ): Promise<RecommendationIntent> {
     const isHomeSurface = request.surface === "home";
     const cacheKey = `intent:${request.groqModel ?? ""}:${request.surface}:${request.requestTypeHint ?? ""}:${request.query}`;
     const cached = recommendationCacheService.getRequestIntent(cacheKey);
@@ -1467,7 +1498,9 @@ Return JSON only with this exact shape:
         {
           stage: "request-analysis",
           temperature: ANALYZE_TEMPERATURE,
-          maxTokens: isHomeSurface ? HOME_ANALYZE_MAX_TOKENS : ANALYZE_MAX_TOKENS,
+          maxTokens: isHomeSurface
+            ? HOME_ANALYZE_MAX_TOKENS
+            : ANALYZE_MAX_TOKENS,
           ...(request.groqModel ? { model: request.groqModel } : {}),
         },
       );
@@ -1478,12 +1511,15 @@ Return JSON only with this exact shape:
       }
 
       const intent = fallbackIntent(request);
-      console.warn("[recommendations:groq] request analysis unavailable; using request hint for shelf", {
-        surface: request.surface,
-        requestType: intent.requestType,
-        status,
-        queryLength: request.query.length,
-      });
+      console.warn(
+        "[recommendations:groq] request analysis unavailable; using request hint for shelf",
+        {
+          surface: request.surface,
+          requestType: intent.requestType,
+          status,
+          queryLength: request.query.length,
+        },
+      );
       recommendationCacheService.setRequestIntent(cacheKey, intent);
       return intent;
     }
@@ -1544,23 +1580,33 @@ Do not recommend books in this step.`;
         {
           stage: "seed-profile-analysis",
           temperature: PROFILE_TEMPERATURE,
-          maxTokens: isHomeSurface ? HOME_PROFILE_MAX_TOKENS : PROFILE_MAX_TOKENS,
-          ...(input.request.groqModel ? { model: input.request.groqModel } : {}),
+          maxTokens: isHomeSurface
+            ? HOME_PROFILE_MAX_TOKENS
+            : PROFILE_MAX_TOKENS,
+          ...(input.request.groqModel
+            ? { model: input.request.groqModel }
+            : {}),
         },
       );
     } catch (error) {
       const status = groqErrorStatus(error);
-      if (input.request.surface !== "shelf" || (status !== 413 && status !== 429)) {
+      if (
+        input.request.surface !== "shelf" ||
+        (status !== 413 && status !== 429)
+      ) {
         throw error;
       }
 
       const profile = fallbackProfile(input.request, input.intent);
-      console.warn("[recommendations:groq] seed profile unavailable; using intent profile for shelf", {
-        surface: input.request.surface,
-        requestType: input.intent.requestType,
-        status,
-        queryLength: input.request.query.length,
-      });
+      console.warn(
+        "[recommendations:groq] seed profile unavailable; using intent profile for shelf",
+        {
+          surface: input.request.surface,
+          requestType: input.intent.requestType,
+          status,
+          queryLength: input.request.query.length,
+        },
+      );
       recommendationCacheService.setRequestProfile(cacheKey, profile);
       return profile;
     }

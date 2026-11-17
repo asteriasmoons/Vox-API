@@ -29,10 +29,7 @@ export async function searchAttendees(sharedEventID: string, query: string) {
   if (q.length > 0) {
     filter.displayName = { $regex: q, $options: "i" };
   }
-  return await Attendee.find(filter)
-    .sort({ displayName: 1 })
-    .limit(200)
-    .lean();
+  return await Attendee.find(filter).sort({ displayName: 1 }).limit(200).lean();
 }
 
 export async function joinEvent(
@@ -134,7 +131,8 @@ export async function leaveEvent(
 ) {
   const attendee = await Attendee.findOne({ sharedEventID, userID });
   if (!attendee || attendee.removedAt) throw new Error("NOT_A_MEMBER");
-  if (attendee.role === "host") throw new Error("HOST_CANNOT_LEAVE_TRANSFER_FIRST");
+  if (attendee.role === "host")
+    throw new Error("HOST_CANNOT_LEAVE_TRANSFER_FIRST");
   attendee.removedAt = new Date();
   await attendee.save();
   await SharedEvent.findByIdAndUpdate(sharedEventID, {

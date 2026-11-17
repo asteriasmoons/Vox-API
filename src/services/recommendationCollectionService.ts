@@ -147,7 +147,11 @@ function cleanStringArray(values: unknown, limit = 12): string[] {
   return cleaned;
 }
 
-function clampCount(value: number | undefined, fallback: number, max: number): number {
+function clampCount(
+  value: number | undefined,
+  fallback: number,
+  max: number,
+): number {
   if (value === undefined || !Number.isFinite(value)) return fallback;
   return Math.max(1, Math.min(Math.floor(value), max));
 }
@@ -162,7 +166,9 @@ function joinSignals(values: string[], fallback: string): string {
 }
 
 function favoriteBookSignal(context: CollectionReaderContext): string {
-  const favorite = context.highestRatedBooks?.find((book) => cleanText(book.title));
+  const favorite = context.highestRatedBooks?.find((book) =>
+    cleanText(book.title),
+  );
   if (!favorite) return "";
 
   const author = cleanText(favorite.author);
@@ -211,7 +217,8 @@ function personalityTitle(context: CollectionReaderContext): string {
   const maxPages = context.pagePreferences?.preferredMaxPages;
   const booksFinished = context.readingStats?.booksFinishedThisYear ?? 0;
 
-  if (maxPages !== undefined && maxPages <= 280) return "Quick Reads You'll Love";
+  if (maxPages !== undefined && maxPages <= 280)
+    return "Quick Reads You'll Love";
   if (mood && genre) return `Your ${mood} ${genre} Picks`;
   if (genre && booksFinished >= 6) return `For Your ${genre} Era`;
   if (mood) return `${mood} Books For You`;
@@ -245,7 +252,8 @@ function collectionBlueprints(
     collectionIdeas.push({
       id: "because-you-loved",
       title: `Because You Loved ${favoriteBook.split(" by ")[0]}`,
-      description: "Books with a similar blend of story texture, mood, and reader appeal.",
+      description:
+        "Books with a similar blend of story texture, mood, and reader appeal.",
       reason: `Anchored on ${favoriteBook} and weighted by the reader's highest-rated books.`,
       query: `Books like ${favoriteBook}. Prioritize these reader taste signals: ${signalText}.`,
       requestTypeHint: "specific_book",
@@ -255,8 +263,10 @@ function collectionBlueprints(
   collectionIdeas.push({
     id: "similar-to-your-favorites",
     title: "Similar To Your Favorites",
-    description: "Books matching the themes, genres, and patterns of books already loved.",
-    reason: "Built from favorite books, ratings, authors, genres, moods, tropes, and tags.",
+    description:
+      "Books matching the themes, genres, and patterns of books already loved.",
+    reason:
+      "Built from favorite books, ratings, authors, genres, moods, tropes, and tags.",
     query: `Recommend books similar to this reader's favorites. Favorite genres: ${joinSignals(favoriteGenres, "unknown")}. Favorite moods: ${joinSignals(favoriteMoods, "unknown")}. Favorite tropes: ${joinSignals(favoriteTropes, "unknown")}. Favorite tags: ${joinSignals(favoriteTags, "unknown")}. Favorite authors: ${joinSignals(favoriteAuthors, "unknown")}.`,
     requestTypeHint: topGenre ? "genre" : "natural_language",
   });
@@ -265,7 +275,8 @@ function collectionBlueprints(
     collectionIdeas.push({
       id: "new-releases-for-you",
       title: `New ${topGenre} Releases`,
-      description: "Recent books filtered through the parts of your library you rate highest.",
+      description:
+        "Recent books filtered through the parts of your library you rate highest.",
       reason: `Uses ${topGenre} as the main lane, then narrows by the reader's moods, tropes, and authors.`,
       query: `Recent ${topGenre} releases for a reader who likes ${signalText}.`,
       requestTypeHint: "genre",
@@ -275,7 +286,8 @@ function collectionBlueprints(
   collectionIdeas.push({
     id: "hidden-gems",
     title: "Hidden Gems You Might Like",
-    description: "Less obvious picks with strong metadata overlap and solid reader fit.",
+    description:
+      "Less obvious picks with strong metadata overlap and solid reader fit.",
     reason: "Prioritizes matching signals over mainstream popularity.",
     query: `Hidden gem books for a reader who likes ${signalText}. Avoid only obvious mainstream picks.`,
     requestTypeHint: "natural_language",
@@ -284,8 +296,10 @@ function collectionBlueprints(
   collectionIdeas.push({
     id: "continue-your-journey",
     title: "Continue Your Reading Journey",
-    description: "Books that match your current pace, goals, and ongoing reading habits.",
-    reason: "Uses current reads, recent sessions, page preferences, reading goals, and progress patterns.",
+    description:
+      "Books that match your current pace, goals, and ongoing reading habits.",
+    reason:
+      "Uses current reads, recent sessions, page preferences, reading goals, and progress patterns.",
     query: `Books to continue this reader's current reading journey. Current reading keys: ${joinSignals(context.currentlyReadingBookKeys ?? [], "none")}. Goals and taste signals: ${signalText}.`,
     requestTypeHint: "natural_language",
   });
@@ -293,8 +307,10 @@ function collectionBlueprints(
   collectionIdeas.push({
     id: "reading-personality",
     title: personalityTitle(context),
-    description: "A shelf shaped by your reading speed, stats, favorite labels, and long-term habits.",
-    reason: "Uses reading statistics and durable preference signals rather than a single search.",
+    description:
+      "A shelf shaped by your reading speed, stats, favorite labels, and long-term habits.",
+    reason:
+      "Uses reading statistics and durable preference signals rather than a single search.",
     query: `Personalized books based on this reader's reading personality: ${signalText}. Stats: ${JSON.stringify(context.readingStats ?? {})}.`,
     requestTypeHint: "natural_language",
   });
@@ -303,7 +319,8 @@ function collectionBlueprints(
     collectionIdeas.push({
       id: "similar-authors",
       title: "Similar Authors",
-      description: "Authors with a compatible audience, tone, and story promise.",
+      description:
+        "Authors with a compatible audience, tone, and story promise.",
       reason: `Starts from ${favoriteAuthors.join(", ")} and expands to adjacent authors.`,
       query: `Authors and books similar to ${favoriteAuthors.join(", ")} for a reader who likes ${signalText}.`,
       requestTypeHint: "author",
@@ -469,208 +486,224 @@ export function createRecommendationCollectionBuilder(
   return async function buildRecommendationCollections(
     input: BuildRecommendationCollectionsInput,
   ): Promise<RecommendationCollectionsResponse> {
-  const startedAt = Date.now();
-  const context: CollectionReaderContext = input.readerContext ?? {};
-  const groqModel = recommendationCollectionGroqModel();
-  const desiredCollections = clampCount(
-    input.desiredCollections,
-    DEFAULT_COLLECTION_COUNT,
-    MAX_COLLECTION_COUNT,
-  );
-  const booksPerCollection = clampCount(
-    input.booksPerCollection,
-    DEFAULT_BOOKS_PER_COLLECTION,
-    MAX_BOOKS_PER_COLLECTION,
-  );
-  const baseExcluded = cleanStringArray(
-    [
-      ...(input.excludeBookKeys ?? []),
-      ...(context.libraryBookKeys ?? []),
-      ...(context.dismissedBookKeys ?? []),
-      ...(context.alreadyRecommendedBookKeys ?? []),
-    ],
-    500,
-  );
-  const returnedBookKeys = new Set<string>();
-  const blueprints = collectionBlueprints(context, desiredCollections);
+    const startedAt = Date.now();
+    const context: CollectionReaderContext = input.readerContext ?? {};
+    const groqModel = recommendationCollectionGroqModel();
+    const desiredCollections = clampCount(
+      input.desiredCollections,
+      DEFAULT_COLLECTION_COUNT,
+      MAX_COLLECTION_COUNT,
+    );
+    const booksPerCollection = clampCount(
+      input.booksPerCollection,
+      DEFAULT_BOOKS_PER_COLLECTION,
+      MAX_BOOKS_PER_COLLECTION,
+    );
+    const baseExcluded = cleanStringArray(
+      [
+        ...(input.excludeBookKeys ?? []),
+        ...(context.libraryBookKeys ?? []),
+        ...(context.dismissedBookKeys ?? []),
+        ...(context.alreadyRecommendedBookKeys ?? []),
+      ],
+      500,
+    );
+    const returnedBookKeys = new Set<string>();
+    const blueprints = collectionBlueprints(context, desiredCollections);
 
-  if (!input.collectionId) {
-    console.log("[recommendations:collections] metadata response", {
-      collectionCount: blueprints.length,
+    if (!input.collectionId) {
+      console.log("[recommendations:collections] metadata response", {
+        collectionCount: blueprints.length,
+        booksPerCollection,
+        desiredCollections,
+        hasReaderContext: Boolean(input.readerContext),
+        excludedCount: baseExcluded.length,
+        durationMs: Date.now() - startedAt,
+      });
+      return {
+        collections: blueprints.map((blueprint) => ({
+          id: blueprint.id,
+          title: blueprint.title,
+          description: blueprint.description,
+          reason: blueprint.reason,
+          bookCount: booksPerCollection,
+          books: [],
+          previewCoverUrls: [],
+        })),
+      };
+    }
+
+    const blueprint = blueprints.find((item) => item.id === input.collectionId);
+    if (!blueprint) {
+      console.warn("[recommendations:collections] unknown collection", {
+        collectionId: input.collectionId,
+        availableCollectionIds: blueprints.map((item) => item.id),
+        durationMs: Date.now() - startedAt,
+      });
+      return {
+        collections: [],
+      };
+    }
+
+    console.log("[recommendations:collections] shelf start", {
+      collectionId: blueprint.id,
+      title: blueprint.title,
+      requestTypeHint: blueprint.requestTypeHint,
       booksPerCollection,
       desiredCollections,
       hasReaderContext: Boolean(input.readerContext),
       excludedCount: baseExcluded.length,
-      durationMs: Date.now() - startedAt,
     });
-    return {
-      collections: blueprints.map((blueprint) => ({
-        id: blueprint.id,
-        title: blueprint.title,
-        description: blueprint.description,
-        reason: blueprint.reason,
-        bookCount: booksPerCollection,
-        books: [],
-        previewCoverUrls: [],
-      })),
-    };
-  }
 
-  const blueprint = blueprints.find((item) => item.id === input.collectionId);
-  if (!blueprint) {
-    console.warn("[recommendations:collections] unknown collection", {
-      collectionId: input.collectionId,
-      availableCollectionIds: blueprints.map((item) => item.id),
-      durationMs: Date.now() - startedAt,
-    });
-    return {
-      collections: [],
-    };
-  }
+    if (input.userId) {
+      const shelfKey = blueprint.id;
+      const cached = await deps.shelfService.lookup(input.userId, shelfKey);
 
-  console.log("[recommendations:collections] shelf start", {
-    collectionId: blueprint.id,
-    title: blueprint.title,
-    requestTypeHint: blueprint.requestTypeHint,
-    booksPerCollection,
-    desiredCollections,
-    hasReaderContext: Boolean(input.readerContext),
-    excludedCount: baseExcluded.length,
-  });
-
-  if (input.userId) {
-    const shelfKey = blueprint.id;
-    const cached = await deps.shelfService.lookup(input.userId, shelfKey);
-
-    if (cached.state === "fresh") {
-      console.log("[recommendations:collections] shelf cache hit", {
-        userId: input.userId,
-        shelfKey,
-        durationMs: Date.now() - startedAt,
-      });
-      return cached.response;
-    }
-
-    if (cached.state === "expired") {
-      const refreshClaim = await deps.shelfService.claimRefresh({
-        userId: input.userId,
-        shelfKey,
-        shelfTitle: blueprint.title,
-      });
-      if (refreshClaim) {
-        void refreshSavedShelf({
-          userId: input.userId,
-          shelfKey,
-          generationId: refreshClaim.generationId,
-          blueprint,
-          context,
-          groqModel,
-          baseExcluded,
-          booksPerCollection,
-          deps,
-        });
-      }
-      console.log("[recommendations:collections] shelf stale cache served", {
-        userId: input.userId,
-        shelfKey,
-        refreshStarted: Boolean(refreshClaim),
-        durationMs: Date.now() - startedAt,
-      });
-      return cached.response;
-    }
-
-    if (cached.state === "generating") {
-      const completed = await deps.shelfService.waitForCompletedShelf(
-        input.userId,
-        shelfKey,
-      );
-      if (completed) {
-        console.log("[recommendations:collections] shelf waited for existing generation", {
+      if (cached.state === "fresh") {
+        console.log("[recommendations:collections] shelf cache hit", {
           userId: input.userId,
           shelfKey,
           durationMs: Date.now() - startedAt,
         });
-        return completed;
+        return cached.response;
+      }
+
+      if (cached.state === "expired") {
+        const refreshClaim = await deps.shelfService.claimRefresh({
+          userId: input.userId,
+          shelfKey,
+          shelfTitle: blueprint.title,
+        });
+        if (refreshClaim) {
+          void refreshSavedShelf({
+            userId: input.userId,
+            shelfKey,
+            generationId: refreshClaim.generationId,
+            blueprint,
+            context,
+            groqModel,
+            baseExcluded,
+            booksPerCollection,
+            deps,
+          });
+        }
+        console.log("[recommendations:collections] shelf stale cache served", {
+          userId: input.userId,
+          shelfKey,
+          refreshStarted: Boolean(refreshClaim),
+          durationMs: Date.now() - startedAt,
+        });
+        return cached.response;
+      }
+
+      if (cached.state === "generating") {
+        const completed = await deps.shelfService.waitForCompletedShelf(
+          input.userId,
+          shelfKey,
+        );
+        if (completed) {
+          console.log(
+            "[recommendations:collections] shelf waited for existing generation",
+            {
+              userId: input.userId,
+              shelfKey,
+              durationMs: Date.now() - startedAt,
+            },
+          );
+          return completed;
+        }
+      }
+
+      const claim = await deps.shelfService.claimGeneration({
+        userId: input.userId,
+        shelfKey,
+        shelfTitle: blueprint.title,
+      });
+
+      if (!claim) {
+        const completed = await deps.shelfService.waitForCompletedShelf(
+          input.userId,
+          shelfKey,
+        );
+        if (completed) return completed;
+
+        console.warn(
+          "[recommendations:collections] shelf generation already running",
+          {
+            userId: input.userId,
+            shelfKey,
+            durationMs: Date.now() - startedAt,
+          },
+        );
+        return { collections: [] };
+      }
+
+      // Cross-shelf dedup: seed returnedBookKeys with books already on other shelves
+      try {
+        const otherKeys = await deps.shelfService.getOtherShelfBookKeys(
+          input.userId,
+          shelfKey,
+        );
+        for (const key of otherKeys) returnedBookKeys.add(key);
+      } catch (e) {
+        console.warn(
+          "[recommendations:collections] cross-shelf dedup lookup failed, continuing",
+          {
+            userId: input.userId,
+            shelfKey,
+            message: e instanceof Error ? e.message : String(e),
+          },
+        );
+      }
+
+      try {
+        const generated = await generateShelfResponse({
+          blueprint,
+          context,
+          groqModel,
+          baseExcluded,
+          returnedBookKeys,
+          booksPerCollection,
+          buildRecommendationsFn: deps.buildRecommendations,
+          startedAt,
+        });
+        await deps.shelfService.completeGeneration({
+          userId: input.userId,
+          shelfKey,
+          generationId: claim.generationId,
+          response: generated,
+        });
+        return generated;
+      } catch (error) {
+        await deps.shelfService.failGeneration({
+          userId: input.userId,
+          shelfKey,
+          generationId: claim.generationId,
+          error,
+        });
+        throw error;
       }
     }
 
-    const claim = await deps.shelfService.claimGeneration({
-      userId: input.userId,
-      shelfKey,
-      shelfTitle: blueprint.title,
+    console.warn(
+      "[recommendations:collections] shelf cache skipped without userId",
+      {
+        collectionId: blueprint.id,
+      },
+    );
+
+    return generateShelfResponse({
+      blueprint,
+      context,
+      groqModel,
+      baseExcluded,
+      returnedBookKeys,
+      booksPerCollection,
+      buildRecommendationsFn: deps.buildRecommendations,
+      startedAt,
     });
-
-    if (!claim) {
-      const completed = await deps.shelfService.waitForCompletedShelf(
-        input.userId,
-        shelfKey,
-      );
-      if (completed) return completed;
-
-      console.warn("[recommendations:collections] shelf generation already running", {
-        userId: input.userId,
-        shelfKey,
-        durationMs: Date.now() - startedAt,
-      });
-      return { collections: [] };
-    }
-
-    // Cross-shelf dedup: seed returnedBookKeys with books already on other shelves
-    try {
-      const otherKeys = await deps.shelfService.getOtherShelfBookKeys(input.userId, shelfKey);
-      for (const key of otherKeys) returnedBookKeys.add(key);
-    } catch (e) {
-      console.warn("[recommendations:collections] cross-shelf dedup lookup failed, continuing", {
-        userId: input.userId,
-        shelfKey,
-        message: e instanceof Error ? e.message : String(e),
-      });
-    }
-
-    try {
-      const generated = await generateShelfResponse({
-        blueprint,
-        context,
-        groqModel,
-        baseExcluded,
-        returnedBookKeys,
-        booksPerCollection,
-        buildRecommendationsFn: deps.buildRecommendations,
-        startedAt,
-      });
-      await deps.shelfService.completeGeneration({
-        userId: input.userId,
-        shelfKey,
-        generationId: claim.generationId,
-        response: generated,
-      });
-      return generated;
-    } catch (error) {
-      await deps.shelfService.failGeneration({
-        userId: input.userId,
-        shelfKey,
-        generationId: claim.generationId,
-        error,
-      });
-      throw error;
-    }
-  }
-
-  console.warn("[recommendations:collections] shelf cache skipped without userId", {
-    collectionId: blueprint.id,
-  });
-
-  return generateShelfResponse({
-    blueprint,
-    context,
-    groqModel,
-    baseExcluded,
-    returnedBookKeys,
-    booksPerCollection,
-    buildRecommendationsFn: deps.buildRecommendations,
-    startedAt,
-  });
   };
 }
 
-export const buildRecommendationCollections = createRecommendationCollectionBuilder();
+export const buildRecommendationCollections =
+  createRecommendationCollectionBuilder();

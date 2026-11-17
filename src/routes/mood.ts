@@ -64,11 +64,16 @@ router.post("/stats/context", async (req: Request, res: Response) => {
     }
 
     const requestBody: MoodStatsContextRequest = {
-      userId: typeof body.userId === "string" && body.userId.trim() ? body.userId.trim() : "anonymous",
+      userId:
+        typeof body.userId === "string" && body.userId.trim()
+          ? body.userId.trim()
+          : "anonymous",
       date: body.date,
       moodSummary: body.moodSummary,
       phoneBehavior: body.phoneBehavior,
-      recentSnapshots: Array.isArray(body.recentSnapshots) ? body.recentSnapshots : [],
+      recentSnapshots: Array.isArray(body.recentSnapshots)
+        ? body.recentSnapshots
+        : [],
     };
 
     const context = await generateMoodStatsContext(requestBody);
@@ -91,7 +96,9 @@ function isValidMoodSummary(value: unknown): value is MoodStatsSummaryInput {
   );
 }
 
-function isValidPhoneBehavior(value: unknown): value is MoodStatsPhoneBehaviorInput {
+function isValidPhoneBehavior(
+  value: unknown,
+): value is MoodStatsPhoneBehaviorInput {
   const behavior = value as MoodStatsPhoneBehaviorInput;
   return (
     typeof behavior === "object" &&
@@ -108,7 +115,19 @@ function isValidPhoneBehavior(value: unknown): value is MoodStatsPhoneBehaviorIn
 // Analyze a mood log via AI and save the result
 router.post("/analyze", async (req: Request, res: Response) => {
   try {
-    const { userId, moodEntryId, emotions, activities, sleepHours, exerciseMinutes, steps, meditationMinutes, waterOz, note, timestamp } = req.body;
+    const {
+      userId,
+      moodEntryId,
+      emotions,
+      activities,
+      sleepHours,
+      exerciseMinutes,
+      steps,
+      meditationMinutes,
+      waterOz,
+      note,
+      timestamp,
+    } = req.body;
 
     if (!userId || !moodEntryId) {
       res.status(400).json({ error: "userId and moodEntryId are required" });

@@ -29,7 +29,9 @@ function handleError(res: Response, error: unknown) {
 }
 
 function isDebugEnabled(): boolean {
-  return String(process.env.LURELIA_DEBUG_ENABLED || "").toLowerCase() === "true";
+  return (
+    String(process.env.LURELIA_DEBUG_ENABLED || "").toLowerCase() === "true"
+  );
 }
 
 const SIM_USER_ID = "u-sim-friend-1";

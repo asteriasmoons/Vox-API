@@ -1,4 +1,5 @@
-const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_CHAT_COMPLETIONS_URL =
+  "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_GROQ_ROUTINE_DETAILS_MODEL = "groq/compound";
 const GROQ_COMPOUND_MAX_TOKENS = 8192;
 const GROQ_TIMEOUT_MS = 45_000;
@@ -74,13 +75,13 @@ function cleanOptionalTriggerType(value: unknown): string | null {
 function cleanTextArray(value: unknown, max: number): string[] {
   if (!Array.isArray(value)) return [];
 
-  return value
-    .map(cleanText)
-    .filter(Boolean)
-    .slice(0, max);
+  return value.map(cleanText).filter(Boolean).slice(0, max);
 }
 
-function cleanObstacleArray(value: unknown, max: number): RoutineTaskDetailsObstacle[] {
+function cleanObstacleArray(
+  value: unknown,
+  max: number,
+): RoutineTaskDetailsObstacle[] {
   if (!Array.isArray(value)) return [];
 
   return value
@@ -133,7 +134,9 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function sanitizeResult(parsed: ParsedRoutineTaskDetails): RoutineTaskDetailsResult {
+function sanitizeResult(
+  parsed: ParsedRoutineTaskDetails,
+): RoutineTaskDetailsResult {
   const result: RoutineTaskDetailsResult = {
     title: cleanText(parsed.title),
     description: cleanText(parsed.description),
@@ -286,8 +289,9 @@ JSON format:
     );
   }
 
-  const raw = contentToText((json as GroqResponse | null)?.choices?.[0]?.message?.content)
-    .trim();
+  const raw = contentToText(
+    (json as GroqResponse | null)?.choices?.[0]?.message?.content,
+  ).trim();
 
   let parsed: ParsedRoutineTaskDetails;
 

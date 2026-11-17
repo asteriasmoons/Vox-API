@@ -60,7 +60,9 @@ function safeErrorMessage(body: ProviderErrorBody | null): string {
   if (typeof error === "string") return error;
   if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
-    return cleanText(record.message) || cleanText(record.type) || "Cerebras error";
+    return (
+      cleanText(record.message) || cleanText(record.type) || "Cerebras error"
+    );
   }
 
   return cleanText(body?.message) || "Cerebras error";
@@ -169,7 +171,10 @@ async function cerebrasChat(
         );
         lastError = error;
 
-        if (!isTransientStatus(response.status) || attempt >= CEREBRAS_RETRIES) {
+        if (
+          !isTransientStatus(response.status) ||
+          attempt >= CEREBRAS_RETRIES
+        ) {
           throw error;
         }
 
@@ -178,16 +183,19 @@ async function cerebrasChat(
       }
 
       const content = cleanText(
-        contentToText((json as CerebrasChatResponse | null)?.choices?.[0]?.message?.content),
+        contentToText(
+          (json as CerebrasChatResponse | null)?.choices?.[0]?.message?.content,
+        ),
       );
       console.log("[dotti:cerebras] success", {
         stage: options.stage,
         model,
         attempt: attempt + 1,
         durationMs,
-        promptTokens: (json as CerebrasChatResponse | null)?.usage?.prompt_tokens,
-        completionTokens:
-          (json as CerebrasChatResponse | null)?.usage?.completion_tokens,
+        promptTokens: (json as CerebrasChatResponse | null)?.usage
+          ?.prompt_tokens,
+        completionTokens: (json as CerebrasChatResponse | null)?.usage
+          ?.completion_tokens,
         totalTokens: (json as CerebrasChatResponse | null)?.usage?.total_tokens,
       });
 
@@ -204,7 +212,9 @@ async function cerebrasChat(
           durationMs,
           timeoutMs: CEREBRAS_TIMEOUT_MS,
         });
-      } else if (!(error instanceof Error && error.message.startsWith("Cerebras "))) {
+      } else if (
+        !(error instanceof Error && error.message.startsWith("Cerebras "))
+      ) {
         console.error("[dotti:cerebras] failure", {
           stage: options.stage,
           model,
@@ -215,7 +225,8 @@ async function cerebrasChat(
       }
 
       if (attempt >= CEREBRAS_RETRIES) break;
-      if (error instanceof Error && error.message.startsWith("Cerebras ")) break;
+      if (error instanceof Error && error.message.startsWith("Cerebras "))
+        break;
       await sleep(Math.min(750 * 2 ** attempt, 8_000));
     } finally {
       clearTimeout(timeout);

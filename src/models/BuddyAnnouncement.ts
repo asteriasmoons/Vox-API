@@ -3,7 +3,11 @@
 import { lumeyDB } from "../config/databases";
 import mongoose, { Schema, Document, Model } from "mongoose";
 
-export type BuddyAnnouncementStatus = "open" | "closed" | "archived" | "deleted";
+export type BuddyAnnouncementStatus =
+  | "open"
+  | "closed"
+  | "archived"
+  | "deleted";
 
 export interface IBuddyAnnouncement extends Document {
   ownerUserId: string;

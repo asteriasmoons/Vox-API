@@ -10,12 +10,12 @@ const router = Router();
 router.post("/generate-review", async (req, res) => {
   try {
     const rawBook = isRecord(req.body?.book) ? req.body.book : {};
-    const rawInsights = Array.isArray(req.body?.insights) ? req.body.insights : [];
+    const rawInsights = Array.isArray(req.body?.insights)
+      ? req.body.insights
+      : [];
 
     const book = normalizeBook(rawBook);
-    const insights = rawInsights
-      .filter(isRecord)
-      .map(normalizeInsight);
+    const insights = rawInsights.filter(isRecord).map(normalizeInsight);
 
     const review = await generateReadingInsightReview({ book, insights });
     return res.json(review);
@@ -31,7 +31,9 @@ router.post("/generate-review", async (req, res) => {
   }
 });
 
-function normalizeBook(rawBook: Record<string, unknown>): ReadingInsightReviewBookInput {
+function normalizeBook(
+  rawBook: Record<string, unknown>,
+): ReadingInsightReviewBookInput {
   const book: ReadingInsightReviewBookInput = {
     title: cleanText(rawBook.title),
     author: cleanText(rawBook.author),
@@ -52,7 +54,9 @@ function normalizeBook(rawBook: Record<string, unknown>): ReadingInsightReviewBo
   return book;
 }
 
-function normalizeInsight(rawInsight: Record<string, unknown>): ReadingInsightReviewInsightInput {
+function normalizeInsight(
+  rawInsight: Record<string, unknown>,
+): ReadingInsightReviewInsightInput {
   const insight: ReadingInsightReviewInsightInput = {
     dateCreated: cleanText(rawInsight.dateCreated),
     whatHappened: cleanText(rawInsight.whatHappened),
@@ -67,11 +71,17 @@ function normalizeInsight(rawInsight: Record<string, unknown>): ReadingInsightRe
   const sessionDate = cleanText(rawInsight.sessionDate);
   if (sessionDate) insight.sessionDate = sessionDate;
 
-  if (typeof rawInsight.sessionMinutes === "number" && Number.isFinite(rawInsight.sessionMinutes)) {
+  if (
+    typeof rawInsight.sessionMinutes === "number" &&
+    Number.isFinite(rawInsight.sessionMinutes)
+  ) {
     insight.sessionMinutes = rawInsight.sessionMinutes;
   }
 
-  if (typeof rawInsight.sessionPages === "number" && Number.isFinite(rawInsight.sessionPages)) {
+  if (
+    typeof rawInsight.sessionPages === "number" &&
+    Number.isFinite(rawInsight.sessionPages)
+  ) {
     insight.sessionPages = rawInsight.sessionPages;
   }
 
@@ -84,7 +94,10 @@ function cleanText(value: unknown): string {
 
 function cleanArray(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.map(cleanText).filter((item) => item.length > 0).slice(0, 18)
+    ? value
+        .map(cleanText)
+        .filter((item) => item.length > 0)
+        .slice(0, 18)
     : [];
 }
 

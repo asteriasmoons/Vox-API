@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { lookupTrackMetadata } from "../services/trackLookupService";
-import { generatePlaylist, type PlaylistTrackInput } from "../services/playlistGeneratorService";
+import {
+  generatePlaylist,
+  type PlaylistTrackInput,
+} from "../services/playlistGeneratorService";
 import { GeneratedPlaylist } from "../models/GeneratedPlaylist";
 
 const router = Router();
@@ -50,16 +53,20 @@ router.post("/lookup/batch", async (req, res) => {
 
     const results = await Promise.all(
       capped.map(async (entry: unknown) => {
-        const item = entry as { title?: string; artist?: string; duration?: number } | undefined;
+        const item = entry as
+          | { title?: string; artist?: string; duration?: number }
+          | undefined;
         const title = String(item?.title || "").trim();
         const artist = String(item?.artist || "").trim();
         const durationSeconds = Number(item?.duration) || undefined;
 
         if (!title) return { title, artist, metadata: null };
 
-        const metadata = await lookupTrackMetadata(title, artist, durationSeconds).catch(
-          () => null,
-        );
+        const metadata = await lookupTrackMetadata(
+          title,
+          artist,
+          durationSeconds,
+        ).catch(() => null);
 
         return { title, artist, metadata };
       }),
@@ -87,14 +94,17 @@ router.post("/generate-playlist", async (req, res) => {
 
     if (!Array.isArray(tracks) || tracks.length === 0) {
       return res.status(400).json({
-        error: "Request body must include a non-empty 'tracks' array with title, artist, and playCount",
+        error:
+          "Request body must include a non-empty 'tracks' array with title, artist, and playCount",
       });
     }
 
     const input: PlaylistTrackInput[] = tracks
       .slice(0, 30)
       .map((entry: unknown) => {
-        const item = entry as { title?: string; artist?: string; playCount?: number } | undefined;
+        const item = entry as
+          | { title?: string; artist?: string; playCount?: number }
+          | undefined;
         return {
           title: String(item?.title || "").trim(),
           artist: String(item?.artist || "").trim(),

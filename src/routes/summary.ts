@@ -26,7 +26,7 @@ router.post("/", async (req, res) => {
         .replace(/\s+/g, " ")
         .trim();
 
-		const stripSubtitle = (t: string) => (t.split(":")[0] ?? t).trim();
+    const stripSubtitle = (t: string) => (t.split(":")[0] ?? t).trim();
 
     const tokens = (s: string) =>
       new Set(normalize(s).split(" ").filter(Boolean));

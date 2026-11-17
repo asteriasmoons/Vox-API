@@ -29,9 +29,7 @@ import {
   normalizeKey,
   normalizeTitle,
 } from "./regularRecsUtils";
-import {
-  REGULAR_CATALOG_CONCURRENCY,
-} from "./regularRecsConfig";
+import { REGULAR_CATALOG_CONCURRENCY } from "./regularRecsConfig";
 import type {
   RegularAiCandidate,
   RegularBookRec,
@@ -75,7 +73,9 @@ function verifiedDedupe(recs: RegularBookRec[]): RegularBookRec[] {
   return out;
 }
 
-async function verifyPool(candidates: RegularAiCandidate[]): Promise<RegularBookRec[]> {
+async function verifyPool(
+  candidates: RegularAiCandidate[],
+): Promise<RegularBookRec[]> {
   const verified = await mapWithConcurrency(
     candidates,
     REGULAR_CATALOG_CONCURRENCY,
@@ -109,7 +109,11 @@ export async function buildRegularRecommendations(
 
   // Candidate groups are generated across three separate Groq calls
   // (see regularRecsCandidates); comps are merged in as extra strong candidates.
-  const aiCandidates = await generateAllRegularCandidates(requestText, seed, profile);
+  const aiCandidates = await generateAllRegularCandidates(
+    requestText,
+    seed,
+    profile,
+  );
   const candidates = dedupeRegularCandidates(
     [...compCandidates, ...aiCandidates],
     seed,
@@ -152,7 +156,10 @@ export function regularCandidateGroupCounts(
     const strategy = rec.strategy ?? rec.candidateGroup ?? "unknown";
     counts.set(strategy, (counts.get(strategy) ?? 0) + 1);
   }
-  return [...counts.entries()].map(([strategy, count]) => ({ strategy, count }));
+  return [...counts.entries()].map(([strategy, count]) => ({
+    strategy,
+    count,
+  }));
 }
 
 export function regularExcludeHash(keys: string[]): string {

@@ -28,27 +28,29 @@ export interface CelestialEventInterpretationDoc extends Document {
   updatedAt: Date;
 }
 
-const CelestialEventInterpretationSchema = new Schema<CelestialEventInterpretationDoc>(
-  {
-    fingerprint: { type: String, required: true, unique: true, index: true },
-    eventId: { type: String, required: true },
-    type: { type: String, required: true, index: true },
-    category: { type: String, required: true, index: true },
-    name: { type: String, required: true },
-    schemaVersion: { type: Number, required: true, default: 1 },
-    contentVersion: { type: Number, required: true, default: 1 },
-    sections: { type: Schema.Types.Mixed, default: {} },
-    completedStages: { type: [String], default: [] },
-    status: { type: String, required: true, default: "pending", index: true },
-    aiModel: { type: String, default: "" },
-    sourceEvent: { type: Schema.Types.Mixed, default: {} },
-    completedAt: { type: Date },
-  },
-  { timestamps: true },
-);
+const CelestialEventInterpretationSchema =
+  new Schema<CelestialEventInterpretationDoc>(
+    {
+      fingerprint: { type: String, required: true, unique: true, index: true },
+      eventId: { type: String, required: true },
+      type: { type: String, required: true, index: true },
+      category: { type: String, required: true, index: true },
+      name: { type: String, required: true },
+      schemaVersion: { type: Number, required: true, default: 1 },
+      contentVersion: { type: Number, required: true, default: 1 },
+      sections: { type: Schema.Types.Mixed, default: {} },
+      completedStages: { type: [String], default: [] },
+      status: { type: String, required: true, default: "pending", index: true },
+      aiModel: { type: String, default: "" },
+      sourceEvent: { type: Schema.Types.Mixed, default: {} },
+      completedAt: { type: Date },
+    },
+    { timestamps: true },
+  );
 
 export const CelestialEventInterpretation: Model<CelestialEventInterpretationDoc> =
-  (asteriumDB.models.CelestialEventInterpretation as Model<CelestialEventInterpretationDoc>) ||
+  (asteriumDB.models
+    .CelestialEventInterpretation as Model<CelestialEventInterpretationDoc>) ||
   asteriumDB.model<CelestialEventInterpretationDoc>(
     "CelestialEventInterpretation",
     CelestialEventInterpretationSchema,

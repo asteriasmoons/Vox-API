@@ -5,7 +5,8 @@ const router = Router();
 
 router.post("/", async (req, res) => {
   try {
-    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    const title =
+      typeof req.body?.title === "string" ? req.body.title.trim() : "";
     const author =
       typeof req.body?.author === "string" ? req.body.author.trim() : "";
 

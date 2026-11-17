@@ -84,9 +84,7 @@ export async function createInvitation(
 }
 
 export async function listInvitationsForEvent(sharedEventID: string) {
-  return await Invitation.find({ sharedEventID })
-    .sort({ sentAt: -1 })
-    .lean();
+  return await Invitation.find({ sharedEventID }).sort({ sentAt: -1 }).lean();
 }
 
 export async function listInvitationsForUser(userID: string) {
@@ -107,7 +105,8 @@ export async function acceptInvitation(
 ) {
   const invitation = await Invitation.findOne({ inviteToken });
   if (!invitation) throw new Error("INVITATION_NOT_FOUND");
-  if (invitation.status !== "pending") throw new Error("INVITATION_NOT_PENDING");
+  if (invitation.status !== "pending")
+    throw new Error("INVITATION_NOT_PENDING");
   if (invitation.expiresAt && new Date() > invitation.expiresAt) {
     invitation.status = "expired";
     await invitation.save();
@@ -145,7 +144,8 @@ export async function declineInvitation(
 ) {
   const invitation = await Invitation.findOne({ inviteToken });
   if (!invitation) throw new Error("INVITATION_NOT_FOUND");
-  if (invitation.status !== "pending") throw new Error("INVITATION_NOT_PENDING");
+  if (invitation.status !== "pending")
+    throw new Error("INVITATION_NOT_PENDING");
   if (invitation.recipientUserID && invitation.recipientUserID !== userID) {
     throw new Error("INVITATION_MISMATCH");
   }

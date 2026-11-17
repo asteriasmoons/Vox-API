@@ -87,7 +87,10 @@ export async function generateReadingMissions(
 
   const prompt = buildReadingMissionPrompt(book);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), READING_MISSION_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    READING_MISSION_TIMEOUT_MS,
+  );
 
   let response: Response;
   try {
@@ -118,7 +121,9 @@ export async function generateReadingMissions(
     });
   } catch (error: any) {
     if (error?.name === "AbortError") {
-      throw new Error(`Groq reading mission request timed out after ${READING_MISSION_TIMEOUT_MS / 1000}s`);
+      throw new Error(
+        `Groq reading mission request timed out after ${READING_MISSION_TIMEOUT_MS / 1000}s`,
+      );
     }
     throw error;
   } finally {
@@ -176,7 +181,10 @@ function buildReadingMissionPrompt(book: ReadingMissionBookInput): string {
   const synopsis = cleanText(book.synopsis) || "No synopsis provided.";
   const genres = cleanArray(book.genres).join(", ") || "None provided";
   const tags = cleanArray(book.tags).join(", ") || "None provided";
-  const pageCount = Number.isFinite(book.pageCount) && Number(book.pageCount) > 0 ? String(book.pageCount) : "Unknown";
+  const pageCount =
+    Number.isFinite(book.pageCount) && Number(book.pageCount) > 0
+      ? String(book.pageCount)
+      : "Unknown";
   const seriesInfo = cleanText(book.seriesName)
     ? `${cleanText(book.seriesName)}${cleanText(book.seriesNumber) ? ` #${cleanText(book.seriesNumber)}` : ""}`
     : "Standalone or not provided";
@@ -218,12 +226,17 @@ Return valid JSON in this exact shape:
 	}`;
 }
 
-function buildReadingMissionScorePrompt(input: ReadingMissionScoreInput): string {
+function buildReadingMissionScorePrompt(
+  input: ReadingMissionScoreInput,
+): string {
   const book = input.book;
   const synopsis = cleanText(book.synopsis) || "No synopsis provided.";
   const genres = cleanArray(book.genres).join(", ") || "None provided";
   const tags = cleanArray(book.tags).join(", ") || "None provided";
-  const pageCount = Number.isFinite(book.pageCount) && Number(book.pageCount) > 0 ? String(book.pageCount) : "Unknown";
+  const pageCount =
+    Number.isFinite(book.pageCount) && Number(book.pageCount) > 0
+      ? String(book.pageCount)
+      : "Unknown";
   const seriesInfo = cleanText(book.seriesName)
     ? `${cleanText(book.seriesName)}${cleanText(book.seriesNumber) ? ` #${cleanText(book.seriesNumber)}` : ""}`
     : "Standalone or not provided";
@@ -323,7 +336,9 @@ function normalizeMissions(parsed: unknown): ReadingMissionTaskOutput[] {
     .slice(0, 4);
 }
 
-function normalizeScorePrompts(value: unknown): ReadingMissionScorePromptInput[] {
+function normalizeScorePrompts(
+  value: unknown,
+): ReadingMissionScorePromptInput[] {
   return Array.isArray(value)
     ? value
         .map((item): ReadingMissionScorePromptInput | null => {
@@ -357,22 +372,32 @@ function normalizeMissionScore(
   prompts: ReadingMissionScorePromptInput[],
 ): ReadingMissionScoreOutput {
   const record = isRecord(parsed) ? parsed : {};
-  const promptScoresRaw = Array.isArray(record.promptScores) ? record.promptScores : [];
+  const promptScoresRaw = Array.isArray(record.promptScores)
+    ? record.promptScores
+    : [];
   const promptScores = prompts.map((prompt, index) => {
     const raw = isRecord(promptScoresRaw[index]) ? promptScoresRaw[index] : {};
     return {
       title: cleanText(raw.title) || prompt.title,
       score: clampScore(raw.score),
-      feedback: cleanLongText(raw.feedback) || "Answer scored for relevance, detail, and engagement.",
+      feedback:
+        cleanLongText(raw.feedback) ||
+        "Answer scored for relevance, detail, and engagement.",
     };
   });
 
   return {
     overallScore: clampScore(record.overallScore),
-    ratingLabel: cleanText(record.ratingLabel).slice(0, 36) || ratingLabelForScore(clampScore(record.overallScore)),
-    summary: cleanLongText(record.summary) || "Mission answers scored for relevance, detail, and book-specific engagement.",
+    ratingLabel:
+      cleanText(record.ratingLabel).slice(0, 36) ||
+      ratingLabelForScore(clampScore(record.overallScore)),
+    summary:
+      cleanLongText(record.summary) ||
+      "Mission answers scored for relevance, detail, and book-specific engagement.",
     strengths: cleanArray(record.strengths).slice(0, 3),
-    nextStep: cleanLongText(record.nextStep) || "Add one more specific detail from your reading experience next time.",
+    nextStep:
+      cleanLongText(record.nextStep) ||
+      "Add one more specific detail from your reading experience next time.",
     promptScores,
   };
 }
@@ -381,7 +406,8 @@ function normalizeCategory(value: string): string {
   const match = allowedCategories.find(
     (category) =>
       category.toLowerCase() === value.toLowerCase() ||
-      category.replace(/\s+/g, "").toLowerCase() === value.replace(/\s+/g, "").toLowerCase(),
+      category.replace(/\s+/g, "").toLowerCase() ===
+        value.replace(/\s+/g, "").toLowerCase(),
   );
 
   return match || "";
@@ -400,12 +426,20 @@ function cleanText(value: unknown): string {
 }
 
 function cleanLongText(value: unknown): string {
-  return typeof value === "string" ? value.trim().replace(/[ \t]+/g, " ").slice(0, 2200) : "";
+  return typeof value === "string"
+    ? value
+        .trim()
+        .replace(/[ \t]+/g, " ")
+        .slice(0, 2200)
+    : "";
 }
 
 function cleanArray(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.map(cleanText).filter((item) => item.length > 0).slice(0, 18)
+    ? value
+        .map(cleanText)
+        .filter((item) => item.length > 0)
+        .slice(0, 18)
     : [];
 }
 

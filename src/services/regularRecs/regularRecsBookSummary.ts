@@ -8,7 +8,11 @@
 import { regularSecondaryGroqChatJson } from "./regularRecsProviders";
 import { regularRecsCache } from "./regularRecsCache";
 import { cleanText, normalizeKey, parseJsonLoose } from "./regularRecsUtils";
-import { searchGoogleBooks, searchOpenLibrary, type BookSearchResult } from "../../routes/bookSearch";
+import {
+  searchGoogleBooks,
+  searchOpenLibrary,
+  type BookSearchResult,
+} from "../../routes/bookSearch";
 
 const SUMMARY_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
 
@@ -38,7 +42,9 @@ const SYSTEM_PROMPT = [
   "Never be poetic, flowery, cryptic, vague, or riddling, and never withhold the premise to build mystery.",
 ].join(" ");
 
-async function lookupBook(input: RegularRecSummaryInput): Promise<BookSearchResult | undefined> {
+async function lookupBook(
+  input: RegularRecSummaryInput,
+): Promise<BookSearchResult | undefined> {
   const query = `${cleanText(input.title)} ${cleanText(input.author)}`.trim();
   const [google, openLibrary] = await Promise.all([
     searchGoogleBooks(query).catch(() => [] as BookSearchResult[]),
@@ -47,14 +53,26 @@ async function lookupBook(input: RegularRecSummaryInput): Promise<BookSearchResu
   const wantedTitle = normalizeKey(input.title, "").split("|")[0];
   const wantedAuthor = normalizeKey("", input.author).split("|")[1];
   const candidates = [...google, ...openLibrary];
-  return candidates.find((book) => {
-    const key = normalizeKey(book.title, book.author);
-    const [titleKey, authorKey] = key.split("|");
-    return titleKey === wantedTitle && (!wantedAuthor || authorKey?.includes(wantedAuthor));
-  }) ?? candidates.find((book) => normalizeKey(book.title, "").split("|")[0] === wantedTitle) ?? candidates[0];
+  return (
+    candidates.find((book) => {
+      const key = normalizeKey(book.title, book.author);
+      const [titleKey, authorKey] = key.split("|");
+      return (
+        titleKey === wantedTitle &&
+        (!wantedAuthor || authorKey?.includes(wantedAuthor))
+      );
+    }) ??
+    candidates.find(
+      (book) => normalizeKey(book.title, "").split("|")[0] === wantedTitle,
+    ) ??
+    candidates[0]
+  );
 }
 
-function buildUserPrompt(input: RegularRecSummaryInput, lookup?: BookSearchResult): string {
+function buildUserPrompt(
+  input: RegularRecSummaryInput,
+  lookup?: BookSearchResult,
+): string {
   return [
     "Write a clear, accurate, and genuinely compelling summary of this specific real book that makes someone want to read it.",
     "Present the premise directly and confidently; do not comment on the act of reading or on the work as an object.",
@@ -93,18 +111,24 @@ function buildUserPrompt(input: RegularRecSummaryInput, lookup?: BookSearchResul
     ),
     "",
     "Verified book lookup:",
-    JSON.stringify(lookup ? {
-      title: lookup.title,
-      author: lookup.author,
-      description: cleanText(lookup.summary) || undefined,
-      publisher: lookup.publisher,
-      isbn: lookup.isbn,
-      releaseYear: lookup.releaseYear,
-      pages: lookup.pages,
-      rating: lookup.rating,
-      subjects: lookup.tags ?? [],
-      source: lookup.source,
-    } : { found: false }, null, 2),
+    JSON.stringify(
+      lookup
+        ? {
+            title: lookup.title,
+            author: lookup.author,
+            description: cleanText(lookup.summary) || undefined,
+            publisher: lookup.publisher,
+            isbn: lookup.isbn,
+            releaseYear: lookup.releaseYear,
+            pages: lookup.pages,
+            rating: lookup.rating,
+            subjects: lookup.tags ?? [],
+            source: lookup.source,
+          }
+        : { found: false },
+      null,
+      2,
+    ),
     "",
     "Return this exact shape:",
     '{"summary":"two clear, informative paragraphs that actually explain what the book is about"}',
@@ -126,12 +150,18 @@ export async function buildRegularRecBookSummary(
 
   // Ground the AI with current catalog information before asking it to write.
   const lookup = await lookupBook(input);
-  console.log(`[RegularRecsSummary] lookup ${lookup ? "found" : "not found"}: ${title} — ${author}${lookup ? ` via ${lookup.source}` : ""}`);
+  console.log(
+    `[RegularRecsSummary] lookup ${lookup ? "found" : "not found"}: ${title} — ${author}${lookup ? ` via ${lookup.source}` : ""}`,
+  );
 
-  const content = await regularSecondaryGroqChatJson(SYSTEM_PROMPT, buildUserPrompt(input, lookup), {
-    temperature: 0.15,
-    maxTokens: 8192,
-  });
+  const content = await regularSecondaryGroqChatJson(
+    SYSTEM_PROMPT,
+    buildUserPrompt(input, lookup),
+    {
+      temperature: 0.15,
+      maxTokens: 8192,
+    },
+  );
 
   const parsed = parseJsonLoose(content);
   const rawSummary =

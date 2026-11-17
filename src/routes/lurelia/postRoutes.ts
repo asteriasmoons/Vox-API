@@ -53,7 +53,12 @@ export function createPostRouter(io: SocketIOServer): Router {
   router.patch("/posts/:postID", async (req: Request, res: Response) => {
     try {
       const { actorUserID, ...patch } = req.body;
-      const post = await editPost(io, String(req.params.postID), actorUserID, patch);
+      const post = await editPost(
+        io,
+        String(req.params.postID),
+        actorUserID,
+        patch,
+      );
       return res.json({ success: true, post });
     } catch (error) {
       return handleError(res, error);
@@ -118,8 +123,14 @@ export function createPostRouter(io: SocketIOServer): Router {
     "/announcements/:announcementID",
     async (req: Request, res: Response) => {
       try {
-        const actorUserID = String(req.query.actorUserID || req.body.actorUserID);
-        await deleteAnnouncement(io, String(req.params.announcementID), actorUserID);
+        const actorUserID = String(
+          req.query.actorUserID || req.body.actorUserID,
+        );
+        await deleteAnnouncement(
+          io,
+          String(req.params.announcementID),
+          actorUserID,
+        );
         return res.json({ success: true });
       } catch (error) {
         return handleError(res, error);

@@ -10,7 +10,7 @@ import { Schema, Document, Model } from "mongoose";
 import { asteriumDB } from "../config/databases";
 
 export interface CelestialEventKnowledgeDoc extends Document {
-  key: string;            // e.g. event type or category
+  key: string; // e.g. event type or category
   contentVersion: number;
   content: Record<string, unknown>;
   createdAt: Date;
@@ -27,7 +27,8 @@ const CelestialEventKnowledgeSchema = new Schema<CelestialEventKnowledgeDoc>(
 );
 
 export const CelestialEventKnowledge: Model<CelestialEventKnowledgeDoc> =
-  (asteriumDB.models.CelestialEventKnowledge as Model<CelestialEventKnowledgeDoc>) ||
+  (asteriumDB.models
+    .CelestialEventKnowledge as Model<CelestialEventKnowledgeDoc>) ||
   asteriumDB.model<CelestialEventKnowledgeDoc>(
     "CelestialEventKnowledge",
     CelestialEventKnowledgeSchema,

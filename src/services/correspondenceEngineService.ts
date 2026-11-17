@@ -1,17 +1,32 @@
 import { CorrespondenceEntry } from "../models/CorrespondenceEntry";
 import { colorRules, colorSchema } from "./correspondences/types/colors";
 import { crystalRules, crystalSchema } from "./correspondences/types/crystals";
-import { essentialOilRules, essentialOilSchema } from "./correspondences/types/essentialOils";
+import {
+  essentialOilRules,
+  essentialOilSchema,
+} from "./correspondences/types/essentialOils";
 import { flowerRules, flowerSchema } from "./correspondences/types/flowers";
 import { herbRules, herbSchema } from "./correspondences/types/herbs";
 import { sabbatRules, sabbatSchema } from "./correspondences/types/sabbats";
 import { planetRules, planetSchema } from "./correspondences/types/planets";
-import { zodiacSignRules, zodiacSignSchema } from "./correspondences/types/zodiacSigns";
-import { lunarPhaseRules, lunarPhaseSchema } from "./correspondences/types/lunarPhases";
+import {
+  zodiacSignRules,
+  zodiacSignSchema,
+} from "./correspondences/types/zodiacSigns";
+import {
+  lunarPhaseRules,
+  lunarPhaseSchema,
+} from "./correspondences/types/lunarPhases";
 import { seasonRules, seasonSchema } from "./correspondences/types/seasons";
-import { dayOfWeekRules, dayOfWeekSchema } from "./correspondences/types/daysOfWeek";
+import {
+  dayOfWeekRules,
+  dayOfWeekSchema,
+} from "./correspondences/types/daysOfWeek";
 import { elementRules, elementSchema } from "./correspondences/types/elements";
-import { tarotCardRules, tarotCardSchema } from "./correspondences/types/tarotCards";
+import {
+  tarotCardRules,
+  tarotCardSchema,
+} from "./correspondences/types/tarotCards";
 import { deityRules, deitySchema } from "./correspondences/types/deities";
 import { spiritRules, spiritSchema } from "./correspondences/types/spirits";
 import { animalRules, animalSchema } from "./correspondences/types/animals";
@@ -331,7 +346,9 @@ function normalizeName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-export function normalizeCorrespondenceType(type: string): CorrespondenceType | null {
+export function normalizeCorrespondenceType(
+  type: string,
+): CorrespondenceType | null {
   const normalized = type
     .trim()
     .toLowerCase()
@@ -458,7 +475,10 @@ function parseAIResponse(
   parsed: Record<string, unknown>,
   type: CorrespondenceType,
   fallbackName: string,
-): Omit<CorrespondenceEntryResponse, "cached" | "source" | "createdAt" | "updatedAt"> {
+): Omit<
+  CorrespondenceEntryResponse,
+  "cached" | "source" | "createdAt" | "updatedAt"
+> {
   const name = String(parsed.name ?? fallbackName).trim() || fallbackName;
   const shortDescription = String(parsed.shortDescription ?? "").trim();
 
@@ -612,7 +632,9 @@ function parseAIResponse(
       suit: String(parsed.suit ?? "").trim(),
       numberOrRank: String(parsed.numberOrRank ?? "").trim(),
       element: String(parsed.element ?? "").trim(),
-      astrologicalAssociation: String(parsed.astrologicalAssociation ?? "").trim(),
+      astrologicalAssociation: String(
+        parsed.astrologicalAssociation ?? "",
+      ).trim(),
       uprightMeaning: String(parsed.uprightMeaning ?? "").trim(),
       reversedMeaning: String(parsed.reversedMeaning ?? "").trim(),
       keywords: stringArray(parsed.keywords),
@@ -640,13 +662,17 @@ function parseAIResponse(
       spiritType: String(parsed.spiritType ?? "").trim(),
       culturalContext: String(parsed.culturalContext ?? "").trim(),
       domainsAssociations: stringArray(parsed.domainsAssociations),
-      appearanceDescriptions: String(parsed.appearanceDescriptions ?? "").trim(),
+      appearanceDescriptions: String(
+        parsed.appearanceDescriptions ?? "",
+      ).trim(),
       signsAndPresence: stringArray(parsed.signsAndPresence),
       offerings: stringArray(parsed.offerings),
       communicationMethods: stringArray(parsed.communicationMethods),
       altarIdeas: stringArray(parsed.altarIdeas),
       relatedSpirits: stringArray(parsed.relatedSpirits),
-      protectiveConsiderations: String(parsed.protectiveConsiderations ?? "").trim(),
+      protectiveConsiderations: String(
+        parsed.protectiveConsiderations ?? "",
+      ).trim(),
     }),
     ...(type === "animal" && {
       habitat: String(parsed.habitat ?? "").trim(),
@@ -656,7 +682,9 @@ function parseAIResponse(
       dreamMeaning: String(parsed.dreamMeaning ?? "").trim(),
       encounterMeaning: String(parsed.encounterMeaning ?? "").trim(),
       associatedSeasons: stringArray(parsed.associatedSeasons),
-      spiritGuideInterpretations: String(parsed.spiritGuideInterpretations ?? "").trim(),
+      spiritGuideInterpretations: String(
+        parsed.spiritGuideInterpretations ?? "",
+      ).trim(),
       culturalSymbolism: String(parsed.culturalSymbolism ?? "").trim(),
     }),
     ...(type === "tool" && {
@@ -678,14 +706,22 @@ function parseAIResponse(
       coreMeaning: String(parsed.coreMeaning ?? "").trim(),
       positiveExpression: String(parsed.positiveExpression ?? "").trim(),
       shadowExpression: String(parsed.shadowExpression ?? "").trim(),
-      repeatingNumberMeaning: String(parsed.repeatingNumberMeaning ?? "").trim(),
+      repeatingNumberMeaning: String(
+        parsed.repeatingNumberMeaning ?? "",
+      ).trim(),
       synchronicityMeaning: String(parsed.synchronicityMeaning ?? "").trim(),
-      manifestationAssociation: String(parsed.manifestationAssociation ?? "").trim(),
+      manifestationAssociation: String(
+        parsed.manifestationAssociation ?? "",
+      ).trim(),
       divinationMeaning: String(parsed.divinationMeaning ?? "").trim(),
       tarotConnections: stringArray(parsed.tarotConnections),
       astrologicalConnections: stringArray(parsed.astrologicalConnections),
-      sacredGeometrySymbolism: String(parsed.sacredGeometrySymbolism ?? "").trim(),
-      culturalHistoricalMeanings: stringArray(parsed.culturalHistoricalMeanings),
+      sacredGeometrySymbolism: String(
+        parsed.sacredGeometrySymbolism ?? "",
+      ).trim(),
+      culturalHistoricalMeanings: stringArray(
+        parsed.culturalHistoricalMeanings,
+      ),
     }),
   };
 }
@@ -707,8 +743,9 @@ function absentEssentialOilFields(raw: Record<string, unknown>): string[] {
 }
 
 function missingEssentialOilDetails(entry: ParsedCorrespondence): string[] {
-  return (["sourcePlant", "plantPartUsed", "aromaProfile", "blendingNotes"] as const)
-    .filter((field) => !entry[field]?.trim());
+  return (
+    ["sourcePlant", "plantPartUsed", "aromaProfile", "blendingNotes"] as const
+  ).filter((field) => !entry[field]?.trim());
 }
 
 async function completeEssentialOilDetails(
@@ -720,33 +757,45 @@ async function completeEssentialOilDetails(
   const absentFields = absentEssentialOilFields(initialRaw);
   if (missingFields.length === 0 && absentFields.length === 0) return entry;
 
-  console.warn("[correspondences] essential oil details missing from initial AI response", {
-    name,
-    missingFields,
-    absentFields,
-  });
+  console.warn(
+    "[correspondences] essential oil details missing from initial AI response",
+    {
+      name,
+      missingFields,
+      absentFields,
+    },
+  );
 
-  const raw = await callGroq(`
+  const raw = await callGroq(
+    `
 Complete the essential oil details for ${name}. Return valid JSON only with exactly these fields:
 {${essentialOilSchema.replace(/^,/, "")}
 }
 
 Use concise, factual information. Do not invent associations. Use an empty string or array only when a field truly does not apply. No markdown or preamble.
-`, "essential_oil_details");
+`,
+    "essential_oil_details",
+  );
   const supplement = parseAIObject(raw);
   const stillAbsent = absentFields.filter(
     (field) => !Object.prototype.hasOwnProperty.call(supplement, field),
   );
   if (stillAbsent.length > 0) {
-    throw new Error(`AI omitted essential oil fields: ${stillAbsent.join(", ")}`);
+    throw new Error(
+      `AI omitted essential oil fields: ${stillAbsent.join(", ")}`,
+    );
   }
 
   const completed: ParsedCorrespondence = {
     ...entry,
-    sourcePlant: entry.sourcePlant || String(supplement.sourcePlant ?? "").trim(),
-    plantPartUsed: entry.plantPartUsed || String(supplement.plantPartUsed ?? "").trim(),
-    aromaProfile: entry.aromaProfile || String(supplement.aromaProfile ?? "").trim(),
-    blendingNotes: entry.blendingNotes || String(supplement.blendingNotes ?? "").trim(),
+    sourcePlant:
+      entry.sourcePlant || String(supplement.sourcePlant ?? "").trim(),
+    plantPartUsed:
+      entry.plantPartUsed || String(supplement.plantPartUsed ?? "").trim(),
+    aromaProfile:
+      entry.aromaProfile || String(supplement.aromaProfile ?? "").trim(),
+    blendingNotes:
+      entry.blendingNotes || String(supplement.blendingNotes ?? "").trim(),
     complementaryOils: entry.complementaryOils?.length
       ? entry.complementaryOils
       : stringArray(supplement.complementaryOils),
@@ -757,7 +806,9 @@ Use concise, factual information. Do not invent associations. Use an empty strin
 
   const stillMissing = missingEssentialOilDetails(completed);
   if (stillMissing.length > 0) {
-    throw new Error(`AI omitted essential oil details: ${stillMissing.join(", ")}`);
+    throw new Error(
+      `AI omitted essential oil details: ${stillMissing.join(", ")}`,
+    );
   }
 
   console.info("[correspondences] essential oil details completed", { name });
@@ -766,45 +817,81 @@ Use concise, factual information. Do not invent associations. Use an empty strin
 
 function buildPrompt(type: CorrespondenceType, name: string): string {
   const typeSpecificSchema =
-    type === "sabbat" ? sabbatSchema :
-    type === "herb" ? herbSchema :
-    type === "flower" ? flowerSchema :
-    type === "crystal" ? crystalSchema :
-    type === "essential_oil" ? essentialOilSchema :
-    type === "color" ? colorSchema :
-    type === "planet" ? planetSchema :
-    type === "zodiac_sign" ? zodiacSignSchema :
-    type === "lunar_phase" ? lunarPhaseSchema :
-    type === "season" ? seasonSchema :
-    type === "day_of_week" ? dayOfWeekSchema :
-    type === "element" ? elementSchema :
-    type === "tarot_card" ? tarotCardSchema :
-    type === "deity" ? deitySchema :
-    type === "spirit" ? spiritSchema :
-    type === "animal" ? animalSchema :
-    type === "tool" ? toolSchema :
-    type === "number" ? numberSchema :
-    "";
+    type === "sabbat"
+      ? sabbatSchema
+      : type === "herb"
+        ? herbSchema
+        : type === "flower"
+          ? flowerSchema
+          : type === "crystal"
+            ? crystalSchema
+            : type === "essential_oil"
+              ? essentialOilSchema
+              : type === "color"
+                ? colorSchema
+                : type === "planet"
+                  ? planetSchema
+                  : type === "zodiac_sign"
+                    ? zodiacSignSchema
+                    : type === "lunar_phase"
+                      ? lunarPhaseSchema
+                      : type === "season"
+                        ? seasonSchema
+                        : type === "day_of_week"
+                          ? dayOfWeekSchema
+                          : type === "element"
+                            ? elementSchema
+                            : type === "tarot_card"
+                              ? tarotCardSchema
+                              : type === "deity"
+                                ? deitySchema
+                                : type === "spirit"
+                                  ? spiritSchema
+                                  : type === "animal"
+                                    ? animalSchema
+                                    : type === "tool"
+                                      ? toolSchema
+                                      : type === "number"
+                                        ? numberSchema
+                                        : "";
   const typeSpecificRules =
-    type === "sabbat" ? sabbatRules :
-    type === "herb" ? herbRules :
-    type === "flower" ? flowerRules :
-    type === "crystal" ? crystalRules :
-    type === "essential_oil" ? essentialOilRules :
-    type === "color" ? colorRules :
-    type === "planet" ? planetRules :
-    type === "zodiac_sign" ? zodiacSignRules :
-    type === "lunar_phase" ? lunarPhaseRules :
-    type === "season" ? seasonRules :
-    type === "day_of_week" ? dayOfWeekRules :
-    type === "element" ? elementRules :
-    type === "tarot_card" ? tarotCardRules :
-    type === "deity" ? deityRules :
-    type === "spirit" ? spiritRules :
-    type === "animal" ? animalRules :
-    type === "tool" ? toolRules :
-    type === "number" ? numberRules :
-    "";
+    type === "sabbat"
+      ? sabbatRules
+      : type === "herb"
+        ? herbRules
+        : type === "flower"
+          ? flowerRules
+          : type === "crystal"
+            ? crystalRules
+            : type === "essential_oil"
+              ? essentialOilRules
+              : type === "color"
+                ? colorRules
+                : type === "planet"
+                  ? planetRules
+                  : type === "zodiac_sign"
+                    ? zodiacSignRules
+                    : type === "lunar_phase"
+                      ? lunarPhaseRules
+                      : type === "season"
+                        ? seasonRules
+                        : type === "day_of_week"
+                          ? dayOfWeekRules
+                          : type === "element"
+                            ? elementRules
+                            : type === "tarot_card"
+                              ? tarotCardRules
+                              : type === "deity"
+                                ? deityRules
+                                : type === "spirit"
+                                  ? spiritRules
+                                  : type === "animal"
+                                    ? animalRules
+                                    : type === "tool"
+                                      ? toolRules
+                                      : type === "number"
+                                        ? numberRules
+                                        : "";
 
   return `
 I am building a comprehensive grimoire app called Asterium.
@@ -1283,8 +1370,12 @@ function toResponse(
     }),
     cached,
     source: doc.source,
-    ...(doc.createdAt !== undefined && { createdAt: doc.createdAt.toISOString() }),
-    ...(doc.updatedAt !== undefined && { updatedAt: doc.updatedAt.toISOString() }),
+    ...(doc.createdAt !== undefined && {
+      createdAt: doc.createdAt.toISOString(),
+    }),
+    ...(doc.updatedAt !== undefined && {
+      updatedAt: doc.updatedAt.toISOString(),
+    }),
   };
 }
 
@@ -1314,13 +1405,19 @@ export async function getOrGenerateCorrespondence(
 
     if (existing) {
       const cachedResponse = toResponse(existing, true);
-      if (type !== "essential_oil" || missingEssentialOilDetails(cachedResponse).length === 0) {
+      if (
+        type !== "essential_oil" ||
+        missingEssentialOilDetails(cachedResponse).length === 0
+      ) {
         return cachedResponse;
       }
-      console.warn("[correspondences] regenerating incomplete cached essential oil", {
-        name,
-        missingFields: missingEssentialOilDetails(cachedResponse),
-      });
+      console.warn(
+        "[correspondences] regenerating incomplete cached essential oil",
+        {
+          name,
+          missingFields: missingEssentialOilDetails(cachedResponse),
+        },
+      );
     }
   }
 

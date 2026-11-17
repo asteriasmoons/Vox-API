@@ -44,4 +44,8 @@ const BuddyMessageSchema = new Schema<IBuddyMessage>(
 
 export const BuddyMessage: Model<IBuddyMessage> =
   lumeyDB.models.BuddyMessage ||
-  lumeyDB.model<IBuddyMessage>("BuddyMessage", BuddyMessageSchema, "buddymessages");
+  lumeyDB.model<IBuddyMessage>(
+    "BuddyMessage",
+    BuddyMessageSchema,
+    "buddymessages",
+  );

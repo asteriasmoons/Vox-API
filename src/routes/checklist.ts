@@ -1,17 +1,21 @@
 import { Router } from "express";
-import { generateChecklist, generateTaskInstructions } from "../services/generateChecklist";
+import {
+  generateChecklist,
+  generateTaskInstructions,
+} from "../services/generateChecklist";
 
 const router = Router();
 
 // POST /api/checklist/generate-instructions
 router.post("/generate-instructions", async (req, res) => {
   try {
-    const taskName = typeof req.body?.taskName === "string"
-      ? req.body.taskName.trim()
-      : "";
+    const taskName =
+      typeof req.body?.taskName === "string" ? req.body.taskName.trim() : "";
 
     if (!taskName) {
-      return res.status(400).json({ error: "taskName must be a non-empty string" });
+      return res
+        .status(400)
+        .json({ error: "taskName must be a non-empty string" });
     }
 
     const instructions = await generateTaskInstructions(taskName);
@@ -25,12 +29,13 @@ router.post("/generate-instructions", async (req, res) => {
 // POST /api/checklist/generate-single
 router.post("/generate-single", async (req, res) => {
   try {
-    const taskName = typeof req.body?.taskName === "string"
-      ? req.body.taskName.trim()
-      : "";
+    const taskName =
+      typeof req.body?.taskName === "string" ? req.body.taskName.trim() : "";
 
     if (!taskName) {
-      return res.status(400).json({ error: "taskName must be a non-empty string" });
+      return res
+        .status(400)
+        .json({ error: "taskName must be a non-empty string" });
     }
 
     const items = await generateChecklist([taskName]);
@@ -52,7 +57,9 @@ router.post("/generate", async (req, res) => {
       typeof req.body?.prompt === "string" ? req.body.prompt : undefined;
 
     if (taskNames.length === 0) {
-      return res.status(400).json({ error: "taskNames must be a non-empty array of strings" });
+      return res
+        .status(400)
+        .json({ error: "taskNames must be a non-empty array of strings" });
     }
 
     const items = await generateChecklist(taskNames, prompt);

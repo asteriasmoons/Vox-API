@@ -196,7 +196,8 @@ async function fetchJson<T>(url: URL): Promise<T> {
     } catch (error) {
       lastError = error;
       if (attempt >= CATALOG_RETRIES) break;
-      const is503 = error instanceof Error && error.message.includes('"status":503');
+      const is503 =
+        error instanceof Error && error.message.includes('"status":503');
       await sleep(is503 ? 1000 : 250 * (attempt + 1));
     } finally {
       clearTimeout(timeout);
@@ -209,7 +210,9 @@ async function fetchJson<T>(url: URL): Promise<T> {
     "name" in lastError &&
     lastError.name === "AbortError"
   ) {
-    throw new Error(`Catalog request timed out after ${CATALOG_TIMEOUT_MS / 1000}s`);
+    throw new Error(
+      `Catalog request timed out after ${CATALOG_TIMEOUT_MS / 1000}s`,
+    );
   }
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
@@ -223,7 +226,9 @@ function pickBestOpenLibraryDoc(
     .filter((doc) => cleanText(doc.title))
     .map((doc) => {
       const title = cleanText(doc.title);
-      const author = Array.isArray(doc.author_name) ? doc.author_name[0] ?? "" : "";
+      const author = Array.isArray(doc.author_name)
+        ? (doc.author_name[0] ?? "")
+        : "";
       const score = scoreTitleAuthorMatch(
         candidate.title,
         candidate.author ?? "",
@@ -245,7 +250,9 @@ function pickBestGoogleVolume(
     .filter((volume) => cleanText(volume.title))
     .map((volume) => {
       const title = cleanText(volume.title);
-      const author = Array.isArray(volume.authors) ? volume.authors[0] ?? "" : "";
+      const author = Array.isArray(volume.authors)
+        ? (volume.authors[0] ?? "")
+        : "";
       const score = scoreTitleAuthorMatch(
         candidate.title,
         candidate.author ?? "",
@@ -265,7 +272,10 @@ async function searchOpenLibraryForSeed(query: string): Promise<SeedBook[]> {
   url.searchParams.set("q", query);
   url.searchParams.set("language", "eng");
   url.searchParams.set("limit", "8");
-  url.searchParams.set("fields", "title,author_name,first_publish_year,subject");
+  url.searchParams.set(
+    "fields",
+    "title,author_name,first_publish_year,subject",
+  );
 
   const data = await fetchJson<OpenLibrarySearchResponse>(url);
   const docs = Array.isArray(data.docs) ? data.docs : [];
@@ -309,8 +319,12 @@ async function searchGoogleBooksForSeed(query: string): Promise<SeedBook[]> {
     const releaseYear = extractYear(volume.publishedDate);
     return {
       title: cleanText(volume.title),
-      author: Array.isArray(volume.authors) ? volume.authors.slice(0, 3).join(", ") : "",
-      subjects: Array.isArray(volume.categories) ? volume.categories.slice(0, 10) : [],
+      author: Array.isArray(volume.authors)
+        ? volume.authors.slice(0, 3).join(", ")
+        : "",
+      subjects: Array.isArray(volume.categories)
+        ? volume.categories.slice(0, 10)
+        : [],
       description: cleanText(volume.description),
       source: "Google Books",
       ...(releaseYear !== undefined ? { releaseYear } : {}),
@@ -334,7 +348,7 @@ function mergeSeedResults(results: SeedBook[]): SeedBook[] {
     const source =
       existing.source && result.source && existing.source !== result.source
         ? "Open Library + Google Books"
-        : existing.source ?? result.source;
+        : (existing.source ?? result.source);
 
     merged.set(key, {
       title: existing.title || result.title,
@@ -360,7 +374,10 @@ async function openLibraryLookup(
   url.searchParams.set("q", query);
   url.searchParams.set("language", "eng");
   url.searchParams.set("limit", "5");
-  url.searchParams.set("fields", "title,author_name,first_publish_year,cover_i,subject");
+  url.searchParams.set(
+    "fields",
+    "title,author_name,first_publish_year,cover_i,subject",
+  );
 
   const data = await fetchJson<OpenLibrarySearchResponse>(url);
   const docs = Array.isArray(data.docs) ? data.docs : [];
@@ -458,7 +475,9 @@ function mergeCatalogResults(
     12,
   );
   const source: RecommendationSource =
-    googleBooks && openLibrary ? "Open Library + Google Books" : googleBooks?.source ?? "Open Library";
+    googleBooks && openLibrary
+      ? "Open Library + Google Books"
+      : (googleBooks?.source ?? "Open Library");
   const catalogScore = Math.max(
     googleBooks?.matchScore ?? 0,
     openLibrary?.matchScore ?? 0,
@@ -520,9 +539,8 @@ async function mapWithBoundedConcurrency<T, R>(
     }
   }
 
-  const workers = Array.from(
-    { length: Math.min(limit, items.length) },
-    () => runWorker(),
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
+    runWorker(),
   );
 
   await Promise.all(workers);
@@ -553,7 +571,10 @@ export const bookCatalogService = {
       }),
     ]);
 
-    const candidates = mergeSeedResults([...googleBooksResults, ...openLibraryResults]);
+    const candidates = mergeSeedResults([
+      ...googleBooksResults,
+      ...openLibraryResults,
+    ]);
 
     if (candidates.length === 0) {
       recommendationCacheService.setSeedBook(cacheKey, null);
@@ -595,7 +616,9 @@ export const bookCatalogService = {
           moods: candidate.moods ?? [],
           tropes: candidate.tropes ?? [],
           themes: candidate.themes ?? [],
-          ...(candidate.strategyLabel ? { strategyLabel: candidate.strategyLabel } : {}),
+          ...(candidate.strategyLabel
+            ? { strategyLabel: candidate.strategyLabel }
+            : {}),
           ...(candidate.rationale ? { rationale: candidate.rationale } : {}),
         };
       },

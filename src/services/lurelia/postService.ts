@@ -139,7 +139,8 @@ export async function editPost(
   if (patch.title !== undefined) {
     post.title = normalizePostTitle(patch.title, post.bodyMarkdown);
   }
-  if (patch.isPinned !== undefined && canModerate) post.isPinned = !!patch.isPinned;
+  if (patch.isPinned !== undefined && canModerate)
+    post.isPinned = !!patch.isPinned;
   post.editedAt = new Date();
   await post.save();
 
@@ -197,7 +198,10 @@ export async function createAnnouncement(
   input: CreateAnnouncementInput,
 ) {
   if (!input.bodyMarkdown?.trim()) throw new Error("body_REQUIRED");
-  const canModerate = await isModerator(input.sharedEventID, input.authorUserID);
+  const canModerate = await isModerator(
+    input.sharedEventID,
+    input.authorUserID,
+  );
   if (!canModerate) throw new Error("FORBIDDEN");
 
   const normalizedAnn = normalizeHostPostBody({
@@ -263,7 +267,10 @@ export async function editAnnouncement(
     announcement.bodyHTML = normalizedAnn.bodyHTML;
   }
   if (patch.title !== undefined) {
-    announcement.title = normalizePostTitle(patch.title, announcement.bodyMarkdown);
+    announcement.title = normalizePostTitle(
+      patch.title,
+      announcement.bodyMarkdown,
+    );
   }
   announcement.editedAt = new Date();
   await announcement.save();
@@ -316,7 +323,8 @@ function normalizePostTitle(inputTitle: unknown, bodyMarkdown: string): string {
     .filter((line) => line && !line.startsWith(":::"));
 
   const heading = lines.find((line) => /^#{1,3}\s+/.test(line));
-  const fallback = heading?.replace(/^#{1,3}\s+/, "") ?? lines[0] ?? "Untitled post";
+  const fallback =
+    heading?.replace(/^#{1,3}\s+/, "") ?? lines[0] ?? "Untitled post";
   return stripInlineMarkdown(fallback).slice(0, 180) || "Untitled post";
 }
 

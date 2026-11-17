@@ -46,7 +46,9 @@ function line(label: string, value: unknown): string | null {
   if (value === undefined || value === null) return null;
   if (typeof value === "string" && value.trim() === "") return null;
   if (Array.isArray(value)) {
-    const items = value.filter((v) => v !== undefined && v !== null && String(v).trim() !== "");
+    const items = value.filter(
+      (v) => v !== undefined && v !== null && String(v).trim() !== "",
+    );
     if (items.length === 0) return null;
     return `- ${label}: ${items.join(", ")}`;
   }
@@ -163,7 +165,11 @@ magical interpretation separate from documented history.`.trim(),
 };
 
 function parseJson(raw: string): unknown {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
   try {
     return JSON.parse(cleaned);
   } catch {
@@ -209,7 +215,9 @@ export async function generateCelestialStage(
   const parsed = parseJson(raw);
   const result = validateStage(stage, parsed);
   if (!result.ok) {
-    throw new Error(`Celestial stage ${stage} failed validation: ${result.reason}`);
+    throw new Error(
+      `Celestial stage ${stage} failed validation: ${result.reason}`,
+    );
   }
   return parsed as Record<string, unknown>;
 }

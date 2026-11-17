@@ -56,7 +56,10 @@ export async function updatePermissions(
     { new: true },
   ).lean();
   if (!updated) throw new Error("PERMISSIONS_NOT_FOUND");
-  io.to(eventRoomName(sharedEventID)).emit("event:permissions_updated", updated);
+  io.to(eventRoomName(sharedEventID)).emit(
+    "event:permissions_updated",
+    updated,
+  );
   return updated;
 }
 

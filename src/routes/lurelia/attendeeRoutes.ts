@@ -95,7 +95,9 @@ export function createAttendeeRouter(io: SocketIOServer): Router {
     "/:id/attendees/:userID",
     async (req: Request, res: Response) => {
       try {
-        const actorUserID = String(req.query.actorUserID || req.body.actorUserID);
+        const actorUserID = String(
+          req.query.actorUserID || req.body.actorUserID,
+        );
         const attendee = await removeAttendee(
           io,
           String(req.params.id),

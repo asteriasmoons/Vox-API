@@ -22,8 +22,7 @@ export interface MoodStatsPhoneBehaviorInput {
   notificationCount: number;
 }
 
-export interface MoodStatsRecentSnapshotInput
-  extends MoodStatsPhoneBehaviorInput {
+export interface MoodStatsRecentSnapshotInput extends MoodStatsPhoneBehaviorInput {
   date: string;
   averageMoodPercent: number;
   checkInCount: number;
@@ -57,11 +56,16 @@ const BEHAVIOR_KEYS: MoodStatsBehaviorKey[] = [
 ];
 
 const FALLBACK_INSIGHTS: Record<MoodStatsBehaviorKey, string> = {
-  screenTime: "Screen time may align with the shape of your mood patterns, especially as more daily check-ins are added.",
-  socialUsage: "Social app time may sit alongside mood shifts, though this estimate depends on available Screen Time categories.",
-  nighttimeUse: "Nighttime phone use may align with lower restfulness or heavier mood days when it appears repeatedly.",
-  pickups: "Frequent pickups may reflect checking patterns that sit near restless or scattered emotional moments.",
-  notifications: "Notification volume may line up with days that feel more interrupted or overstimulating.",
+  screenTime:
+    "Screen time may align with the shape of your mood patterns, especially as more daily check-ins are added.",
+  socialUsage:
+    "Social app time may sit alongside mood shifts, though this estimate depends on available Screen Time categories.",
+  nighttimeUse:
+    "Nighttime phone use may align with lower restfulness or heavier mood days when it appears repeatedly.",
+  pickups:
+    "Frequent pickups may reflect checking patterns that sit near restless or scattered emotional moments.",
+  notifications:
+    "Notification volume may line up with days that feel more interrupted or overstimulating.",
 };
 
 const SYSTEM_PROMPT = `You write gentle phone behavior context for a wellness app called Lunixia.
@@ -144,7 +148,10 @@ export async function generateMoodStatsContext(
 }
 
 function normalizeMoodStatsContext(parsed: any): MoodStatsContextResponse {
-  const summary = cleanSentence(parsed?.summary, "Your phone patterns may align with your mood data as Lunixia gathers more daily snapshots.");
+  const summary = cleanSentence(
+    parsed?.summary,
+    "Your phone patterns may align with your mood data as Lunixia gathers more daily snapshots.",
+  );
   const rawBehaviors = Array.isArray(parsed?.behaviors) ? parsed.behaviors : [];
 
   const behaviors = BEHAVIOR_KEYS.map((key) => {

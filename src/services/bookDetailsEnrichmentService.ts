@@ -214,9 +214,7 @@ function exactLabels(
   return cleanLabels([...values, ...fallbackValues], count);
 }
 
-function fallbackLabels(
-  classification: "fiction" | "nonfiction" | "unknown",
-): {
+function fallbackLabels(classification: "fiction" | "nonfiction" | "unknown"): {
   genres: string[];
   moods: string[];
   topics: string[];
@@ -253,7 +251,10 @@ function fallbackLabels(
 }
 
 function fallbackSubtitle(catalog: CatalogEvidence): string {
-  const genreHint = cleanLabels([...catalog.categories, ...catalog.subjects], 1)[0];
+  const genreHint = cleanLabels(
+    [...catalog.categories, ...catalog.subjects],
+    1,
+  )[0];
   if (genreHint) return `A ${genreHint} Reading Experience`;
   return "A Compelling Reading Experience";
 }
@@ -291,7 +292,9 @@ function googleISBN(volume: GoogleVolumeInfo): string | undefined {
     (identifier) => cleanText(identifier.type) === "ISBN_10",
   );
 
-  return cleanText(isbn13?.identifier) || cleanText(isbn10?.identifier) || undefined;
+  return (
+    cleanText(isbn13?.identifier) || cleanText(isbn10?.identifier) || undefined
+  );
 }
 
 function scoreTitleAuthorMatch(
@@ -345,7 +348,10 @@ function scoreTitleAuthorMatch(
   return Math.min(score, 100);
 }
 
-async function fetchJson<T>(url: URL, timeoutMs = CATALOG_TIMEOUT_MS): Promise<T> {
+async function fetchJson<T>(
+  url: URL,
+  timeoutMs = CATALOG_TIMEOUT_MS,
+): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -427,7 +433,8 @@ async function searchGoogleBooks(
 
       if (subtitle) candidate.subtitle = subtitle;
       if (publisher) candidate.publisher = publisher;
-      if (publicationYear !== undefined) candidate.publicationYear = publicationYear;
+      if (publicationYear !== undefined)
+        candidate.publicationYear = publicationYear;
       if (isbn) candidate.isbn = isbn;
       if (summary) candidate.summary = summary;
       if (totalPages !== undefined) candidate.totalPages = totalPages;
@@ -473,8 +480,8 @@ async function searchOpenLibrary(
       );
       const publicationYear = firstNumber(doc.first_publish_year);
       const isbn = Array.isArray(doc.isbn)
-        ? doc.isbn.find((value) => cleanText(value).length === 13) ??
-          doc.isbn[0]
+        ? (doc.isbn.find((value) => cleanText(value).length === 13) ??
+          doc.isbn[0])
         : undefined;
       const publisher = Array.isArray(doc.publisher)
         ? doc.publisher[0]
@@ -489,7 +496,8 @@ async function searchOpenLibrary(
         subjects: uniqueStrings(doc.subject ?? [], 18),
       };
 
-      if (publicationYear !== undefined) candidate.publicationYear = publicationYear;
+      if (publicationYear !== undefined)
+        candidate.publicationYear = publicationYear;
       if (cleanText(isbn)) candidate.isbn = cleanText(isbn);
       if (cleanText(publisher)) candidate.publisher = cleanText(publisher);
       if (totalPages !== undefined) candidate.totalPages = totalPages;
@@ -547,7 +555,8 @@ async function searchAppleBooks(
         subjects: [],
       };
 
-      if (publicationYear !== undefined) candidate.publicationYear = publicationYear;
+      if (publicationYear !== undefined)
+        candidate.publicationYear = publicationYear;
       if (summary) candidate.summary = summary;
 
       return candidate;
@@ -564,15 +573,22 @@ function mergeCatalogEvidence(
   const primary = ranked[0];
   if (!primary || primary.score < 35) return null;
 
-  const google = ranked.find((candidate) => candidate.source === "Google Books");
+  const google = ranked.find(
+    (candidate) => candidate.source === "Google Books",
+  );
   const openLibrary = ranked.find(
     (candidate) => candidate.source === "Open Library",
   );
   const apple = ranked.find((candidate) => candidate.source === "Apple Books");
-  const sources = uniqueStrings(ranked.map((candidate) => candidate.source), 3);
+  const sources = uniqueStrings(
+    ranked.map((candidate) => candidate.source),
+    3,
+  );
   const publisher = google?.publisher ?? openLibrary?.publisher;
   const publicationYear =
-    google?.publicationYear ?? openLibrary?.publicationYear ?? apple?.publicationYear;
+    google?.publicationYear ??
+    openLibrary?.publicationYear ??
+    apple?.publicationYear;
   const isbn = google?.isbn ?? openLibrary?.isbn;
   const totalPages = google?.totalPages ?? openLibrary?.totalPages;
   const summary = google?.summary ?? openLibrary?.summary ?? apple?.summary;
@@ -601,7 +617,11 @@ function mergeCatalogEvidence(
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
-  const content = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const content = raw
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
   if (!content) return null;
 
   try {
@@ -624,8 +644,12 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
-function parseClassification(value: unknown): "fiction" | "nonfiction" | "unknown" {
-  const text = cleanText(value).toLowerCase().replace(/[^a-z]/g, "");
+function parseClassification(
+  value: unknown,
+): "fiction" | "nonfiction" | "unknown" {
+  const text = cleanText(value)
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
   if (text === "fiction") return "fiction";
   if (text === "nonfiction") return "nonfiction";
   return "unknown";
@@ -775,7 +799,9 @@ function buildResponse(
     seriesNumber: ai.seriesNumber ?? null,
     publisher: catalog.publisher ?? null,
     publicationYear:
-      catalog.publicationYear !== undefined ? String(catalog.publicationYear) : null,
+      catalog.publicationYear !== undefined
+        ? String(catalog.publicationYear)
+        : null,
     isbn: catalog.isbn ?? null,
     summary: ai.summary ?? catalog.summary ?? null,
     totalPages: catalog.totalPages ?? null,

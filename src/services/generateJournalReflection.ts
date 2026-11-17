@@ -38,7 +38,9 @@ function localDateKey(date: Date, timeZone: string): string {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return `${values.year}-${values.month}-${values.day}`;
 }
 
@@ -73,7 +75,8 @@ function timingContext(input: ReflectionTimingInput): ReflectionTimingContext {
   const entryDate = new Date(input.entryDate);
   const reflectionDate = new Date(input.reflectionDate);
   const datesAreValid =
-    Number.isFinite(entryDate.getTime()) && Number.isFinite(reflectionDate.getTime());
+    Number.isFinite(entryDate.getTime()) &&
+    Number.isFinite(reflectionDate.getTime());
 
   if (!datesAreValid || reflectionDate.getTime() < entryDate.getTime()) {
     throw new Error("Valid entry and reflection dates are required");
@@ -84,17 +87,20 @@ function timingContext(input: ReflectionTimingInput): ReflectionTimingContext {
     0,
     Math.round((reflectionDate.getTime() - entryDate.getTime()) / 60_000),
   );
-  const sameLocalDay = localDateKey(entryDate, timeZone) === localDateKey(reflectionDate, timeZone);
+  const sameLocalDay =
+    localDateKey(entryDate, timeZone) ===
+    localDateKey(reflectionDate, timeZone);
   const kind: ReflectionTimingKind = sameLocalDay
     ? "same-day"
     : elapsedMinutes < 60 * 48
       ? "very-recent"
       : "older";
-  const timingInstruction = kind === "same-day"
-    ? `This is a SAME-DAY reflection. Treat the entry as current. Do not ask about the writer's past self, what has changed since writing, whether an answer shifted, what remains unchanged, or how the experience looks "now" compared with "then."`
-    : kind === "very-recent"
-      ? `This reflection is VERY RECENT. Do not manufacture hindsight or assume that feelings, circumstances, or understanding have changed.`
-      : `This is an OLDER, HISTORICAL entry. Every question must clearly distinguish what the writer described at entry-time from the writer's life at reflection-time. Never phrase an entry-time feeling, circumstance, desire, difficulty, or event as though it is happening today. A question may invite comparison with the present, but it must never assume that anything changed or stayed the same. Unchanged feelings, uncertainty, and unanswered questions are valid.`;
+  const timingInstruction =
+    kind === "same-day"
+      ? `This is a SAME-DAY reflection. Treat the entry as current. Do not ask about the writer's past self, what has changed since writing, whether an answer shifted, what remains unchanged, or how the experience looks "now" compared with "then."`
+      : kind === "very-recent"
+        ? `This reflection is VERY RECENT. Do not manufacture hindsight or assume that feelings, circumstances, or understanding have changed.`
+        : `This is an OLDER, HISTORICAL entry. Every question must clearly distinguish what the writer described at entry-time from the writer's life at reflection-time. Never phrase an entry-time feeling, circumstance, desire, difficulty, or event as though it is happening today. A question may invite comparison with the present, but it must never assume that anything changed or stayed the same. Unchanged feelings, uncertainty, and unanswered questions are valid.`;
 
   return {
     kind,
@@ -142,7 +148,9 @@ function cleanEntry(title: string, content: string): string {
     throw new Error("The journal entry has no written content");
   }
   if (cleanContent.length > MAX_ENTRY_CHARS) {
-    throw new Error("The journal entry is too long to reflect on in one request");
+    throw new Error(
+      "The journal entry is too long to reflect on in one request",
+    );
   }
 
   return `Entry title: ${cleanTitle}\n\nJournal entry:\n${cleanContent}`;
@@ -157,8 +165,11 @@ function validatedQuestions(
   }
 
   const questions = parsed.questions.map((value) => String(value).trim());
-  const normalized = new Set(questions.map((question) => question.toLowerCase()));
-  const compoundQuestion = /\b(?:and|or)\s+(?:how|what|why|when|where|who|which|has|have|do|does|did|is|are|would|could|can)\b/i;
+  const normalized = new Set(
+    questions.map((question) => question.toLowerCase()),
+  );
+  const compoundQuestion =
+    /\b(?:and|or)\s+(?:how|what|why|when|where|who|which|has|have|do|does|did|is|are|would|could|can)\b/i;
   const abstractQuestionLanguage = [
     /\bfrom your present perspective\b/i,
     /\bhas your answer shifted\b/i,
@@ -196,7 +207,8 @@ function validatedQuestions(
     /\bwhat keeps you\b/i,
     /\bwhat is stopping you\b/i,
   ];
-  const temporalOutcome = /\b(?:changed|different|shifted|evolved|same|unchanged|still)\b/i;
+  const temporalOutcome =
+    /\b(?:changed|different|shifted|evolved|same|unchanged|still)\b/i;
   const outcomeUncertainty = /\b(?:if anything|if at all|whether|or not)\b/i;
   const questionsAreUsable = questions.every(
     (question) =>
@@ -207,22 +219,21 @@ function validatedQuestions(
       question.endsWith("?") &&
       !compoundQuestion.test(question) &&
       !abstractQuestionLanguage.some((pattern) => pattern.test(question)) &&
-      (
-        timingKind === "older" ||
-        !falseHindsight.some((pattern) => pattern.test(question))
-      ) &&
-      (
-        timingKind !== "older" ||
-        (
-          olderEntryAnchor.some((pattern) => pattern.test(question)) &&
-          !olderEntryTreatedAsCurrent.some((pattern) => pattern.test(question)) &&
-          (!temporalOutcome.test(question) || outcomeUncertainty.test(question))
-        )
-      ),
+      (timingKind === "older" ||
+        !falseHindsight.some((pattern) => pattern.test(question))) &&
+      (timingKind !== "older" ||
+        (olderEntryAnchor.some((pattern) => pattern.test(question)) &&
+          !olderEntryTreatedAsCurrent.some((pattern) =>
+            pattern.test(question),
+          ) &&
+          (!temporalOutcome.test(question) ||
+            outcomeUncertainty.test(question)))),
   );
 
   if (!questionsAreUsable || normalized.size !== 4) {
-    throw new Error("The AI response contained incomplete or repeated questions");
+    throw new Error(
+      "The AI response contained incomplete or repeated questions",
+    );
   }
 
   return questions;
@@ -286,15 +297,17 @@ ${entry}`;
 
   let validationError: Error | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const userPrompt = attempt === 0
-      ? baseUserPrompt
-      : `${baseUserPrompt}
+    const userPrompt =
+      attempt === 0
+        ? baseUserPrompt
+        : `${baseUserPrompt}
 
 Your previous question set was rejected because it violated the required structure, grounding, or temporal framing. Generate a completely revised set. For an older entry, every question must explicitly identify the journaled material as historical and must not phrase it as a current situation.`;
     const raw = await groqChatJson(systemPrompt, userPrompt, {
-      stage: attempt === 0
-        ? "journal-reflection-questions"
-        : "journal-reflection-questions-repair",
+      stage:
+        attempt === 0
+          ? "journal-reflection-questions"
+          : "journal-reflection-questions-repair",
       model: MODEL,
       temperature: 0.05,
       maxTokens: 1_100,
@@ -307,11 +320,15 @@ Your previous question set was rejected because it violated the required structu
       }
       return validatedQuestions(parsed, timing.kind);
     } catch (error) {
-      validationError = error instanceof Error ? error : new Error(String(error));
+      validationError =
+        error instanceof Error ? error : new Error(String(error));
     }
   }
 
-  throw validationError ?? new Error("Failed to generate valid reflection questions");
+  throw (
+    validationError ??
+    new Error("Failed to generate valid reflection questions")
+  );
 }
 
 function validatedPerspective(
@@ -338,7 +355,9 @@ function validatedPerspective(
     /\bcentral (?:difficulty|issue|problem) remains\b/i,
   ];
   if (unhelpfulReportLanguage.some((pattern) => pattern.test(perspective))) {
-    throw new Error("The AI response repeated the reflection instead of offering a useful perspective");
+    throw new Error(
+      "The AI response repeated the reflection instead of offering a useful perspective",
+    );
   }
   const falseTemporalConclusion = [
     /\bsince (?:the|this|you)\b/i,
@@ -351,7 +370,9 @@ function validatedPerspective(
     timingKind !== "older" &&
     falseTemporalConclusion.some((pattern) => pattern.test(perspective))
   ) {
-    throw new Error("The AI response assumed more time or change than the reflection supports");
+    throw new Error(
+      "The AI response assumed more time or change than the reflection supports",
+    );
   }
   return perspective;
 }
@@ -382,18 +403,23 @@ export async function generateJournalReflectionPerspective(input: {
     throw new Error("A reflection question is too long");
   }
   if (responses.some((response) => response.answer.length > 40_000)) {
-    throw new Error("A reflection answer is too long for one perspective request");
+    throw new Error(
+      "A reflection answer is too long for one perspective request",
+    );
   }
   if (
     responses.reduce(
-      (total, response) => total + response.question.length + response.answer.length,
+      (total, response) =>
+        total + response.question.length + response.answer.length,
       0,
     ) > 120_000
   ) {
     throw new Error("The reflection is too long for one perspective request");
   }
   if (!responses.some((response) => response.answer)) {
-    throw new Error("Answer at least one question before requesting a perspective");
+    throw new Error(
+      "Answer at least one question before requesting a perspective",
+    );
   }
 
   const responseText = responses
@@ -458,4 +484,3 @@ ${responseText}`;
 
   return validatedPerspective(parsed, timing.kind);
 }
-

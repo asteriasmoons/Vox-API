@@ -211,22 +211,37 @@ function isCorrespondenceArray(v: unknown): v is NamedCorrespondence[] {
   return (
     Array.isArray(v) &&
     v.length > 0 &&
-    v.every((x) => x && typeof x === "object" && isNonEmptyString((x as any).name) && isNonEmptyString((x as any).explanation))
+    v.every(
+      (x) =>
+        x &&
+        typeof x === "object" &&
+        isNonEmptyString((x as any).name) &&
+        isNonEmptyString((x as any).explanation),
+    )
   );
 }
 
-export function validateStage(stage: CelestialStage, data: unknown): { ok: boolean; reason?: string } {
-  if (!data || typeof data !== "object") return { ok: false, reason: "not an object" };
+export function validateStage(
+  stage: CelestialStage,
+  data: unknown,
+): { ok: boolean; reason?: string } {
+  if (!data || typeof data !== "object")
+    return { ok: false, reason: "not an object" };
   const d = data as any;
 
   switch (stage) {
     case "overviewAstrology":
       if (!isNonEmptyString(d.title)) return { ok: false, reason: "title" };
-      if (!isNonEmptyString(d.overview)) return { ok: false, reason: "overview" };
-      if (!isNonEmptyString(d.magicalSignificance)) return { ok: false, reason: "magicalSignificance" };
-      if (!isStringArray(d.coreThemes) || d.coreThemes.length === 0) return { ok: false, reason: "coreThemes" };
-      if (!d.astrology || typeof d.astrology !== "object") return { ok: false, reason: "astrology" };
-      if (!isNonEmptyString(d.astrology.context)) return { ok: false, reason: "astrology.context" };
+      if (!isNonEmptyString(d.overview))
+        return { ok: false, reason: "overview" };
+      if (!isNonEmptyString(d.magicalSignificance))
+        return { ok: false, reason: "magicalSignificance" };
+      if (!isStringArray(d.coreThemes) || d.coreThemes.length === 0)
+        return { ok: false, reason: "coreThemes" };
+      if (!d.astrology || typeof d.astrology !== "object")
+        return { ok: false, reason: "astrology" };
+      if (!isNonEmptyString(d.astrology.context))
+        return { ok: false, reason: "astrology.context" };
       return { ok: true };
 
     case "correspondences":
@@ -235,24 +250,36 @@ export function validateStage(stage: CelestialStage, data: unknown): { ok: boole
       }
       // elements/deities/symbols/tools may be empty where not applicable.
       for (const key of ["elements", "deities", "symbols", "tools"]) {
-        if (d[key] !== undefined && !Array.isArray(d[key])) return { ok: false, reason: key };
+        if (d[key] !== undefined && !Array.isArray(d[key]))
+          return { ok: false, reason: key };
       }
       return { ok: true };
 
     case "practices":
-      if (!Array.isArray(d.rituals) || d.rituals.length === 0) return { ok: false, reason: "rituals" };
+      if (!Array.isArray(d.rituals) || d.rituals.length === 0)
+        return { ok: false, reason: "rituals" };
       for (const r of d.rituals) {
-        if (!isNonEmptyString(r?.title) || !isStringArray(r?.steps) || r.steps.length === 0) {
+        if (
+          !isNonEmptyString(r?.title) ||
+          !isStringArray(r?.steps) ||
+          r.steps.length === 0
+        ) {
           return { ok: false, reason: "ritual.steps" };
         }
       }
       return { ok: true };
 
     case "knowledgeReflection":
-      if (!isNonEmptyString(d.history) && !(Array.isArray(d.folklore) && d.folklore.length > 0)) {
+      if (
+        !isNonEmptyString(d.history) &&
+        !(Array.isArray(d.folklore) && d.folklore.length > 0)
+      ) {
         return { ok: false, reason: "history/folklore" };
       }
-      if (!isStringArray(d.reflectionQuestions) || d.reflectionQuestions.length === 0) {
+      if (
+        !isStringArray(d.reflectionQuestions) ||
+        d.reflectionQuestions.length === 0
+      ) {
         return { ok: false, reason: "reflectionQuestions" };
       }
       return { ok: true };

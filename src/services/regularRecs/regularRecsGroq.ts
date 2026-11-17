@@ -60,7 +60,9 @@ export async function regularGroqChatJson(
 
     lastDetail = `Groq responded ${response.status}`;
     if (response.status !== 401 && response.status !== 403) break;
-    console.warn("Groq auth failed on a key; trying alternate key if available");
+    console.warn(
+      "Groq auth failed on a key; trying alternate key if available",
+    );
   }
 
   throw new Error(lastDetail || "Groq request failed");

@@ -143,7 +143,9 @@ export async function approveSubmissionAndPostToFeed(input: {
 }) {
   if (!input.submissionID) throw new Error("submissionID is required.");
 
-  const submission = await LumeyChallengeSubmission.findById(input.submissionID);
+  const submission = await LumeyChallengeSubmission.findById(
+    input.submissionID,
+  );
   if (!submission) throw new Error("Submission not found.");
 
   await ensureNoApprovedSubmissionForCycle({
@@ -154,13 +156,16 @@ export async function approveSubmissionAndPostToFeed(input: {
   });
 
   submission.validationStatus = "approved";
-  submission.validationMessage = cleanString(input.validationMessage) || submission.validationMessage;
+  submission.validationMessage =
+    cleanString(input.validationMessage) || submission.validationMessage;
   submission.approvedDate = new Date();
 
   if (submission.postedToFeed && submission.feedItemID) {
     await submission.save();
 
-    const existingFeedItem = await LumeyChallengeFeedItem.findById(submission.feedItemID);
+    const existingFeedItem = await LumeyChallengeFeedItem.findById(
+      submission.feedItemID,
+    );
 
     return {
       submission,
@@ -204,7 +209,9 @@ export async function approveSubmissionAndPostToFeed(input: {
   };
 }
 
-export async function uploadFeedPhoto(fileBuffer: Buffer): Promise<{ photoURL: string }> {
+export async function uploadFeedPhoto(
+  fileBuffer: Buffer,
+): Promise<{ photoURL: string }> {
   if (!fileBuffer || fileBuffer.length === 0) {
     throw new Error("Image file is required.");
   }
@@ -233,7 +240,9 @@ export async function uploadFeedPhoto(fileBuffer: Buffer): Promise<{ photoURL: s
   };
 }
 
-export async function uploadSubmissionPhoto(fileBuffer: Buffer): Promise<{ photoURL: string }> {
+export async function uploadSubmissionPhoto(
+  fileBuffer: Buffer,
+): Promise<{ photoURL: string }> {
   if (!fileBuffer || fileBuffer.length === 0) {
     throw new Error("Image file is required.");
   }
@@ -553,7 +562,8 @@ export async function updateUserProfile(userID: string, input: any) {
   profile.avatarName = cleanString(input.avatarName) || profile.avatarName;
   profile.avatarURL = cleanString(input.avatarURL) || profile.avatarURL;
   profile.bio = cleanString(input.bio) || profile.bio;
-  profile.favoriteGenre = cleanString(input.favoriteGenre) || profile.favoriteGenre;
+  profile.favoriteGenre =
+    cleanString(input.favoriteGenre) || profile.favoriteGenre;
 
   if (typeof input.readingStreak === "number") {
     profile.readingStreak = input.readingStreak;
@@ -652,8 +662,7 @@ export async function updateAnnouncementActive(
 ) {
   if (!announcementID) throw new Error("announcementID is required.");
 
-  const announcement =
-    await LumeyFeedAnnouncement.findById(announcementID);
+  const announcement = await LumeyFeedAnnouncement.findById(announcementID);
 
   if (!announcement) throw new Error("Announcement not found.");
 
@@ -724,9 +733,12 @@ async function ensureNoApprovedSubmissionForCycle(input: {
     query._id = { $ne: input.excludeSubmissionID };
   }
 
-  const existingApprovedSubmission = await LumeyChallengeSubmission.findOne(query).lean();
+  const existingApprovedSubmission =
+    await LumeyChallengeSubmission.findOne(query).lean();
   if (existingApprovedSubmission) {
-    throw new Error("This challenge has already been approved for the current cycle.");
+    throw new Error(
+      "This challenge has already been approved for the current cycle.",
+    );
   }
 }
 

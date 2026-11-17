@@ -49,7 +49,12 @@ async function uploadToCloudinary(
             ? cloudinary.url(result.public_id, {
                 secure: true,
                 transformation: [
-                  { width: 480, crop: "limit", quality: "auto", fetch_format: "auto" },
+                  {
+                    width: 480,
+                    crop: "limit",
+                    quality: "auto",
+                    fetch_format: "auto",
+                  },
                 ],
               })
             : result.secure_url;
@@ -59,7 +64,9 @@ async function uploadToCloudinary(
           publicId: result.public_id,
           width: result.width || 0,
           height: result.height || 0,
-          mimeType: result.format ? `image/${result.format}` : "application/octet-stream",
+          mimeType: result.format
+            ? `image/${result.format}`
+            : "application/octet-stream",
           bytes: result.bytes || 0,
         });
       },
@@ -104,8 +111,7 @@ export async function uploadImage(
     localID: randomUUID(),
     sharedEventID: target.sharedEventID,
     eventPostID: target.kind === "post" ? target.eventPostID : "",
-    announcementID:
-      target.kind === "announcement" ? target.announcementID : "",
+    announcementID: target.kind === "announcement" ? target.announcementID : "",
     kind: "image",
     url: asset.url,
     thumbnailURL: asset.thumbnailURL,
@@ -120,7 +126,10 @@ export async function uploadImage(
   return attachment.toObject();
 }
 
-export async function uploadProfileAvatar(buffer: Buffer, uploaderUserID: string) {
+export async function uploadProfileAvatar(
+  buffer: Buffer,
+  uploaderUserID: string,
+) {
   if (!uploaderUserID) throw new Error("uploaderUserID_REQUIRED");
   const asset = await uploadToCloudinary(
     buffer,
@@ -146,20 +155,13 @@ export async function uploadFile(
   filename: string,
   mimeType: string,
 ) {
-  const asset = await uploadToCloudinary(
-    buffer,
-    "lurelia/event_files",
-    "raw",
-  );
+  const asset = await uploadToCloudinary(buffer, "lurelia/event_files", "raw");
   const attachment = await Attachment.create({
     localID: randomUUID(),
     sharedEventID:
-      target.kind === "artwork"
-        ? target.sharedEventID
-        : target.sharedEventID,
+      target.kind === "artwork" ? target.sharedEventID : target.sharedEventID,
     eventPostID: target.kind === "post" ? target.eventPostID : "",
-    announcementID:
-      target.kind === "announcement" ? target.announcementID : "",
+    announcementID: target.kind === "announcement" ? target.announcementID : "",
     kind: "file",
     url: asset.url,
     mimeType,

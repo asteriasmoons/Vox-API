@@ -138,7 +138,13 @@ ${answersText}`,
   const nextStep = String(parsed.nextStep || "").trim();
   const encouragement = String(parsed.encouragement || "").trim();
 
-  if (!reflection || !strengths || !systemInsight || !nextStep || !encouragement) {
+  if (
+    !reflection ||
+    !strengths ||
+    !systemInsight ||
+    !nextStep ||
+    !encouragement
+  ) {
     throw new Error("Groq returned incomplete challenge analysis fields");
   }
 

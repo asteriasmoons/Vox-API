@@ -41,8 +41,11 @@ function dedupeDefinitions(values: string[]): string[] {
   for (const value of values) {
     const definition = normalizeDefinition(value);
     // Ignore supplementary bracketed citations when comparing duplicates.
-    const key = definition.replace(/\s*\[[^\]]*\]\s*$/g, "")
-      .replace(/[^\p{L}\p{N}]+/gu, " ").trim().toLowerCase();
+    const key = definition
+      .replace(/\s*\[[^\]]*\]\s*$/g, "")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim()
+      .toLowerCase();
     if (!key || seen.has(key) || !usefulProse(definition, 3)) continue;
     seen.add(key);
     cleaned.push(definition);
@@ -64,10 +67,12 @@ function usefulOrigin(value: string): boolean {
 function completeExample(value: string, word: string): boolean {
   const cleaned = normalizeProse(value);
   const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return usefulProse(cleaned, 5) &&
+  return (
+    usefulProse(cleaned, 5) &&
     /^[\p{Lu}\d“"']/u.test(cleaned) &&
     /[.!?][”"']?$/u.test(cleaned) &&
-    new RegExp(`\\b${escapedWord}\\b`, "iu").test(cleaned);
+    new RegExp(`\\b${escapedWord}\\b`, "iu").test(cleaned)
+  );
 }
 
 function dedupeSources(sources: NormalizedSource[]): NormalizedSource[] {
@@ -135,19 +140,23 @@ export async function aggregateWordDetails(
     synonyms.push(...result.synonyms);
     antonyms.push(...result.antonyms);
     relatedWords.push(...result.relatedWords);
-    if (!origin && usefulOrigin(result.origin)) origin = normalizeProse(result.origin);
+    if (!origin && usefulOrigin(result.origin))
+      origin = normalizeProse(result.origin);
   }
 
   definitions = dedupeDefinitions(definitions);
-  dictionaryExamples = dedupeStrings(dictionaryExamples.map(normalizeProse), 6)
-    .filter((value) => completeExample(value, cleanedWord));
+  dictionaryExamples = dedupeStrings(
+    dictionaryExamples.map(normalizeProse),
+    6,
+  ).filter((value) => completeExample(value, cleanedWord));
   synonyms = dedupeStrings(synonyms, MAX_SYNONYMS);
   antonyms = dedupeStrings(antonyms, MAX_ANTONYMS);
   relatedWords = dedupeStrings(relatedWords, MAX_RELATED);
 
   let partOfSpeech = pickPartOfSpeech(partsOfSpeech);
   const ipaPronunciation = pickIpa(ipaCandidates);
-  const providerWrittenPronunciation = dedupeStrings(writtenCandidates, 1)[0] ?? "";
+  const providerWrittenPronunciation =
+    dedupeStrings(writtenCandidates, 1)[0] ?? "";
 
   // One Groq request enriches every AI-backed field. The enrichment service
   // performs one focused repair request only when the first result is partial.
@@ -180,10 +189,12 @@ export async function aggregateWordDetails(
 
   sources = dedupeSources(sources);
   if (!sources.length) {
-    sources = [{
-      name: "Wiktionary",
-      url: `https://en.wiktionary.org/wiki/${encodeURIComponent(cleanedWord.replace(/ /g, "_"))}`,
-    }];
+    sources = [
+      {
+        name: "Wiktionary",
+        url: `https://en.wiktionary.org/wiki/${encodeURIComponent(cleanedWord.replace(/ /g, "_"))}`,
+      },
+    ];
   }
 
   const writtenPronunciation = enrichment.writtenPronunciation;
@@ -195,7 +206,8 @@ export async function aggregateWordDetails(
     !synonyms.length && "synonyms",
     !antonyms.length && "antonyms",
     !definitions.some((value) => usefulProse(value, 3)) && "definitions",
-    exampleSentences.filter((value) => completeExample(value, cleanedWord)).length < 2 && "exampleSentences",
+    exampleSentences.filter((value) => completeExample(value, cleanedWord))
+      .length < 2 && "exampleSentences",
     !usefulOrigin(origin) && "originEtymology",
     !relatedWords.length && "relatedWords",
     !enrichment.usageNotes.length && "usageNotes",

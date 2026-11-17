@@ -31,9 +31,15 @@ import {
 } from "./celestialGenerationService";
 import { CELESTIAL_GROQ_CONCURRENCY } from "./celestialRateLimiter";
 
-const MAX_ATTEMPTS = Math.max(1, Number(process.env.CELESTIAL_MAX_ATTEMPTS) || 5);
+const MAX_ATTEMPTS = Math.max(
+  1,
+  Number(process.env.CELESTIAL_MAX_ATTEMPTS) || 5,
+);
 const STALE_LOCK_MS = 3 * 60_000;
-const TICK_MS = Math.max(2_000, Number(process.env.CELESTIAL_WORKER_TICK_MS) || 5_000);
+const TICK_MS = Math.max(
+  2_000,
+  Number(process.env.CELESTIAL_WORKER_TICK_MS) || 5_000,
+);
 const BACKOFF_BASE_MS = 15_000;
 const BACKOFF_MAX_MS = 10 * 60_000;
 const LOCK_OWNER = `worker-${process.pid}`;
@@ -62,7 +68,9 @@ export interface CelestialSnapshot {
  * for the opened event. Returns the current snapshot. Idempotent and safe for
  * concurrent callers (unique fingerprint).
  */
-export async function ensureGeneration(payload: CelestialEventPayload): Promise<CelestialSnapshot> {
+export async function ensureGeneration(
+  payload: CelestialEventPayload,
+): Promise<CelestialSnapshot> {
   const fingerprint = computeFingerprint(payload);
 
   let interp = await CelestialEventInterpretation.findOne({ fingerprint });
@@ -109,7 +117,14 @@ async function ensureJob(
     if (existing.status === "failed" || existing.status === "waiting") {
       await CelestialGenerationJob.updateOne(
         { fingerprint },
-        { $set: { status: "queued", attempts: 0, nextAttemptAt: new Date(), lastError: null } },
+        {
+          $set: {
+            status: "queued",
+            attempts: 0,
+            nextAttemptAt: new Date(),
+            lastError: null,
+          },
+        },
       );
     }
     return;
@@ -128,7 +143,9 @@ async function ensureJob(
   }
 }
 
-export async function snapshot(fingerprint: string): Promise<CelestialSnapshot | null> {
+export async function snapshot(
+  fingerprint: string,
+): Promise<CelestialSnapshot | null> {
   const interp = await CelestialEventInterpretation.findOne({ fingerprint });
   if (!interp) return null;
   return snapshotFrom(fingerprint, interp);
@@ -147,14 +164,22 @@ async function snapshotFrom(
     category: interp.category,
     sections: (interp.sections as Record<string, unknown>) ?? {},
     completedStages: interp.completedStages ?? [],
-    pendingStages: CELESTIAL_STAGES.filter((s) => !(interp.completedStages ?? []).includes(s)),
-    jobStatus: job ? job.status : interp.status === "complete" ? "completed" : null,
+    pendingStages: CELESTIAL_STAGES.filter(
+      (s) => !(interp.completedStages ?? []).includes(s),
+    ),
+    jobStatus: job
+      ? job.status
+      : interp.status === "complete"
+        ? "completed"
+        : null,
     lastError: job?.lastError ?? null,
   };
 }
 
 /** Authorized regeneration: clear sections and re-queue all stages. */
-export async function regenerate(payload: CelestialEventPayload): Promise<CelestialSnapshot> {
+export async function regenerate(
+  payload: CelestialEventPayload,
+): Promise<CelestialSnapshot> {
   const fingerprint = computeFingerprint(payload);
   await CelestialEventInterpretation.updateOne(
     { fingerprint },
@@ -204,7 +229,10 @@ export function startCelestialGenerationWorker(): void {
         await processOneStage(claimed);
       }
     } catch (error) {
-      console.error("[celestial] worker tick error:", error instanceof Error ? error.message : error);
+      console.error(
+        "[celestial] worker tick error:",
+        error instanceof Error ? error.message : error,
+      );
     } finally {
       setTimeout(loop, TICK_MS);
     }
@@ -226,7 +254,11 @@ async function claimNextJob(): Promise<CelestialGenerationJobDoc | null> {
     {
       status: { $in: ["queued", "partial", "waiting"] },
       attempts: { $lt: MAX_ATTEMPTS },
-      $or: [{ nextAttemptAt: { $exists: false } }, { nextAttemptAt: null }, { nextAttemptAt: { $lte: now } }],
+      $or: [
+        { nextAttemptAt: { $exists: false } },
+        { nextAttemptAt: null },
+        { nextAttemptAt: { $lte: now } },
+      ],
     },
     { $set: { status: "running", lockedAt: now, lockOwner: LOCK_OWNER } },
     { sort: { updatedAt: 1 }, new: true },
@@ -239,7 +271,9 @@ async function processOneStage(job: CelestialGenerationJobDoc): Promise<void> {
 
   const interp = await CelestialEventInterpretation.findOne({ fingerprint });
   const completed = interp?.completedStages ?? [];
-  const stage = CELESTIAL_STAGES.find((s) => !completed.includes(s)) as CelestialStage | undefined;
+  const stage = CELESTIAL_STAGES.find((s) => !completed.includes(s)) as
+    | CelestialStage
+    | undefined;
 
   if (!stage) {
     await finishJob(fingerprint);
@@ -251,18 +285,28 @@ async function processOneStage(job: CelestialGenerationJobDoc): Promise<void> {
 
     await CelestialEventInterpretation.updateOne(
       { fingerprint },
-      { $set: { [`sections.${stage}`]: section }, $addToSet: { completedStages: stage } },
+      {
+        $set: { [`sections.${stage}`]: section },
+        $addToSet: { completedStages: stage },
+      },
     );
     if (stage === "overviewAstrology") {
       await upsertReusableKnowledge(payload.type, section);
     }
 
-    const refreshed = await CelestialEventInterpretation.findOne({ fingerprint });
+    const refreshed = await CelestialEventInterpretation.findOne({
+      fingerprint,
+    });
     const nowCompleted = refreshed?.completedStages ?? [];
     const allDone = CELESTIAL_STAGES.every((s) => nowCompleted.includes(s));
     await CelestialEventInterpretation.updateOne(
       { fingerprint },
-      { $set: { status: allDone ? "complete" : "partial", ...(allDone ? { completedAt: new Date() } : {}) } },
+      {
+        $set: {
+          status: allDone ? "complete" : "partial",
+          ...(allDone ? { completedAt: new Date() } : {}),
+        },
+      },
     );
 
     const pending = CELESTIAL_STAGES.filter((s) => !nowCompleted.includes(s));
@@ -290,7 +334,10 @@ async function processOneStage(job: CelestialGenerationJobDoc): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     const attempts = (job.attempts ?? 0) + 1;
     const failed = attempts >= MAX_ATTEMPTS;
-    const delay = Math.min(BACKOFF_BASE_MS * 2 ** (attempts - 1), BACKOFF_MAX_MS);
+    const delay = Math.min(
+      BACKOFF_BASE_MS * 2 ** (attempts - 1),
+      BACKOFF_MAX_MS,
+    );
     // Completed sections are preserved regardless of this stage's failure.
     await CelestialGenerationJob.updateOne(
       { fingerprint },
@@ -304,7 +351,9 @@ async function processOneStage(job: CelestialGenerationJobDoc): Promise<void> {
         },
       },
     );
-    console.error(`[celestial] stage ${stage} failed (attempt ${attempts}): ${message}`);
+    console.error(
+      `[celestial] stage ${stage} failed (attempt ${attempts}): ${message}`,
+    );
   }
 }
 
@@ -315,6 +364,13 @@ async function finishJob(fingerprint: string): Promise<void> {
   );
   await CelestialGenerationJob.updateOne(
     { fingerprint },
-    { $set: { status: "completed", pendingStages: [], lockOwner: null, lastError: null } },
+    {
+      $set: {
+        status: "completed",
+        pendingStages: [],
+        lockOwner: null,
+        lastError: null,
+      },
+    },
   );
 }

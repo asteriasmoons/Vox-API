@@ -107,8 +107,10 @@ function regularGoogleIdentifiers(v: RegularGoogleVolumeInfo): {
   let isbn10: string | undefined;
   let isbn13: string | undefined;
   for (const id of v.industryIdentifiers ?? []) {
-    if (id?.type === "ISBN_10" && id.identifier) isbn10 = cleanText(id.identifier);
-    if (id?.type === "ISBN_13" && id.identifier) isbn13 = cleanText(id.identifier);
+    if (id?.type === "ISBN_10" && id.identifier)
+      isbn10 = cleanText(id.identifier);
+    if (id?.type === "ISBN_13" && id.identifier)
+      isbn13 = cleanText(id.identifier);
   }
   return { isbn10, isbn13 };
 }
@@ -117,7 +119,7 @@ function scoreGoogleVolume(
   v: RegularGoogleVolumeInfo,
   candidate: RegularAiCandidate,
 ): number {
-  const author = Array.isArray(v.authors) ? v.authors[0] ?? "" : "";
+  const author = Array.isArray(v.authors) ? (v.authors[0] ?? "") : "";
   let score = scoreTitleAuthorMatch(
     candidate.title,
     candidate.author,
@@ -134,7 +136,7 @@ function scoreOpenLibraryDoc(
   d: RegularOpenLibraryDoc,
   candidate: RegularAiCandidate,
 ): number {
-  const author = Array.isArray(d.author_name) ? d.author_name[0] ?? "" : "";
+  const author = Array.isArray(d.author_name) ? (d.author_name[0] ?? "") : "";
   let score = scoreTitleAuthorMatch(
     candidate.title,
     candidate.author,
@@ -265,7 +267,9 @@ export async function verifyRegularCandidate(
     cleanText(google?.imageLinks?.smallThumbnail);
   const coverUrl =
     (googleCover ? googleCover.replace("http://", "https://") : undefined) ??
-    (coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : undefined);
+    (coverId
+      ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg`
+      : undefined);
 
   const genres = uniqueStrings([
     ...toStringArray(google?.categories, 8),
@@ -273,7 +277,8 @@ export async function verifyRegularCandidate(
   ]).slice(0, 8);
 
   const releaseYear =
-    extractYear(google?.publishedDate) ?? firstNumber(openLibrary?.first_publish_year);
+    extractYear(google?.publishedDate) ??
+    firstNumber(openLibrary?.first_publish_year);
   const summary = cleanText(google?.description);
 
   if (suspiciousPenalty(`${title} ${summary}`) >= 60) return null;
@@ -328,8 +333,12 @@ export async function resolveRegularSeedBook(
   if (cached !== undefined) return cached;
 
   const [googleVolumes, openLibraryDocs] = await Promise.all([
-    regularGoogleBooksSearch(requestText, 6).catch(() => [] as RegularGoogleVolumeInfo[]),
-    regularOpenLibrarySearch(requestText, 6).catch(() => [] as RegularOpenLibraryDoc[]),
+    regularGoogleBooksSearch(requestText, 6).catch(
+      () => [] as RegularGoogleVolumeInfo[],
+    ),
+    regularOpenLibrarySearch(requestText, 6).catch(
+      () => [] as RegularOpenLibraryDoc[],
+    ),
   ]);
 
   const candidates: RegularSeedBook[] = [];
@@ -347,7 +356,9 @@ export async function resolveRegularSeedBook(
   for (const d of openLibraryDocs) {
     candidates.push({
       title: cleanText(d.title),
-      author: Array.isArray(d.author_name) ? d.author_name.slice(0, 3).join(", ") : "",
+      author: Array.isArray(d.author_name)
+        ? d.author_name.slice(0, 3).join(", ")
+        : "",
       subjects: toStringArray(d.subject, 10),
       description: "",
       releaseYear: firstNumber(d.first_publish_year),

@@ -271,10 +271,15 @@ function googleISBN(volume: GoogleVolumeInfo): string | undefined {
     (identifier) => cleanText(identifier.type) === "ISBN_10",
   );
 
-  return cleanText(isbn13?.identifier) || cleanText(isbn10?.identifier) || undefined;
+  return (
+    cleanText(isbn13?.identifier) || cleanText(isbn10?.identifier) || undefined
+  );
 }
 
-async function fetchJson<T>(url: URL, timeoutMs = CATALOG_TIMEOUT_MS): Promise<T> {
+async function fetchJson<T>(
+  url: URL,
+  timeoutMs = CATALOG_TIMEOUT_MS,
+): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -329,7 +334,7 @@ async function searchGoogleBooks(
         input.title,
         input.author,
         cleanText(volume.title),
-        Array.isArray(volume.authors) ? volume.authors[0] ?? "" : "",
+        Array.isArray(volume.authors) ? (volume.authors[0] ?? "") : "",
       ),
     }))
     .sort((a, b) => b.score - a.score)[0];
@@ -350,8 +355,12 @@ async function searchGoogleBooks(
     categories: uniqueStrings(best.volume.categories ?? [], 12),
     subjects: [],
     source: "Google Books",
-    ...(cleanText(best.volume.subtitle) ? { subtitle: cleanText(best.volume.subtitle) } : {}),
-    ...(cleanText(best.volume.publisher) ? { publisher: cleanText(best.volume.publisher) } : {}),
+    ...(cleanText(best.volume.subtitle)
+      ? { subtitle: cleanText(best.volume.subtitle) }
+      : {}),
+    ...(cleanText(best.volume.publisher)
+      ? { publisher: cleanText(best.volume.publisher) }
+      : {}),
     ...(releaseYear !== undefined ? { publicationYear: releaseYear } : {}),
     ...(isbn ? { isbn } : {}),
     ...(cleanText(best.volume.description)
@@ -386,7 +395,7 @@ async function searchOpenLibrary(
         input.title,
         input.author,
         cleanText(doc.title),
-        Array.isArray(doc.author_name) ? doc.author_name[0] ?? "" : "",
+        Array.isArray(doc.author_name) ? (doc.author_name[0] ?? "") : "",
       ),
     }))
     .sort((a, b) => b.score - a.score)[0];
@@ -396,8 +405,8 @@ async function searchOpenLibrary(
   const coverId = firstNumber(best.doc.cover_i);
   const publicationYear = firstNumber(best.doc.first_publish_year);
   const isbn = Array.isArray(best.doc.isbn)
-    ? best.doc.isbn.find((value) => cleanText(value).length === 13) ??
-      best.doc.isbn[0]
+    ? (best.doc.isbn.find((value) => cleanText(value).length === 13) ??
+      best.doc.isbn[0])
     : undefined;
   const publisher = Array.isArray(best.doc.publisher)
     ? best.doc.publisher[0]
@@ -414,7 +423,9 @@ async function searchOpenLibrary(
     ...(publicationYear !== undefined ? { publicationYear } : {}),
     ...(cleanText(isbn) ? { isbn: cleanText(isbn) } : {}),
     ...(cleanText(publisher) ? { publisher: cleanText(publisher) } : {}),
-    ...(coverId ? { coverUrl: `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` } : {}),
+    ...(coverId
+      ? { coverUrl: `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` }
+      : {}),
   };
 }
 
@@ -425,7 +436,9 @@ function mergeCatalogDetails(
 ): CatalogDetail {
   const publisher = google?.publisher ?? openLibrary?.publisher;
   const publicationYear =
-    google?.publicationYear ?? openLibrary?.publicationYear ?? input.releaseYear;
+    google?.publicationYear ??
+    openLibrary?.publicationYear ??
+    input.releaseYear;
   const isbn = google?.isbn ?? openLibrary?.isbn;
   const summary = google?.summary ?? input.summary;
   const coverUrl = google?.coverUrl ?? openLibrary?.coverUrl ?? input.coverUrl;
@@ -434,7 +447,10 @@ function mergeCatalogDetails(
   const source =
     google && openLibrary
       ? "Open Library + Google Books"
-      : google?.source || openLibrary?.source || cleanText(input.source) || "Recommendation";
+      : google?.source ||
+        openLibrary?.source ||
+        cleanText(input.source) ||
+        "Recommendation";
 
   return {
     title: google?.title ?? openLibrary?.title ?? input.title,
@@ -465,7 +481,11 @@ function mergeCatalogDetails(
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
-  const content = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  const content = raw
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
   if (!content) return null;
 
   try {
@@ -493,16 +513,29 @@ function parseAIEnrichment(raw: string): AIEnrichment {
   if (!parsed) return {};
 
   return {
-    ...(cleanText(parsed.summary) ? { summary: cleanText(parsed.summary) } : {}),
+    ...(cleanText(parsed.summary)
+      ? { summary: cleanText(parsed.summary) }
+      : {}),
     genres: uniqueStrings(Array.isArray(parsed.genres) ? parsed.genres : [], 8),
-    subgenres: uniqueStrings(Array.isArray(parsed.subgenres) ? parsed.subgenres : [], 8),
+    subgenres: uniqueStrings(
+      Array.isArray(parsed.subgenres) ? parsed.subgenres : [],
+      8,
+    ),
     moods: uniqueStrings(Array.isArray(parsed.moods) ? parsed.moods : [], 8),
     tags: uniqueStrings(Array.isArray(parsed.tags) ? parsed.tags : [], 12),
-    tropes: uniqueStrings(Array.isArray(parsed.tropes) ? parsed.tropes : [], 10),
-    themes: uniqueStrings(Array.isArray(parsed.themes) ? parsed.themes : [], 10),
+    tropes: uniqueStrings(
+      Array.isArray(parsed.tropes) ? parsed.tropes : [],
+      10,
+    ),
+    themes: uniqueStrings(
+      Array.isArray(parsed.themes) ? parsed.themes : [],
+      10,
+    ),
     ...(cleanText(parsed.tone) ? { tone: cleanText(parsed.tone) } : {}),
     ...(cleanText(parsed.pacing) ? { pacing: cleanText(parsed.pacing) } : {}),
-    ...(cleanText(parsed.audience) ? { audience: cleanText(parsed.audience) } : {}),
+    ...(cleanText(parsed.audience)
+      ? { audience: cleanText(parsed.audience) }
+      : {}),
     ...(cleanText(parsed.romanceLevel)
       ? { romanceLevel: cleanText(parsed.romanceLevel) }
       : {}),
@@ -682,7 +715,9 @@ async function generateAIEnrichment(
       const durationMs = Date.now() - startedAt;
 
       if (!response.ok) {
-        const message = safeProviderErrorMessage(json as ProviderErrorBody | null);
+        const message = safeProviderErrorMessage(
+          json as ProviderErrorBody | null,
+        );
         console.error("[recommendation-book-detail] groq failure", {
           title: input.title,
           author: input.author,
@@ -746,7 +781,9 @@ async function generateAIEnrichment(
           durationMs,
           timeoutMs: AI_TIMEOUT_MS,
         });
-      } else if (!(error instanceof Error && error.message.startsWith("Groq "))) {
+      } else if (
+        !(error instanceof Error && error.message.startsWith("Groq "))
+      ) {
         console.error("[recommendation-book-detail] groq failure", {
           title: input.title,
           author: input.author,
@@ -832,7 +869,9 @@ export async function buildRecommendationBookDetail(
   }
 
   const bookKey = normalizeBookKey(title, author);
-  const cached = await GeneratedRecommendationBookDetail.findOne({ bookKey }).lean();
+  const cached = await GeneratedRecommendationBookDetail.findOne({
+    bookKey,
+  }).lean();
   if (cached?.response && cached.cacheVersion === DETAIL_CACHE_VERSION) {
     console.log("[recommendation-book-detail] cache hit", {
       bookKey,
@@ -846,7 +885,9 @@ export async function buildRecommendationBookDetail(
     author,
     hasSummary: Boolean(input.summary),
     cacheVersion: DETAIL_CACHE_VERSION,
-    cacheRefreshReason: cached?.response ? "detail-cache-version-change" : "missing",
+    cacheRefreshReason: cached?.response
+      ? "detail-cache-version-change"
+      : "missing",
   });
 
   const request = { ...input, title, author };

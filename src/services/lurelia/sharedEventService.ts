@@ -158,9 +158,13 @@ export async function updateSharedEvent(
     }
   }
 
-  const updated = await SharedEvent.findByIdAndUpdate(sharedEventID, updateDoc, {
-    new: true,
-  }).lean();
+  const updated = await SharedEvent.findByIdAndUpdate(
+    sharedEventID,
+    updateDoc,
+    {
+      new: true,
+    },
+  ).lean();
   if (!updated) throw new Error("EVENT_NOT_FOUND");
 
   io.to(eventRoomName(sharedEventID)).emit("event:updated", updated);
@@ -275,7 +279,10 @@ export async function duplicateSharedEvent(
 }
 
 export async function listEventsForUser(userID: string) {
-  const asHost = await SharedEvent.find({ hostUserID: userID, cancelledAt: null })
+  const asHost = await SharedEvent.find({
+    hostUserID: userID,
+    cancelledAt: null,
+  })
     .sort({ startDate: -1 })
     .lean();
   const attendeeRows = await Attendee.find({ userID, removedAt: null }).lean();

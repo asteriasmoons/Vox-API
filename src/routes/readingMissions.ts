@@ -15,19 +15,31 @@ router.post("/generate", async (req, res) => {
     const author = cleanText(rawBook.author);
 
     if (!title || !author) {
-      return res.status(400).json({ error: "Book title and author are required" });
+      return res
+        .status(400)
+        .json({ error: "Book title and author are required" });
     }
 
     const pageCount = numberValue(rawBook.pageCount);
     const book: ReadingMissionBookInput = {
       title,
       author,
-      ...(cleanText(rawBook.synopsis) ? { synopsis: cleanText(rawBook.synopsis) } : {}),
-      ...(cleanArray(rawBook.genres).length ? { genres: cleanArray(rawBook.genres) } : {}),
-      ...(cleanArray(rawBook.tags).length ? { tags: cleanArray(rawBook.tags) } : {}),
+      ...(cleanText(rawBook.synopsis)
+        ? { synopsis: cleanText(rawBook.synopsis) }
+        : {}),
+      ...(cleanArray(rawBook.genres).length
+        ? { genres: cleanArray(rawBook.genres) }
+        : {}),
+      ...(cleanArray(rawBook.tags).length
+        ? { tags: cleanArray(rawBook.tags) }
+        : {}),
       ...(pageCount !== undefined ? { pageCount } : {}),
-      ...(cleanText(rawBook.seriesName) ? { seriesName: cleanText(rawBook.seriesName) } : {}),
-      ...(cleanText(rawBook.seriesNumber) ? { seriesNumber: cleanText(rawBook.seriesNumber) } : {}),
+      ...(cleanText(rawBook.seriesName)
+        ? { seriesName: cleanText(rawBook.seriesName) }
+        : {}),
+      ...(cleanText(rawBook.seriesNumber)
+        ? { seriesNumber: cleanText(rawBook.seriesNumber) }
+        : {}),
     };
 
     const missions = await generateReadingMissions(book);
@@ -49,10 +61,14 @@ router.post("/score", async (req, res) => {
     const author = cleanText(rawBook.author);
 
     if (!title || !author) {
-      return res.status(400).json({ error: "Book title and author are required" });
+      return res
+        .status(400)
+        .json({ error: "Book title and author are required" });
     }
 
-    const rawPrompts: unknown[] = Array.isArray(req.body?.prompts) ? req.body.prompts : [];
+    const rawPrompts: unknown[] = Array.isArray(req.body?.prompts)
+      ? req.body.prompts
+      : [];
     const prompts = rawPrompts
       .map((item): ReadingMissionScorePromptInput | null => {
         if (!isRecord(item)) return null;
@@ -65,7 +81,13 @@ router.post("/score", async (req, res) => {
           answer: cleanLongText(item.answer),
         };
 
-        if (!prompt.title || !prompt.description || !prompt.category || !prompt.difficulty || !prompt.answer) {
+        if (
+          !prompt.title ||
+          !prompt.description ||
+          !prompt.category ||
+          !prompt.difficulty ||
+          !prompt.answer
+        ) {
           return null;
         }
 
@@ -84,12 +106,22 @@ router.post("/score", async (req, res) => {
     const book: ReadingMissionBookInput = {
       title,
       author,
-      ...(cleanText(rawBook.synopsis) ? { synopsis: cleanText(rawBook.synopsis) } : {}),
-      ...(cleanArray(rawBook.genres).length ? { genres: cleanArray(rawBook.genres) } : {}),
-      ...(cleanArray(rawBook.tags).length ? { tags: cleanArray(rawBook.tags) } : {}),
+      ...(cleanText(rawBook.synopsis)
+        ? { synopsis: cleanText(rawBook.synopsis) }
+        : {}),
+      ...(cleanArray(rawBook.genres).length
+        ? { genres: cleanArray(rawBook.genres) }
+        : {}),
+      ...(cleanArray(rawBook.tags).length
+        ? { tags: cleanArray(rawBook.tags) }
+        : {}),
       ...(pageCount !== undefined ? { pageCount } : {}),
-      ...(cleanText(rawBook.seriesName) ? { seriesName: cleanText(rawBook.seriesName) } : {}),
-      ...(cleanText(rawBook.seriesNumber) ? { seriesNumber: cleanText(rawBook.seriesNumber) } : {}),
+      ...(cleanText(rawBook.seriesName)
+        ? { seriesName: cleanText(rawBook.seriesName) }
+        : {}),
+      ...(cleanText(rawBook.seriesNumber)
+        ? { seriesNumber: cleanText(rawBook.seriesNumber) }
+        : {}),
     };
 
     const score = await scoreReadingMission({ book, prompts });
@@ -109,17 +141,27 @@ function cleanText(value: unknown): string {
 }
 
 function cleanLongText(value: unknown): string {
-  return typeof value === "string" ? value.trim().replace(/[ \t]+/g, " ").slice(0, 2200) : "";
+  return typeof value === "string"
+    ? value
+        .trim()
+        .replace(/[ \t]+/g, " ")
+        .slice(0, 2200)
+    : "";
 }
 
 function cleanArray(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.map(cleanText).filter((item) => item.length > 0).slice(0, 18)
+    ? value
+        .map(cleanText)
+        .filter((item) => item.length > 0)
+        .slice(0, 18)
     : [];
 }
 
 function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

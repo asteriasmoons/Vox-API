@@ -139,7 +139,9 @@ function singularize(word: string): string {
  * Strips all non-alphanumeric characters and lowercases.
  */
 export function tagKey(raw: string): string {
-  return normalizeTag(raw).replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return normalizeTag(raw)
+    .replace(/[^a-z0-9]/gi, "")
+    .toLowerCase();
 }
 
 /**

@@ -20,11 +20,28 @@ import {
 } from "./regularRecsTypes";
 
 const STOP_WORDS = new Set([
-  "the", "a", "an", "of", "and", "or", "to", "in", "on", "for", "with",
-  "book", "books", "like", "similar", "recommend", "recommendations",
+  "the",
+  "a",
+  "an",
+  "of",
+  "and",
+  "or",
+  "to",
+  "in",
+  "on",
+  "for",
+  "with",
+  "book",
+  "books",
+  "like",
+  "similar",
+  "recommend",
+  "recommendations",
 ]);
 
-export function regularFallbackProfile(requestText: string): RegularRequestProfile {
+export function regularFallbackProfile(
+  requestText: string,
+): RegularRequestProfile {
   const keywords = uniqueStrings(
     requestText
       .split(/\s+/)
@@ -100,10 +117,16 @@ export function extractRegularCompTitles(description: string): string[] {
     const seg = m[1];
     if (!seg) continue;
     for (const part of seg.split(/\s+and\s+|\s*&\s*|,/i)) {
-      const title = cleanText(part).replace(/["'“”‘’]/g, "").trim();
+      const title = cleanText(part)
+        .replace(/["'“”‘’]/g, "")
+        .trim();
       const words = title.split(/\s+/);
       if (title.length < 2 || words.length > 6) continue;
-      if (/bestsell|author|times|novel|series|reader|fans|edition|book club/i.test(title)) {
+      if (
+        /bestsell|author|times|novel|series|reader|fans|edition|book club/i.test(
+          title,
+        )
+      ) {
         continue;
       }
       out.push(title);
@@ -118,7 +141,9 @@ function coerceProfile(
 ): RegularRequestProfile {
   if (!parsed || typeof parsed !== "object") return base;
   const obj = parsed as Record<string, unknown>;
-  const rawType = cleanText(obj.requestType).toLowerCase().replace(/[\s-]+/g, "_");
+  const rawType = cleanText(obj.requestType)
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
   const requestType: RegularRequestType = isRegularRequestType(rawType)
     ? rawType
     : base.requestType;
@@ -179,7 +204,10 @@ If a verified seed book is provided, base the profile on that actual book. Do NO
     );
     return coerceProfile(parseJsonLoose(content), base);
   } catch (error) {
-    console.error("Request profile analysis failed via Groq (using heuristic):", error);
+    console.error(
+      "Request profile analysis failed via Groq (using heuristic):",
+      error,
+    );
     return base;
   }
 }

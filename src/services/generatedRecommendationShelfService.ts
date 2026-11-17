@@ -105,12 +105,14 @@ export function createGeneratedRecommendationShelfService(
       userId: string,
       excludeShelfKey: string,
     ): Promise<string[]> {
-      const docs = await (model as any).find({
-        userId,
-        shelfKey: { $ne: excludeShelfKey },
-        status: "completed",
-        response: { $exists: true },
-      }).lean();
+      const docs = await (model as any)
+        .find({
+          userId,
+          shelfKey: { $ne: excludeShelfKey },
+          status: "completed",
+          response: { $exists: true },
+        })
+        .lean();
 
       const keys: string[] = [];
       for (const doc of docs ?? []) {
@@ -120,7 +122,9 @@ export function createGeneratedRecommendationShelfService(
           if (!Array.isArray(collection.books)) continue;
           for (const book of collection.books) {
             if (book.title) {
-              keys.push(`${(book.title ?? "").toLowerCase().trim()}|${(book.author ?? "").toLowerCase().trim()}`);
+              keys.push(
+                `${(book.title ?? "").toLowerCase().trim()}|${(book.author ?? "").toLowerCase().trim()}`,
+              );
             }
           }
         }
@@ -167,8 +171,14 @@ export function createGeneratedRecommendationShelfService(
               $or: [
                 { status: { $exists: false } },
                 { status: "failed" },
-                { status: "generating", generationStartedAt: { $exists: false } },
-                { status: "generating", generationStartedAt: { $lte: staleBefore } },
+                {
+                  status: "generating",
+                  generationStartedAt: { $exists: false },
+                },
+                {
+                  status: "generating",
+                  generationStartedAt: { $lte: staleBefore },
+                },
               ],
             },
             {
@@ -184,7 +194,7 @@ export function createGeneratedRecommendationShelfService(
               $unset: {
                 refreshGenerationId: "",
                 refreshStartedAt: "",
-            },
+              },
             },
             {
               new: true,
@@ -323,7 +333,9 @@ export function createGeneratedRecommendationShelfService(
           $set: {
             status: "failed",
             lastError:
-              input.error instanceof Error ? input.error.message : String(input.error),
+              input.error instanceof Error
+                ? input.error.message
+                : String(input.error),
           },
           $unset: {
             generationId: "",
@@ -349,7 +361,9 @@ export function createGeneratedRecommendationShelfService(
         {
           $set: {
             lastError:
-              input.error instanceof Error ? input.error.message : String(input.error),
+              input.error instanceof Error
+                ? input.error.message
+                : String(input.error),
           },
           $unset: {
             refreshGenerationId: "",

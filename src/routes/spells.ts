@@ -110,7 +110,9 @@ router.get("/categories", (_req, res) => {
 // GET /api/spells/:category
 router.get("/:category", async (req, res) => {
   try {
-    const category = normalizeSpellCategory(requiredString(req.params.category));
+    const category = normalizeSpellCategory(
+      requiredString(req.params.category),
+    );
 
     if (!category) {
       return res.status(400).json({

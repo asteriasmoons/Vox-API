@@ -56,7 +56,9 @@ async function fetchOhmandaHoroscope(sign: string): Promise<HoroscopePayload> {
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || response.statusText || "Ohmanda horoscope provider failed");
+    throw new Error(
+      text || response.statusText || "Ohmanda horoscope provider failed",
+    );
   }
 
   const data: any = await response.json();
@@ -108,7 +110,9 @@ async function generateGroqHoroscope(sign: string): Promise<HoroscopePayload> {
 
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || response.statusText || "Groq horoscope generation failed");
+    throw new Error(
+      text || response.statusText || "Groq horoscope generation failed",
+    );
   }
 
   const data: any = await response.json();

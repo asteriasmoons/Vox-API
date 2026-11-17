@@ -186,19 +186,22 @@ type SpellGenerationInput = {
   refresh?: boolean;
 };
 
-const CATEGORY_ALIASES: Record<string, SpellCategoryId> = SPELL_CATEGORIES.reduce(
-  (aliases, category) => {
-    aliases[category.id] = category.id;
-    aliases[category.title.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")] =
-      category.id;
-    return aliases;
-  },
-  {} as Record<string, SpellCategoryId>,
-);
+const CATEGORY_ALIASES: Record<string, SpellCategoryId> =
+  SPELL_CATEGORIES.reduce(
+    (aliases, category) => {
+      aliases[category.id] = category.id;
+      aliases[
+        category.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_|_$/g, "")
+      ] = category.id;
+      return aliases;
+    },
+    {} as Record<string, SpellCategoryId>,
+  );
 
-export function normalizeSpellCategory(
-  value: string,
-): SpellCategoryId | null {
+export function normalizeSpellCategory(value: string): SpellCategoryId | null {
   const normalized = value
     .trim()
     .toLowerCase()
@@ -372,7 +375,12 @@ function parseAIResponse(
   const title = String(parsed.title ?? "").trim();
   const focus = String(parsed.focus ?? "").trim();
 
-  if (!title || !focus || instructions.length === 0 || ingredients.length === 0) {
+  if (
+    !title ||
+    !focus ||
+    instructions.length === 0 ||
+    ingredients.length === 0
+  ) {
     throw new Error(`AI returned incomplete spell: ${raw}`);
   }
 
@@ -445,8 +453,12 @@ function toResponse(
     notes: doc.notes,
     cached,
     source: doc.source,
-    ...(doc.createdAt !== undefined && { createdAt: doc.createdAt.toISOString() }),
-    ...(doc.updatedAt !== undefined && { updatedAt: doc.updatedAt.toISOString() }),
+    ...(doc.createdAt !== undefined && {
+      createdAt: doc.createdAt.toISOString(),
+    }),
+    ...(doc.updatedAt !== undefined && {
+      updatedAt: doc.updatedAt.toISOString(),
+    }),
   };
 }
 

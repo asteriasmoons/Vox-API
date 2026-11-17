@@ -11,7 +11,12 @@ const eventPostSchema = new mongoose.Schema(
     authorAvatarURL: { type: String, default: "" },
 
     title: { type: String, default: "", trim: true, maxlength: 180 },
-    bodyMarkdown: { type: String, required: true, trim: true, maxlength: 20000 },
+    bodyMarkdown: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 20000,
+    },
     bodyHTML: { type: String, default: "" },
 
     isPinned: { type: Boolean, default: false },

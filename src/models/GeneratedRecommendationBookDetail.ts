@@ -15,7 +15,13 @@ export interface GeneratedRecommendationBookDetailDoc extends Document {
 const GeneratedRecommendationBookDetailSchema =
   new Schema<GeneratedRecommendationBookDetailDoc>(
     {
-      bookKey: { type: String, required: true, trim: true, unique: true, index: true },
+      bookKey: {
+        type: String,
+        required: true,
+        trim: true,
+        unique: true,
+        index: true,
+      },
       cacheVersion: { type: Number, required: true, default: 1, index: true },
       title: { type: String, required: true, trim: true, index: true },
       author: { type: String, required: true, trim: true, index: true },

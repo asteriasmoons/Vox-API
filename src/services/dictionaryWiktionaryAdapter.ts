@@ -90,7 +90,9 @@ export async function fetchWiktionary(
           }
         }
         if (Array.isArray(def?.parsedExamples)) {
-          for (const parsed of def.parsedExamples as Array<{ example?: unknown }>) {
+          for (const parsed of def.parsedExamples as Array<{
+            example?: unknown;
+          }>) {
             const cleaned = stripHtml(parsed?.example);
             if (cleaned) examples.push(cleaned);
           }
@@ -104,7 +106,10 @@ export async function fetchWiktionary(
   if (!contributed) return null;
 
   return {
-    source: { name: SOURCE_NAME, url: `https://en.wiktionary.org/wiki/${encoded}` },
+    source: {
+      name: SOURCE_NAME,
+      url: `https://en.wiktionary.org/wiki/${encoded}`,
+    },
     partsOfSpeech,
     ipa: [],
     writtenPronunciation: [],

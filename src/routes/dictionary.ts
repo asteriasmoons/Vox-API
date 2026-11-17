@@ -1,9 +1,12 @@
 import { Router } from "express";
 import { aggregateWordDetails } from "../services/dictionaryAggregator";
-import { generateDiscoveryCandidates } from "../services/dictionaryDiscoveryGenerator";
+import { generateDiscoveryCandidates } from "../services/wordDiscovery/discoveryGenerator";
+import {
+  isDiscoveryCategory,
+  isDiscoveryDifficulty,
+} from "../services/wordDiscovery/discoveryTypes";
 
 const router = Router();
-
 const MAX_WORD_LENGTH = 60;
 
 // Sanitize the incoming word: collapse whitespace, strip control characters,
@@ -48,23 +51,38 @@ router.post("/fetch", async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[vox:dictionary] fetch failed", message);
-    return res.status(500).json({ error: "Failed to fetch dictionary details" });
+    return res
+      .status(500)
+      .json({ error: "Failed to fetch dictionary details" });
   }
 });
 
-// GET /api/dictionary/random
-// Optional: ?exclude=word1,word2 (recently displayed words).
+// GET /api/dictionary/random?category=beautifulWords&difficulty=elevated
+// Optional: &exclude=word1,word2 (recently displayed words).
 router.get("/random", async (req, res) => {
+  const { category, difficulty } = req.query;
+  if (!isDiscoveryCategory(category) || !isDiscoveryDifficulty(difficulty)) {
+    return res.status(400).json({
+      error: "INVALID_DISCOVERY_SELECTION",
+      message: "A valid word discovery category and difficulty are required.",
+    });
+  }
+
   try {
     const excludeParam = req.query.exclude;
-    const exclude = typeof excludeParam === "string"
-      ? excludeParam.split(",").slice(0, 30).map(sanitizeWord).filter(Boolean)
-      : [];
+    const exclude =
+      typeof excludeParam === "string"
+        ? excludeParam.split(",").slice(0, 30).map(sanitizeWord).filter(Boolean)
+        : [];
     const attempted = new Set(exclude.map((word) => word.toLowerCase()));
 
-    // Groq selects vocabulary by shuffled letter and category.
+    // Groq selects candidates from the user's category and difficulty.
     // Existing dictionary aggregation verifies and enriches each candidate.
-    const candidates = await generateDiscoveryCandidates(attempted);
+    const candidates = await generateDiscoveryCandidates({
+      category,
+      difficulty,
+      excludedWords: attempted,
+    });
     for (const word of candidates) {
       attempted.add(word.toLowerCase());
       try {
@@ -82,7 +100,8 @@ router.get("/random", async (req, res) => {
 
     return res.status(404).json({
       error: "NO_RESULTS",
-      message: "No dictionary information was available for the selected words.",
+      message:
+        "No dictionary information was available for the selected words.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

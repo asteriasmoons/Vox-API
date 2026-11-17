@@ -1,7 +1,10 @@
 // src/services/playlistGeneratorService.ts
 
 import { recommendationGroqModel } from "./groqModelConfig";
-import { lookupTrackMetadata, type TrackMetadataResult } from "./trackLookupService";
+import {
+  lookupTrackMetadata,
+  type TrackMetadataResult,
+} from "./trackLookupService";
 
 const GROQ_CHAT_COMPLETIONS_URL =
   "https://api.groq.com/openai/v1/chat/completions";
@@ -78,9 +81,8 @@ async function mapWithBoundedConcurrency<T, R>(
     }
   }
 
-  const workers = Array.from(
-    { length: Math.min(limit, items.length) },
-    () => runWorker(),
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
+    runWorker(),
   );
 
   await Promise.all(workers);
@@ -177,9 +179,9 @@ async function generatePlaylistFromAI(
         signal: controller.signal,
       });
 
-      const json = (await response.json().catch(() => null)) as
-        | GroqPlaylistResponse
-        | null;
+      const json = (await response
+        .json()
+        .catch(() => null)) as GroqPlaylistResponse | null;
 
       if (!response.ok) {
         throw new Error(

@@ -40,9 +40,21 @@ const PROVIDER_JOBS: Array<{
   run: ProviderFn;
   groups: RegularCandidateGroup[];
 }> = [
-  { label: "Groq", run: regularGroqChatJson, groups: ["closest", "reader_safe"] },
-  { label: "Groq", run: regularGroqChatJson, groups: ["hidden_gem", "backlist"] },
-  { label: "Groq", run: regularGroqChatJson, groups: ["recent_release", "adjacent"] },
+  {
+    label: "Groq",
+    run: regularGroqChatJson,
+    groups: ["closest", "reader_safe"],
+  },
+  {
+    label: "Groq",
+    run: regularGroqChatJson,
+    groups: ["hidden_gem", "backlist"],
+  },
+  {
+    label: "Groq",
+    run: regularGroqChatJson,
+    groups: ["recent_release", "adjacent"],
+  },
 ];
 
 const REGULAR_CANDIDATE_GROUP_SET = new Set<string>(REGULAR_CANDIDATE_GROUPS);
@@ -51,8 +63,12 @@ function coerceCandidateGroup(
   value: unknown,
   fallback: RegularCandidateGroup,
 ): RegularCandidateGroup {
-  const raw = cleanText(value).toLowerCase().replace(/[\s-]+/g, "_");
-  return REGULAR_CANDIDATE_GROUP_SET.has(raw) ? (raw as RegularCandidateGroup) : fallback;
+  const raw = cleanText(value)
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  return REGULAR_CANDIDATE_GROUP_SET.has(raw)
+    ? (raw as RegularCandidateGroup)
+    : fallback;
 }
 
 function profileBlock(profile: RegularRequestProfile): string {
@@ -199,11 +215,17 @@ export function dedupeRegularCandidates(
   for (const candidate of candidates) {
     if (!candidate.title) continue;
     const key = normalizeKey(candidate.title, candidate.author);
-    if (seedKey && (key === seedKey || normalizeTitle(candidate.title) === seedTitle)) {
+    if (
+      seedKey &&
+      (key === seedKey || normalizeTitle(candidate.title) === seedTitle)
+    ) {
       continue;
     }
     const existing = best.get(key);
-    if (!existing || candidatePriority(candidate) > candidatePriority(existing)) {
+    if (
+      !existing ||
+      candidatePriority(candidate) > candidatePriority(existing)
+    ) {
       best.set(key, candidate);
     }
   }

@@ -33,7 +33,11 @@ Return only valid JSON with exactly this shape:
 }`;
 
 function parseIntention(raw: string): string {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
   const match = cleaned.match(/\{[\s\S]*\}/);
 
   if (!match) {
@@ -45,12 +49,16 @@ function parseIntention(raw: string): string {
 }
 
 function cleanIntention(raw: string): string {
-  let value = raw
-    .trim()
-    .replace(/^["'\u2018\u2019\u201c\u201d\s]+|["'\u2018\u2019\u201c\u201d\s]+$/g, "")
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^[-*\d.)\s]+/, "").trim())
-    .find(Boolean) ?? "";
+  let value =
+    raw
+      .trim()
+      .replace(
+        /^["'\u2018\u2019\u201c\u201d\s]+|["'\u2018\u2019\u201c\u201d\s]+$/g,
+        "",
+      )
+      .split(/\r?\n/)
+      .map((line) => line.replace(/^[-*\d.)\s]+/, "").trim())
+      .find(Boolean) ?? "";
 
   value = value.trim();
   if (!value) return "";
@@ -70,16 +78,12 @@ export async function generateDailyIntention(
     throw new Error("Context is required");
   }
 
-  const raw = await groqChatJson(
-    SYSTEM_PROMPT,
-    `Context:\n${context}`,
-    {
-      stage: "daily-intention",
-      temperature: 0.25,
-      maxTokens: 1200,
-      model: DAILY_INTENTION_MODEL,
-    },
-  );
+  const raw = await groqChatJson(SYSTEM_PROMPT, `Context:\n${context}`, {
+    stage: "daily-intention",
+    temperature: 0.25,
+    maxTokens: 1200,
+    model: DAILY_INTENTION_MODEL,
+  });
 
   const intention = cleanIntention(parseIntention(raw));
 

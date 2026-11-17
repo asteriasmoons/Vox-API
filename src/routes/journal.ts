@@ -63,7 +63,10 @@ router.post("/intention", async (req, res) => {
     const result = await generateDailyIntention({ context });
     return res.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to generate daily intention";
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to generate daily intention";
     console.error("Daily intention generation error:", message);
     return res.status(500).json({ error: message });
   }
@@ -82,7 +85,9 @@ router.post("/reflections/questions", async (req, res) => {
       return res.status(400).json({ error: "Missing journal entry content" });
     }
     if (!entryDate || !reflectionDate) {
-      return res.status(400).json({ error: "Missing journal entry or reflection date" });
+      return res
+        .status(400)
+        .json({ error: "Missing journal entry or reflection date" });
     }
 
     const questions = await generateJournalReflectionQuestions({
@@ -96,7 +101,9 @@ router.post("/reflections/questions", async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Journal reflection question error:", message);
-    return res.status(500).json({ error: message || "Failed to generate reflection questions" });
+    return res
+      .status(500)
+      .json({ error: message || "Failed to generate reflection questions" });
   }
 });
 
@@ -108,11 +115,14 @@ router.post("/reflections/perspective", async (req, res) => {
     const entryDate = String(req.body?.entryDate || "").trim();
     const reflectionDate = String(req.body?.reflectionDate || "").trim();
     const timeZone = String(req.body?.timeZone || "").trim();
-    const responses: ReflectionResponseInput[] = Array.isArray(req.body?.responses)
+    const responses: ReflectionResponseInput[] = Array.isArray(
+      req.body?.responses,
+    )
       ? req.body.responses.map((response: unknown) => {
-          const value = response && typeof response === "object"
-            ? (response as Record<string, unknown>)
-            : {};
+          const value =
+            response && typeof response === "object"
+              ? (response as Record<string, unknown>)
+              : {};
           return {
             question: String(value.question || "").trim(),
             answer: String(value.answer || "").trim(),
@@ -124,13 +134,19 @@ router.post("/reflections/perspective", async (req, res) => {
       return res.status(400).json({ error: "Missing journal entry content" });
     }
     if (!entryDate || !reflectionDate) {
-      return res.status(400).json({ error: "Missing journal entry or reflection date" });
+      return res
+        .status(400)
+        .json({ error: "Missing journal entry or reflection date" });
     }
     if (responses.length !== 4) {
-      return res.status(400).json({ error: "Exactly four reflection questions are required" });
+      return res
+        .status(400)
+        .json({ error: "Exactly four reflection questions are required" });
     }
     if (!responses.some((response) => response.answer)) {
-      return res.status(400).json({ error: "Answer at least one question before requesting a perspective" });
+      return res.status(400).json({
+        error: "Answer at least one question before requesting a perspective",
+      });
     }
 
     const perspective = await generateJournalReflectionPerspective({
@@ -145,7 +161,9 @@ router.post("/reflections/perspective", async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Journal reflection perspective error:", message);
-    return res.status(500).json({ error: message || "Failed to generate reflection perspective" });
+    return res
+      .status(500)
+      .json({ error: message || "Failed to generate reflection perspective" });
   }
 });
 
@@ -165,7 +183,7 @@ router.get("/analyze/dates", async (req, res) => {
 
     const records = await DailyJournalAnalysis.find(
       { userId, bookId, dateKey: { $gte: cutoffKey } },
-      { dateKey: 1, _id: 0 }
+      { dateKey: 1, _id: 0 },
     )
       .sort({ dateKey: -1 })
       .lean();
@@ -187,9 +205,14 @@ router.get("/analyze", async (req, res) => {
       return res.status(400).json({ error: "Missing userId or bookId" });
     }
 
-    const dateKey = String(req.query?.dateKey || "").trim() || chicagoDateKey(new Date());
+    const dateKey =
+      String(req.query?.dateKey || "").trim() || chicagoDateKey(new Date());
 
-    const existing = await DailyJournalAnalysis.findOne({ userId, bookId, dateKey }).lean();
+    const existing = await DailyJournalAnalysis.findOne({
+      userId,
+      bookId,
+      dateKey,
+    }).lean();
 
     if (!existing) {
       return res.json({
@@ -222,8 +245,20 @@ router.post("/analyze", async (req, res) => {
     const entryCount: number = Number(req.body?.entryCount) || entries.length;
     const dateKeyOverride = String(req.body?.dateKey || "").trim();
 
-    console.log("[analyze] userId:", userId, "bookId:", bookId, "entries count:", entries.length, "dateKey:", dateKeyOverride || "(today)");
-    console.log("[analyze] incoming request body bytes:", byteLength(JSON.stringify(req.body ?? {})));
+    console.log(
+      "[analyze] userId:",
+      userId,
+      "bookId:",
+      bookId,
+      "entries count:",
+      entries.length,
+      "dateKey:",
+      dateKeyOverride || "(today)",
+    );
+    console.log(
+      "[analyze] incoming request body bytes:",
+      byteLength(JSON.stringify(req.body ?? {})),
+    );
     if (entries.length > 0 && entries[0]) {
       const first = entries[0] as { title: string; body: string };
       console.log("[analyze] first entry body length:", first.body?.length);
@@ -252,7 +287,7 @@ router.post("/analyze", async (req, res) => {
         mindfulMinutes,
         entryCount,
       },
-      { upsert: true }
+      { upsert: true },
     );
 
     return res.json({
@@ -265,7 +300,9 @@ router.post("/analyze", async (req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Journal analysis error:", message);
-    return res.status(500).json({ error: message || "Failed to generate analysis" });
+    return res
+      .status(500)
+      .json({ error: message || "Failed to generate analysis" });
   }
 });
 

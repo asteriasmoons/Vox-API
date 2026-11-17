@@ -20,29 +20,38 @@ type DatamuseWord = {
 };
 
 function strings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.map(cleanWhitespace).filter(Boolean)
-    : [];
+  return Array.isArray(value) ? value.map(cleanWhitespace).filter(Boolean) : [];
 }
-async function getJson(url: string, word: string, stage: string): Promise<unknown[] | null> {
+async function getJson(
+  url: string,
+  word: string,
+  stage: string,
+): Promise<unknown[] | null> {
   try {
     const startedAt = Date.now();
     const response = await fetchWithTimeout(url, { timeoutMs: TIMEOUT_MS });
     if (!response.ok) {
       console.error("[vox:dictionary] Datamuse HTTP failure", {
-        word, stage, status: response.status, statusText: response.statusText,
+        word,
+        stage,
+        status: response.status,
+        statusText: response.statusText,
         durationMs: Date.now() - startedAt,
       });
       return null;
     }
     const json = await response.json().catch(() => null);
     console.log("[vox:dictionary] Datamuse success", {
-      word, stage, durationMs: Date.now() - startedAt,
+      word,
+      stage,
+      durationMs: Date.now() - startedAt,
     });
     return Array.isArray(json) ? json : null;
   } catch (error) {
     console.error("[vox:dictionary] Datamuse lookup failed", {
-      word, stage, message: error instanceof Error ? error.message : String(error),
+      word,
+      stage,
+      message: error instanceof Error ? error.message : String(error),
     });
     return null;
   }
@@ -55,35 +64,56 @@ async function relation(word: string, code: string): Promise<string[]> {
     .map((row) => cleanWhitespace((row as DatamuseWord)?.word))
     .filter(looksLikeTerm);
 }
-export async function fetchDatamuse(word: string): Promise<AdapterResult | null> {
+export async function fetchDatamuse(
+  word: string,
+): Promise<AdapterResult | null> {
   const cleaned = word.trim().toLowerCase();
   if (!cleaned) return null;
 
-  const params = new URLSearchParams({ sp: cleaned, qe: "sp", md: "dpr", ipa: "1", max: "1" });
-  const [metadataRows, synonyms, antonyms, broader, narrower] = await Promise.all([
-    getJson(BASE_URL + "?" + params, cleaned, "metadata"),
-    relation(cleaned, "syn"),
-    relation(cleaned, "ant"),
-    relation(cleaned, "spc"),
-    relation(cleaned, "gen"),
-  ]);
+  const params = new URLSearchParams({
+    sp: cleaned,
+    qe: "sp",
+    md: "dpr",
+    ipa: "1",
+    max: "1",
+  });
+  const [metadataRows, synonyms, antonyms, broader, narrower] =
+    await Promise.all([
+      getJson(BASE_URL + "?" + params, cleaned, "metadata"),
+      relation(cleaned, "syn"),
+      relation(cleaned, "ant"),
+      relation(cleaned, "spc"),
+      relation(cleaned, "gen"),
+    ]);
 
   const exact = (metadataRows ?? []).find(
-    (row) => cleanWhitespace((row as DatamuseWord)?.word).toLowerCase() === cleaned,
+    (row) =>
+      cleanWhitespace((row as DatamuseWord)?.word).toLowerCase() === cleaned,
   ) as DatamuseWord | undefined;
   const tags = strings(exact?.tags);
   const defs = strings(exact?.defs);
-  const partsOfSpeech = tags.filter((tag) => ["n", "v", "adj", "adv"].includes(tag));
+  const partsOfSpeech = tags.filter((tag) =>
+    ["n", "v", "adj", "adv"].includes(tag),
+  );
   const ipa = tags
     .filter((tag) => tag.startsWith("pron:"))
     .map((tag) => cleanWhitespace(tag.slice(5)));
-  const definitions = defs.map((def) => {
-    const separator = def.indexOf("\t");
-    return separator >= 0 ? cleanWhitespace(def.slice(separator + 1)) : cleanWhitespace(def);
-  }).filter(Boolean);
+  const definitions = defs
+    .map((def) => {
+      const separator = def.indexOf("\t");
+      return separator >= 0
+        ? cleanWhitespace(def.slice(separator + 1))
+        : cleanWhitespace(def);
+    })
+    .filter(Boolean);
   const relatedWords = [...broader, ...narrower];
-  const contributed = definitions.length || partsOfSpeech.length || ipa.length ||
-    synonyms.length || antonyms.length || relatedWords.length;
+  const contributed =
+    definitions.length ||
+    partsOfSpeech.length ||
+    ipa.length ||
+    synonyms.length ||
+    antonyms.length ||
+    relatedWords.length;
   if (!contributed) return null;
 
   return {

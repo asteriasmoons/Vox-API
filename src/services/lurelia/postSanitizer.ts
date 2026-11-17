@@ -72,8 +72,20 @@ export function sanitizeHostPostHTML(html: string): string {
     allowedAttributes: {
       a: ["href", "target", "rel", "class"],
       img: ["src", "alt", "class", "data-lurelia-icon", "hidden"],
-      button: ["type", "class", "contenteditable", "data-callout-icon-button", "aria-label"],
-      div: ["class", ...CALLOUT_DATA_ATTRS, "contenteditable", "role", "aria-label"],
+      button: [
+        "type",
+        "class",
+        "contenteditable",
+        "data-callout-icon-button",
+        "aria-label",
+      ],
+      div: [
+        "class",
+        ...CALLOUT_DATA_ATTRS,
+        "contenteditable",
+        "role",
+        "aria-label",
+      ],
       span: ["class", ...CALLOUT_DATA_ATTRS],
       blockquote: ["data-type", "data-color"],
       code: ["class"],
@@ -112,8 +124,9 @@ export function sanitizeHostPostHTML(html: string): string {
  */
 export function countCallouts(bodyMarkdown: string, bodyHTML: string) {
   const htmlCount = (
-    bodyHTML.match(/<div\b[^>]*(?:data-type=["']lurelia-callout["']|class=["'][^"']*\bcallout\b[^"']*["'])/g)
-    || []
+    bodyHTML.match(
+      /<div\b[^>]*(?:data-type=["']lurelia-callout["']|class=["'][^"']*\bcallout\b[^"']*["'])/g,
+    ) || []
   ).length;
   const markdownCount = countMarkdownCallouts(bodyMarkdown);
   return { htmlCount, markdownCount };

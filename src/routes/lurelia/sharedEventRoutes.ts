@@ -38,7 +38,9 @@ export function createSharedEventRouter(io: SocketIOServer): Router {
     try {
       const userID = String(req.query.userID || "").trim();
       if (!userID) {
-        return res.status(400).json({ success: false, error: "userID_REQUIRED" });
+        return res
+          .status(400)
+          .json({ success: false, error: "userID_REQUIRED" });
       }
       const events = await listEventsForUser(userID);
       return res.json({ success: true, events });
@@ -61,7 +63,12 @@ export function createSharedEventRouter(io: SocketIOServer): Router {
   router.patch("/:id", async (req: Request, res: Response) => {
     try {
       const { actorUserID, ...patch } = req.body;
-      const event = await updateSharedEvent(io, String(req.params.id), actorUserID, patch);
+      const event = await updateSharedEvent(
+        io,
+        String(req.params.id),
+        actorUserID,
+        patch,
+      );
       return res.json({ success: true, event });
     } catch (error) {
       return handleError(res, error);

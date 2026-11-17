@@ -34,7 +34,8 @@ router.post("/convince-me", async (req: Request, res: Response) => {
     const result = await generateTinyNudge(requestBody);
     res.json(result);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Internal server error";
+    const message =
+      err instanceof Error ? err.message : "Internal server error";
     console.error("[tiny-nudge/convince-me] Error:", message);
     res.status(500).json({ error: message });
   }

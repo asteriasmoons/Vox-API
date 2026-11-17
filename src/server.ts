@@ -71,9 +71,12 @@ app.get("/", (_req, res) => {
 
 app.get("/lurelia/events/:id", (req, res) => {
   const eventBaseURL = (
-    process.env.LURELIA_PUBLIC_EVENT_BASE_URL || "https://docs.voxiverse.ink/events"
+    process.env.LURELIA_PUBLIC_EVENT_BASE_URL ||
+    "https://docs.voxiverse.ink/events"
   ).replace(/\/$/, "");
-  const target = new URL(`${eventBaseURL}/${encodeURIComponent(String(req.params.id))}`);
+  const target = new URL(
+    `${eventBaseURL}/${encodeURIComponent(String(req.params.id))}`,
+  );
 
   for (const [key, value] of Object.entries(req.query)) {
     if (Array.isArray(value)) {
@@ -89,7 +92,10 @@ app.get("/lurelia/events/:id", (req, res) => {
 app.use("/api/books/summary", summaryRoute);
 app.use("/api/books/recs", recsRoute);
 app.use("/api/books/recs-book-summary", recsBookSummaryRoute);
-app.use("/api/books/recommendation-collections", recommendationCollectionsRoute);
+app.use(
+  "/api/books/recommendation-collections",
+  recommendationCollectionsRoute,
+);
 app.use("/api/books/recommendation-book-detail", recommendationBookDetailRoute);
 app.use("/api/books/automatic-catalogs", automaticCatalogsRoute);
 app.use("/api/journal", journalRoutes);

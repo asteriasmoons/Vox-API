@@ -4,12 +4,7 @@ import { groqChatJson } from "./groqAIClient";
 // Public types
 // ---------------------------------------------------------------------------
 
-export type DottiEnergy =
-  | "very_low"
-  | "low"
-  | "moderate"
-  | "good"
-  | "high";
+export type DottiEnergy = "very_low" | "low" | "moderate" | "good" | "high";
 
 export type DottiBodyState =
   | "feeling_good"
@@ -42,7 +37,7 @@ export interface DottiSuggestionsInput {
 
 export interface DottiSuggestedTask {
   title: string;
-  icon?: string;   // optional asset name from the app's icon catalog
+  icon?: string; // optional asset name from the app's icon catalog
   minutes: number;
   effort: DottiEffort;
 }
@@ -61,17 +56,33 @@ export interface DottiSuggestionsResult {
 // ---------------------------------------------------------------------------
 
 const ENERGY_VALUES: readonly DottiEnergy[] = [
-  "very_low", "low", "moderate", "good", "high",
+  "very_low",
+  "low",
+  "moderate",
+  "good",
+  "high",
 ];
 
 const BODY_VALUES: readonly DottiBodyState[] = [
-  "feeling_good", "general_fatigue", "back_discomfort",
-  "muscle_soreness", "low_mobility", "gentle_day",
+  "feeling_good",
+  "general_fatigue",
+  "back_discomfort",
+  "muscle_soreness",
+  "low_mobility",
+  "gentle_day",
 ];
 
 const ROOM_VALUES: readonly DottiRoom[] = [
-  "bathroom", "bedroom", "kitchen", "living_room", "laundry",
-  "entryway", "office", "outdoor", "whole_home", "other",
+  "bathroom",
+  "bedroom",
+  "kitchen",
+  "living_room",
+  "laundry",
+  "entryway",
+  "office",
+  "outdoor",
+  "whole_home",
+  "other",
 ];
 
 const EFFORT_VALUES: readonly DottiEffort[] = ["gentle", "light", "moderate"];
@@ -79,19 +90,27 @@ const EFFORT_VALUES: readonly DottiEffort[] = ["gentle", "light", "moderate"];
 const ALLOWED_DURATIONS = new Set<number>([5, 15, 30, 60]);
 
 function isEnergy(v: unknown): v is DottiEnergy {
-  return typeof v === "string" && (ENERGY_VALUES as readonly string[]).includes(v);
+  return (
+    typeof v === "string" && (ENERGY_VALUES as readonly string[]).includes(v)
+  );
 }
 
 function isBodyState(v: unknown): v is DottiBodyState {
-  return typeof v === "string" && (BODY_VALUES as readonly string[]).includes(v);
+  return (
+    typeof v === "string" && (BODY_VALUES as readonly string[]).includes(v)
+  );
 }
 
 function isRoom(v: unknown): v is DottiRoom {
-  return typeof v === "string" && (ROOM_VALUES as readonly string[]).includes(v);
+  return (
+    typeof v === "string" && (ROOM_VALUES as readonly string[]).includes(v)
+  );
 }
 
 function isEffort(v: unknown): v is DottiEffort {
-  return typeof v === "string" && (EFFORT_VALUES as readonly string[]).includes(v);
+  return (
+    typeof v === "string" && (EFFORT_VALUES as readonly string[]).includes(v)
+  );
 }
 
 export function parseDottiInput(body: unknown): DottiSuggestionsInput {
@@ -120,7 +139,11 @@ export function parseDottiInput(body: unknown): DottiSuggestionsInput {
   }
 
   const duration = record.durationMinutes;
-  if (typeof duration !== "number" || !Number.isFinite(duration) || !ALLOWED_DURATIONS.has(duration)) {
+  if (
+    typeof duration !== "number" ||
+    !Number.isFinite(duration) ||
+    !ALLOWED_DURATIONS.has(duration)
+  ) {
     throw new Error("durationMinutes must be one of: 5, 15, 30, 60");
   }
 
@@ -135,7 +158,9 @@ export function parseDottiInput(body: unknown): DottiSuggestionsInput {
     }
     for (const raw of assignedRoomsRaw) {
       if (!isRoom(raw)) {
-        throw new Error(`assignedRooms contains an unknown value: ${String(raw)}`);
+        throw new Error(
+          `assignedRooms contains an unknown value: ${String(raw)}`,
+        );
       }
       assignedRooms.push(raw);
     }
@@ -205,12 +230,10 @@ shower, towel, bottle, bed, bedpillow, hanger, drawers, dresser, kitchentable, c
 Return ONLY the JSON object described above. No preamble, no trailing commentary.`;
 
 function summarize(input: DottiSuggestionsInput): string {
-  const bodyList = input.bodyStates.length > 0
-    ? input.bodyStates.join(", ")
-    : "no notes";
-  const assignedRooms = input.assignedRooms.length > 0
-    ? input.assignedRooms.join(", ")
-    : "none";
+  const bodyList =
+    input.bodyStates.length > 0 ? input.bodyStates.join(", ") : "no notes";
+  const assignedRooms =
+    input.assignedRooms.length > 0 ? input.assignedRooms.join(", ") : "none";
   return [
     `Energy: ${input.energy}`,
     `Body state: ${bodyList}`,
@@ -247,16 +270,18 @@ function normalizeGroups(raw: unknown): DottiSuggestionGroup[] {
       if (!title) continue;
 
       const minutesRaw = tr.minutes;
-      const minutes = typeof minutesRaw === "number" && Number.isFinite(minutesRaw)
-        ? Math.max(1, Math.min(20, Math.round(minutesRaw)))
-        : 5;
+      const minutes =
+        typeof minutesRaw === "number" && Number.isFinite(minutesRaw)
+          ? Math.max(1, Math.min(20, Math.round(minutesRaw)))
+          : 5;
 
       const effort: DottiEffort = isEffort(tr.effort) ? tr.effort : "gentle";
 
       const iconRaw = tr.icon;
-      const icon = typeof iconRaw === "string" && iconRaw.trim().length > 0
-        ? iconRaw.trim()
-        : undefined;
+      const icon =
+        typeof iconRaw === "string" && iconRaw.trim().length > 0
+          ? iconRaw.trim()
+          : undefined;
 
       const task: DottiSuggestedTask = { title, minutes, effort };
       if (icon !== undefined) task.icon = icon;
@@ -277,15 +302,11 @@ function normalizeGroups(raw: unknown): DottiSuggestionGroup[] {
 export async function generateDottiSuggestions(
   input: DottiSuggestionsInput,
 ): Promise<DottiSuggestionsResult> {
-  const raw = await groqChatJson(
-    SYSTEM_PROMPT,
-    summarize(input),
-    {
-      stage: "dotti_suggestions",
-      temperature: 0.2,
-      maxTokens: 8192,
-    },
-  );
+  const raw = await groqChatJson(SYSTEM_PROMPT, summarize(input), {
+    stage: "dotti_suggestions",
+    temperature: 0.2,
+    maxTokens: 8192,
+  });
 
   let parsed: unknown;
   try {

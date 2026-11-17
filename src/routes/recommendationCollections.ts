@@ -34,7 +34,9 @@ router.post("/", async (req, res) => {
     const response = await buildRecommendationCollections({
       ...(userId ? { userId } : {}),
       ...(collectionId ? { collectionId } : {}),
-      ...(req.body?.readerContext ? { readerContext: req.body.readerContext } : {}),
+      ...(req.body?.readerContext
+        ? { readerContext: req.body.readerContext }
+        : {}),
       ...(excludeBookKeys ? { excludeBookKeys } : {}),
       ...(desiredCollections !== undefined ? { desiredCollections } : {}),
       ...(booksPerCollection !== undefined ? { booksPerCollection } : {}),

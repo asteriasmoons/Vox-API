@@ -38,10 +38,17 @@ export interface GroqDictionaryResult {
   tags: string[];
 }
 const emptyResult = (): GroqDictionaryResult => ({
-  partOfSpeech: "", definitions: [],
-  exampleSentences: [], usageNotes: [], synonyms: [], antonyms: [],
-  originEtymology: "", relatedWords: [], writtenPronunciation: "",
-  ipaPronunciation: "", tags: [],
+  partOfSpeech: "",
+  definitions: [],
+  exampleSentences: [],
+  usageNotes: [],
+  synonyms: [],
+  antonyms: [],
+  originEtymology: "",
+  relatedWords: [],
+  writtenPronunciation: "",
+  ipaPronunciation: "",
+  tags: [],
 });
 
 function capitalizeWords(value: string): string {
@@ -71,29 +78,36 @@ function completeExample(value: string, word: string): boolean {
   const cleaned = cleanWhitespace(value);
   const words = cleaned.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? [];
   const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return words.length >= 5 &&
+  return (
+    words.length >= 5 &&
     /^[\p{Lu}\d“"']/u.test(cleaned) &&
     /[.!?][”"']?$/u.test(cleaned) &&
-    new RegExp(`\\b${escapedWord}\\b`, "iu").test(cleaned);
+    new RegExp(`\\b${escapedWord}\\b`, "iu").test(cleaned)
+  );
 }
 
 function parse(raw: string): Record<string, unknown> | null {
   try {
     const value = JSON.parse(raw.trim());
     return value && typeof value === "object" && !Array.isArray(value)
-      ? value as Record<string, unknown> : null;
-  } catch { return null; }
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function usageNotes(value: unknown): NormalizedUsageNote[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const row = item as Record<string, unknown>;
-    const label = cleanWhitespace(row.label);
-    const noteValue = cleanWhitespace(row.value);
-    return label && noteValue ? [{ label, value: noteValue }] : [];
-  }).slice(0, 2);
+  return value
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      const label = cleanWhitespace(row.label);
+      const noteValue = cleanWhitespace(row.value);
+      return label && noteValue ? [{ label, value: noteValue }] : [];
+    })
+    .slice(0, 2);
 }
 
 function missingRequiredFields(
@@ -101,16 +115,36 @@ function missingRequiredFields(
   context: GroqDictionaryContext,
 ): string[] {
   const missing: string[] = [];
-  if (!context.partOfSpeech && !result.partOfSpeech) missing.push("partOfSpeech");
-  if (!context.definitions.length && !result.definitions.some((value) => value.length >= 12)) missing.push("definitions");
-  if (result.exampleSentences.filter((value) => completeExample(value, context.word)).length < 2) missing.push("exampleSentences");
-  if (!result.usageNotes.some((note) => note.label.length >= 3 && note.value.length >= 20)) missing.push("usageNotes");
-  if (!context.synonyms.length && result.synonyms.length < 3) missing.push("synonyms");
-  if (!context.antonyms.length && result.antonyms.length < 2) missing.push("antonyms");
-  if (!context.originEtymology && result.originEtymology.length < 20) missing.push("originEtymology");
-  if (!context.relatedWords.length && result.relatedWords.length < 3) missing.push("relatedWords");
+  if (!context.partOfSpeech && !result.partOfSpeech)
+    missing.push("partOfSpeech");
+  if (
+    !context.definitions.length &&
+    !result.definitions.some((value) => value.length >= 12)
+  )
+    missing.push("definitions");
+  if (
+    result.exampleSentences.filter((value) =>
+      completeExample(value, context.word),
+    ).length < 2
+  )
+    missing.push("exampleSentences");
+  if (
+    !result.usageNotes.some(
+      (note) => note.label.length >= 3 && note.value.length >= 20,
+    )
+  )
+    missing.push("usageNotes");
+  if (!context.synonyms.length && result.synonyms.length < 3)
+    missing.push("synonyms");
+  if (!context.antonyms.length && result.antonyms.length < 2)
+    missing.push("antonyms");
+  if (!context.originEtymology && result.originEtymology.length < 20)
+    missing.push("originEtymology");
+  if (!context.relatedWords.length && result.relatedWords.length < 3)
+    missing.push("relatedWords");
   if (!result.writtenPronunciation) missing.push("writtenPronunciation");
-  if (!result.ipaPronunciation && !context.ipaPronunciation) missing.push("ipaPronunciation");
+  if (!result.ipaPronunciation && !context.ipaPronunciation)
+    missing.push("ipaPronunciation");
   if (result.tags.length < 3) missing.push("tags");
   return missing;
 }
@@ -158,9 +192,12 @@ OTHER FIELDS:
 Only supply partOfSpeech, definitions, synonyms, antonyms, originEtymology, or relatedWords when the corresponding existing field is empty; otherwise return the existing value unchanged. Use careful, conservative wording when exact etymology is uncertain, but do not leave the field empty.
 Always generate useful short organizational tags from the word and supplied context. Every array must contain at least one useful item.`;
 }
-export async function groqDictionaryFetch(c: GroqDictionaryContext): Promise<GroqDictionaryResult> {
+export async function groqDictionaryFetch(
+  c: GroqDictionaryContext,
+): Promise<GroqDictionaryResult> {
   const baseUserPrompt = [
-    `Word: ${c.word}`, `Part of speech: ${c.partOfSpeech}`,
+    `Word: ${c.word}`,
+    `Part of speech: ${c.partOfSpeech}`,
     `Definitions: ${JSON.stringify(c.definitions)}`,
     `Existing examples: ${JSON.stringify(c.existingExamples)}`,
     `Provider pronunciation notation: ${c.providerWrittenPronunciation}`,
@@ -169,7 +206,7 @@ export async function groqDictionaryFetch(c: GroqDictionaryContext): Promise<Gro
     `Existing antonyms: ${JSON.stringify(c.antonyms)}`,
     `Existing etymology: ${c.originEtymology}`,
     `Existing related words: ${JSON.stringify(c.relatedWords)}`,
-    "Return the complete enrichment JSON. Do not leave any missing field empty."
+    "Return the complete enrichment JSON. Do not leave any missing field empty.",
   ].join("\n");
 
   try {
@@ -180,12 +217,16 @@ export async function groqDictionaryFetch(c: GroqDictionaryContext): Promise<Gro
       const repairInstruction = missing.length
         ? `\nYour previous response violated the completeness and no-lazy-output rules. These fields were empty or invalid: ${missing.join(", ")}. Rewrite and return the ENTIRE JSON record. Every listed field must contain substantive, word-specific information that meets the minimum detail requirements; token filler or placeholder content is not acceptable.`
         : "";
-      const raw = await groqChatJson(systemPrompt(), baseUserPrompt + repairInstruction, {
-        stage: attempt === 0 ? "dictionary-fetch" : "dictionary-fetch-repair",
-        model: MODEL,
-        temperature: 0.25,
-        maxTokens: MAX_OUTPUT_TOKENS,
-      });
+      const raw = await groqChatJson(
+        systemPrompt(),
+        baseUserPrompt + repairInstruction,
+        {
+          stage: attempt === 0 ? "dictionary-fetch" : "dictionary-fetch-repair",
+          model: MODEL,
+          temperature: 0.25,
+          maxTokens: MAX_OUTPUT_TOKENS,
+        },
+      );
       const p = parse(raw);
       if (!p) {
         missing = ["valid JSON response"];
@@ -193,19 +234,25 @@ export async function groqDictionaryFetch(c: GroqDictionaryContext): Promise<Gro
       }
 
       const rawWritten = cleanWhitespace(p.writtenPronunciation).toLowerCase();
-      const writtenPronunciation = /^[a-z]+(?:-[a-z]+)*$/.test(rawWritten) ? rawWritten : "";
+      const writtenPronunciation = /^[a-z]+(?:-[a-z]+)*$/.test(rawWritten)
+        ? rawWritten
+        : "";
       const ipaPronunciation = cleanWhitespace(p.ipaPronunciation);
-      const examples = textList(p.exampleSentences, 3)
-        .filter((value) => completeExample(value, c.word));
+      const examples = textList(p.exampleSentences, 3).filter((value) =>
+        completeExample(value, c.word),
+      );
 
       lastResult = {
-        partOfSpeech: c.partOfSpeech || mapPartOfSpeech(cleanWhitespace(p.partOfSpeech)),
+        partOfSpeech:
+          c.partOfSpeech || mapPartOfSpeech(cleanWhitespace(p.partOfSpeech)),
         definitions: c.definitions.length ? [] : textList(p.definitions, 6),
         exampleSentences: examples,
         usageNotes: usageNotes(p.usageNotes),
         synonyms: c.synonyms.length ? [] : list(p.synonyms, 12),
         antonyms: c.antonyms.length ? [] : list(p.antonyms, 12),
-        originEtymology: c.originEtymology ? "" : cleanWhitespace(p.originEtymology),
+        originEtymology: c.originEtymology
+          ? ""
+          : cleanWhitespace(p.originEtymology),
         relatedWords: c.relatedWords.length ? [] : list(p.relatedWords, 12),
         writtenPronunciation,
         ipaPronunciation,

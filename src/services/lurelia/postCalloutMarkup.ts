@@ -21,7 +21,9 @@ const CLOSE_RE = /^:::\s*$/;
 const ATTR_RE = /([a-zA-Z][a-zA-Z0-9_-]*)="([^"]*)"/g;
 
 export function normalizeHostPostMarkdown(markdown: string): string {
-  const source = String(markdown || "").replace(/\r\n?/g, "\n").trim();
+  const source = String(markdown || "")
+    .replace(/\r\n?/g, "\n")
+    .trim();
   if (!source) return "";
 
   const lines = source.split("\n");
@@ -48,7 +50,7 @@ export function normalizeHostPostMarkdown(markdown: string): string {
     );
     index += 1;
 
-  while (index < lines.length) {
+    while (index < lines.length) {
       const bodyLine = lines[index] ?? "";
       if (CLOSE_RE.test(bodyLine.trim())) break;
       out.push(bodyLine);

@@ -12,7 +12,7 @@ import type { CelestialEventPayload } from "../services/celestial/celestialTypes
 export type CelestialJobStatus =
   | "queued"
   | "running"
-  | "waiting"      // waiting for rate-limit capacity
+  | "waiting" // waiting for rate-limit capacity
   | "partial"
   | "completed"
   | "failed";
@@ -49,7 +49,8 @@ const CelestialGenerationJobSchema = new Schema<CelestialGenerationJobDoc>(
 );
 
 export const CelestialGenerationJob: Model<CelestialGenerationJobDoc> =
-  (asteriumDB.models.CelestialGenerationJob as Model<CelestialGenerationJobDoc>) ||
+  (asteriumDB.models
+    .CelestialGenerationJob as Model<CelestialGenerationJobDoc>) ||
   asteriumDB.model<CelestialGenerationJobDoc>(
     "CelestialGenerationJob",
     CelestialGenerationJobSchema,

@@ -60,7 +60,9 @@ function safeErrorMessage(body: ProviderErrorBody | null): string {
   if (typeof error === "string") return error;
   if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
-    return cleanText(record.message) || cleanText(record.type) || "Mistral error";
+    return (
+      cleanText(record.message) || cleanText(record.type) || "Mistral error"
+    );
   }
 
   return cleanText(body?.message) || "Mistral error";
@@ -178,16 +180,19 @@ async function mistralChat(
       }
 
       const content = cleanText(
-        contentToText((json as MistralChatResponse | null)?.choices?.[0]?.message?.content),
+        contentToText(
+          (json as MistralChatResponse | null)?.choices?.[0]?.message?.content,
+        ),
       );
       console.log("[recommendations:mistral] success", {
         stage: options.stage,
         model,
         attempt: attempt + 1,
         durationMs,
-        promptTokens: (json as MistralChatResponse | null)?.usage?.prompt_tokens,
-        completionTokens:
-          (json as MistralChatResponse | null)?.usage?.completion_tokens,
+        promptTokens: (json as MistralChatResponse | null)?.usage
+          ?.prompt_tokens,
+        completionTokens: (json as MistralChatResponse | null)?.usage
+          ?.completion_tokens,
         totalTokens: (json as MistralChatResponse | null)?.usage?.total_tokens,
       });
 
@@ -204,7 +209,9 @@ async function mistralChat(
           durationMs,
           timeoutMs: MISTRAL_TIMEOUT_MS,
         });
-      } else if (!(error instanceof Error && error.message.startsWith("Mistral "))) {
+      } else if (
+        !(error instanceof Error && error.message.startsWith("Mistral "))
+      ) {
         console.error("[recommendations:mistral] failure", {
           stage: options.stage,
           model,

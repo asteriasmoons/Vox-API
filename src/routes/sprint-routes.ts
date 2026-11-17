@@ -29,15 +29,23 @@ export function createSprintRouter(io: SocketIOServer): Router {
     const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
 
     const status =
-      message === "SPRINT_NOT_FOUND" ? 404
-      : message === "SPRINT_ALREADY_ACTIVE" ? 409
-      : message === "ALREADY_JOINED" ? 409
-      : message === "ALREADY_SUBMITTED" ? 409
-      : message === "SPRINT_FINISHED" ? 410
-      : message === "SPRINT_NOT_IN_SUBMISSION" ? 400
-      : message === "NOT_A_PARTICIPANT" ? 403
-      : message === "FORBIDDEN" ? 403
-      : 400;
+      message === "SPRINT_NOT_FOUND"
+        ? 404
+        : message === "SPRINT_ALREADY_ACTIVE"
+          ? 409
+          : message === "ALREADY_JOINED"
+            ? 409
+            : message === "ALREADY_SUBMITTED"
+              ? 409
+              : message === "SPRINT_FINISHED"
+                ? 410
+                : message === "SPRINT_NOT_IN_SUBMISSION"
+                  ? 400
+                  : message === "NOT_A_PARTICIPANT"
+                    ? 403
+                    : message === "FORBIDDEN"
+                      ? 403
+                      : 400;
 
     return res.status(status).json({ success: false, error: message });
   }

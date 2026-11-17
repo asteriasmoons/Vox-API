@@ -25,9 +25,7 @@ export interface MoodAnalysisResult {
   themes: string[];
 }
 
-function parseJsonObject(
-  raw: string,
-): Record<string, unknown> | null {
+function parseJsonObject(raw: string): Record<string, unknown> | null {
   const content = raw
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -39,9 +37,7 @@ function parseJsonObject(
   try {
     const parsed = JSON.parse(content);
 
-    return parsed &&
-      typeof parsed === "object" &&
-      !Array.isArray(parsed)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : null;
   } catch {
@@ -52,9 +48,7 @@ function parseJsonObject(
     try {
       const parsed = JSON.parse(match[0]);
 
-      return parsed &&
-        typeof parsed === "object" &&
-        !Array.isArray(parsed)
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
         ? (parsed as Record<string, unknown>)
         : null;
     } catch {
@@ -66,26 +60,16 @@ function parseJsonObject(
 function moodAnalysisFromParsed(
   parsed: Record<string, unknown>,
 ): MoodAnalysisResult {
-  const mindset = String(
-    parsed.mindset || "",
-  ).trim();
+  const mindset = String(parsed.mindset || "").trim();
 
-  const emotionalBalance = String(
-    parsed.emotionalBalance || "",
-  ).trim();
+  const emotionalBalance = String(parsed.emotionalBalance || "").trim();
 
-  const influences = String(
-    parsed.influences || "",
-  ).trim();
+  const influences = String(parsed.influences || "").trim();
 
-  const reflection = String(
-    parsed.reflection || "",
-  ).trim();
+  const reflection = String(parsed.reflection || "").trim();
 
   const themes = Array.isArray(parsed.themes)
-    ? parsed.themes
-        .map((t: unknown) => String(t).trim())
-        .filter(Boolean)
+    ? parsed.themes.map((t: unknown) => String(t).trim()).filter(Boolean)
     : [];
 
   if (
@@ -95,9 +79,7 @@ function moodAnalysisFromParsed(
     !reflection ||
     themes.length === 0
   ) {
-    throw new Error(
-      "Groq returned incomplete mood analysis fields",
-    );
+    throw new Error("Groq returned incomplete mood analysis fields");
   }
 
   return {
@@ -141,33 +123,23 @@ export async function analyzeMood(
   const lifestyleLines: string[] = [];
 
   if (input.sleepHours > 0) {
-    lifestyleLines.push(
-      `Sleep: ${input.sleepHours} hours`,
-    );
+    lifestyleLines.push(`Sleep: ${input.sleepHours} hours`);
   }
 
   if (input.exerciseMinutes > 0) {
-    lifestyleLines.push(
-      `Exercise: ${input.exerciseMinutes} minutes`,
-    );
+    lifestyleLines.push(`Exercise: ${input.exerciseMinutes} minutes`);
   }
 
   if (input.steps > 0) {
-    lifestyleLines.push(
-      `Steps: ${input.steps}`,
-    );
+    lifestyleLines.push(`Steps: ${input.steps}`);
   }
 
   if (input.meditationMinutes > 0) {
-    lifestyleLines.push(
-      `Mindfulness: ${input.meditationMinutes} minutes`,
-    );
+    lifestyleLines.push(`Mindfulness: ${input.meditationMinutes} minutes`);
   }
 
   if (input.waterOz > 0) {
-    lifestyleLines.push(
-      `Water: ${input.waterOz} oz`,
-    );
+    lifestyleLines.push(`Water: ${input.waterOz} oz`);
   }
 
   const userContent = `Mood log recorded in the ${timeOfDay} on ${date.toLocaleDateString(
@@ -253,9 +225,7 @@ themes:
 
 ${userContent}`;
 
-  console.log(
-    "[mood-analysis] Sending request to Groq...",
-  );
+  console.log("[mood-analysis] Sending request to Groq...");
 
   const raw = await groqChatJson(systemPrompt, userPrompt, {
     stage: "mood-analysis",
@@ -264,23 +234,15 @@ ${userContent}`;
     maxTokens: 1_200,
   });
 
-  console.log(
-    "[mood-analysis] Groq raw response:",
-    raw,
-  );
+  console.log("[mood-analysis] Groq raw response:", raw);
 
   const parsed = parseJsonObject(raw);
 
   if (!parsed) {
-    throw new Error(
-      `Failed to parse Groq JSON response: ${raw}`,
-    );
+    throw new Error(`Failed to parse Groq JSON response: ${raw}`);
   }
 
-  console.log(
-    "[mood-analysis] Parsed:",
-    JSON.stringify(parsed),
-  );
+  console.log("[mood-analysis] Parsed:", JSON.stringify(parsed));
 
   return moodAnalysisFromParsed(parsed);
 }

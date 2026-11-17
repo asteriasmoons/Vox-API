@@ -30,59 +30,82 @@ export function createMediaRouter(_io: SocketIOServer): Router {
 
   // POST /api/lurelia/media/image
   // form-data: image (file), target (json string), uploaderUserID, filename?, isInline?
-  router.post("/image", upload.single("image"), async (req: Request, res: Response) => {
-    try {
-      if (!req.file) throw new Error("no_image");
-      const target = JSON.parse(String(req.body.target || "{}"));
-      const uploaderUserID = String(req.body.uploaderUserID || "");
-      const filename = String(req.body.filename || req.file.originalname || "");
-      const isInline = String(req.body.isInline || "false") === "true";
-      const asset = await uploadImage(
-        req.file.buffer,
-        target,
-        uploaderUserID,
-        filename,
-        isInline,
-      );
-      return res.status(201).json({ success: true, asset });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/image",
+    upload.single("image"),
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.file) throw new Error("no_image");
+        const target = JSON.parse(String(req.body.target || "{}"));
+        const uploaderUserID = String(req.body.uploaderUserID || "");
+        const filename = String(
+          req.body.filename || req.file.originalname || "",
+        );
+        const isInline = String(req.body.isInline || "false") === "true";
+        const asset = await uploadImage(
+          req.file.buffer,
+          target,
+          uploaderUserID,
+          filename,
+          isInline,
+        );
+        return res.status(201).json({ success: true, asset });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
   // POST /api/lurelia/media/profile-avatar
   // form-data: avatar (file), uploaderUserID
-  router.post("/profile-avatar", upload.single("avatar"), async (req: Request, res: Response) => {
-    try {
-      if (!req.file) throw new Error("no_avatar");
-      const uploaderUserID = String(req.body.uploaderUserID || "");
-      const asset = await uploadProfileAvatar(req.file.buffer, uploaderUserID);
-      return res.status(201).json({ success: true, avatarURL: asset.avatarURL, asset });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/profile-avatar",
+    upload.single("avatar"),
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.file) throw new Error("no_avatar");
+        const uploaderUserID = String(req.body.uploaderUserID || "");
+        const asset = await uploadProfileAvatar(
+          req.file.buffer,
+          uploaderUserID,
+        );
+        return res
+          .status(201)
+          .json({ success: true, avatarURL: asset.avatarURL, asset });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
   // POST /api/lurelia/media/file
-  router.post("/file", upload.single("file"), async (req: Request, res: Response) => {
-    try {
-      if (!req.file) throw new Error("no_file");
-      const target = JSON.parse(String(req.body.target || "{}"));
-      const uploaderUserID = String(req.body.uploaderUserID || "");
-      const filename = String(req.body.filename || req.file.originalname || "");
-      const mimeType = String(req.body.mimeType || req.file.mimetype || "application/octet-stream");
-      const asset = await uploadFile(
-        req.file.buffer,
-        target,
-        uploaderUserID,
-        filename,
-        mimeType,
-      );
-      return res.status(201).json({ success: true, asset });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/file",
+    upload.single("file"),
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.file) throw new Error("no_file");
+        const target = JSON.parse(String(req.body.target || "{}"));
+        const uploaderUserID = String(req.body.uploaderUserID || "");
+        const filename = String(
+          req.body.filename || req.file.originalname || "",
+        );
+        const mimeType = String(
+          req.body.mimeType || req.file.mimetype || "application/octet-stream",
+        );
+        const asset = await uploadFile(
+          req.file.buffer,
+          target,
+          uploaderUserID,
+          filename,
+          mimeType,
+        );
+        return res.status(201).json({ success: true, asset });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
   // GET /api/lurelia/media/batch?ids=<comma-separated attachment IDs>
   // Cheap lookup used by client to hydrate attachment metadata when
@@ -92,9 +115,14 @@ export function createMediaRouter(_io: SocketIOServer): Router {
     try {
       const raw = String(req.query.ids || "").trim();
       if (!raw) return res.json({ success: true, attachments: [] });
-      const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      const ids = raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       if (ids.length === 0) return res.json({ success: true, attachments: [] });
-      const attachments = await LureliaAttachment.find({ _id: { $in: ids } }).lean();
+      const attachments = await LureliaAttachment.find({
+        _id: { $in: ids },
+      }).lean();
       return res.json({ success: true, attachments });
     } catch (error) {
       return handleError(res, error);

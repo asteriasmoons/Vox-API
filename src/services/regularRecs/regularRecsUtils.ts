@@ -3,7 +3,10 @@
 //  Generic helpers for the REGULAR recommendation engine.
 //
 
-import { REGULAR_MAX_HTTP_RETRIES, REGULAR_SUSPICIOUS_KEYWORDS } from "./regularRecsConfig";
+import {
+  REGULAR_MAX_HTTP_RETRIES,
+  REGULAR_SUSPICIOUS_KEYWORDS,
+} from "./regularRecsConfig";
 
 export function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -52,7 +55,10 @@ export function stripEditionNoise(title: string): string {
   return title
     .replace(/[:\-–—].*$/g, "")
     .replace(/\((?:[^)]*)\)/g, "")
-    .replace(/\b(a novel|special edition|deluxe edition|illustrated edition|collector'?s edition)\b/gi, "")
+    .replace(
+      /\b(a novel|special edition|deluxe edition|illustrated edition|collector'?s edition)\b/gi,
+      "",
+    )
     .trim();
 }
 
@@ -124,7 +130,10 @@ export function scoreTitleAuthorMatch(
 
   if (nTargetAuthor && nCandAuthor) {
     if (nCandAuthor === nTargetAuthor) score += 25;
-    else if (nCandAuthor.includes(nTargetAuthor) || nTargetAuthor.includes(nCandAuthor))
+    else if (
+      nCandAuthor.includes(nTargetAuthor) ||
+      nTargetAuthor.includes(nCandAuthor)
+    )
       score += 15;
   }
   return score;
@@ -223,7 +232,9 @@ export async function fetchWithRetry(
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(`${label} request failed`);
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`${label} request failed`);
 }
 
 export async function fetchJson<T>(

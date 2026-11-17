@@ -30,18 +30,29 @@ export function createBuddyRouter(io: SocketIOServer): Router {
     const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
 
     const status =
-      message === "ANNOUNCEMENT_NOT_FOUND" ? 404
-      : message === "ANNOUNCEMENT_CLOSED" ? 409
-      : message === "ANNOUNCEMENT_LIMIT_REACHED" ? 409
-      : message === "GROUP_NOT_FOUND" ? 404
-      : message === "REQUEST_NOT_FOUND" ? 404
-      : message === "FORBIDDEN" ? 403
-      : message === "NOT_A_MEMBER" ? 403
-      : message === "CANNOT_JOIN_OWN_ANNOUNCEMENT" ? 403
-      : message === "GROUP_FULL" ? 409
-      : message === "ALREADY_A_MEMBER" ? 409
-      : message === "REQUEST_ALREADY_SENT" ? 409
-      : 400;
+      message === "ANNOUNCEMENT_NOT_FOUND"
+        ? 404
+        : message === "ANNOUNCEMENT_CLOSED"
+          ? 409
+          : message === "ANNOUNCEMENT_LIMIT_REACHED"
+            ? 409
+            : message === "GROUP_NOT_FOUND"
+              ? 404
+              : message === "REQUEST_NOT_FOUND"
+                ? 404
+                : message === "FORBIDDEN"
+                  ? 403
+                  : message === "NOT_A_MEMBER"
+                    ? 403
+                    : message === "CANNOT_JOIN_OWN_ANNOUNCEMENT"
+                      ? 403
+                      : message === "GROUP_FULL"
+                        ? 409
+                        : message === "ALREADY_A_MEMBER"
+                          ? 409
+                          : message === "REQUEST_ALREADY_SENT"
+                            ? 409
+                            : 400;
 
     return res.status(status).json({ success: false, error: message });
   }
@@ -109,44 +120,53 @@ export function createBuddyRouter(io: SocketIOServer): Router {
     }
   });
 
-  router.post("/announcements/:id/archive", async (req: Request, res: Response) => {
-    try {
-      const announcement = await archiveAnnouncement({
-        announcementId: str(req.params.id),
-        ownerUserId: req.body.ownerUserId,
-      });
-      return res.json({ success: true, announcement });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/announcements/:id/archive",
+    async (req: Request, res: Response) => {
+      try {
+        const announcement = await archiveAnnouncement({
+          announcementId: str(req.params.id),
+          ownerUserId: req.body.ownerUserId,
+        });
+        return res.json({ success: true, announcement });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
-  router.post("/announcements/:id/close", async (req: Request, res: Response) => {
-    try {
-      const announcement = await closeAnnouncement({
-        announcementId: str(req.params.id),
-        ownerUserId: req.body.ownerUserId,
-      });
-      return res.json({ success: true, announcement });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+  router.post(
+    "/announcements/:id/close",
+    async (req: Request, res: Response) => {
+      try {
+        const announcement = await closeAnnouncement({
+          announcementId: str(req.params.id),
+          ownerUserId: req.body.ownerUserId,
+        });
+        return res.json({ success: true, announcement });
+      } catch (error) {
+        return handleError(res, error);
+      }
+    },
+  );
 
   // POST /api/buddy/announcements/:id/reopen — admin only.
   // Reopens an announcement that was auto-closed when its author left.
-  router.post("/announcements/:id/reopen", async (req: Request, res: Response) => {
-    try {
-      const userId = str(req.body.userId) || str(req.query.userId);
-      if (userId !== ADMIN_USER_ID) {
-        return res.status(403).json({ success: false, error: "FORBIDDEN" });
+  router.post(
+    "/announcements/:id/reopen",
+    async (req: Request, res: Response) => {
+      try {
+        const userId = str(req.body.userId) || str(req.query.userId);
+        if (userId !== ADMIN_USER_ID) {
+          return res.status(403).json({ success: false, error: "FORBIDDEN" });
+        }
+        const announcement = await reopenAnnouncement(str(req.params.id));
+        return res.json({ success: true, announcement });
+      } catch (error) {
+        return handleError(res, error);
       }
-      const announcement = await reopenAnnouncement(str(req.params.id));
-      return res.json({ success: true, announcement });
-    } catch (error) {
-      return handleError(res, error);
-    }
-  });
+    },
+  );
 
   // ── Groups ────────────────────────────────────────────────────────────────
 
@@ -185,7 +205,10 @@ export function createBuddyRouter(io: SocketIOServer): Router {
 
   router.post("/groups/:id/leave", async (req: Request, res: Response) => {
     try {
-      await leaveGroup({ groupId: str(req.params.id), userId: req.body.userId }, io);
+      await leaveGroup(
+        { groupId: str(req.params.id), userId: req.body.userId },
+        io,
+      );
       return res.json({ success: true });
     } catch (error) {
       return handleError(res, error);

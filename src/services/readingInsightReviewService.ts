@@ -63,7 +63,7 @@ export async function generateReadingInsightReview(
     "Do not invent plot points, opinions, characters, events, endings, ratings, or reading history.",
     "Avoid spoilers unless the user's own insight text explicitly included them, and even then keep the review spoiler-light.",
     "Write in a natural first-person reviewer voice, as if the reader is turning their own notes into a finished review.",
-    "Return strict JSON only."
+    "Return strict JSON only.",
   ].join(" ");
 
   const userPrompt = buildPrompt({
@@ -107,7 +107,9 @@ function buildPrompt(input: ReadingInsightReviewRequestInput): string {
     book.topics.length ? `Topics: ${book.topics.join(", ")}` : "",
     book.tags.length ? `Tags: ${book.tags.join(", ")}` : "",
     book.tropes.length ? `Tropes: ${book.tropes.join(", ")}` : "",
-    typeof book.rating === "number" && Number.isFinite(book.rating) && book.rating > 0
+    typeof book.rating === "number" &&
+    Number.isFinite(book.rating) &&
+    book.rating > 0
       ? `Reader rating: ${book.rating}/5`
       : "",
   ].filter(Boolean);
@@ -115,8 +117,12 @@ function buildPrompt(input: ReadingInsightReviewRequestInput): string {
   const insights = input.insights.map((insight, index) => {
     const sessionBits = [
       insight.sessionDate ? `Session date: ${insight.sessionDate}` : "",
-      typeof insight.sessionMinutes === "number" ? `Minutes: ${insight.sessionMinutes}` : "",
-      typeof insight.sessionPages === "number" ? `Pages: ${insight.sessionPages}` : "",
+      typeof insight.sessionMinutes === "number"
+        ? `Minutes: ${insight.sessionMinutes}`
+        : "",
+      typeof insight.sessionPages === "number"
+        ? `Pages: ${insight.sessionPages}`
+        : "",
     ].filter(Boolean);
 
     return [
@@ -126,11 +132,17 @@ function buildPrompt(input: ReadingInsightReviewRequestInput): string {
       insight.whatHappened ? `What happened: ${insight.whatHappened}` : "",
       insight.whatStoodOut ? `What stood out: ${insight.whatStoodOut}` : "",
       insight.howIFeel ? `How I felt: ${insight.howIFeel}` : "",
-      insight.predictions ? `Predictions or questions: ${insight.predictions}` : "",
-      insight.favoriteMoment ? `Notes and thoughts: ${insight.favoriteMoment}` : "",
+      insight.predictions
+        ? `Predictions or questions: ${insight.predictions}`
+        : "",
+      insight.favoriteMoment
+        ? `Notes and thoughts: ${insight.favoriteMoment}`
+        : "",
       insight.favoriteQuote ? `Favorite quote: ${insight.favoriteQuote}` : "",
       insight.aiSummary ? `Existing AI summary: ${insight.aiSummary}` : "",
-    ].filter(Boolean).join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   });
 
   return `Book:
@@ -159,7 +171,9 @@ Return JSON in this exact shape:
 }`;
 }
 
-function normalizeInsight(value: ReadingInsightReviewInsightInput): ReadingInsightReviewInsightInput {
+function normalizeInsight(
+  value: ReadingInsightReviewInsightInput,
+): ReadingInsightReviewInsightInput {
   const normalized: ReadingInsightReviewInsightInput = {
     dateCreated: cleanText(value.dateCreated),
     whatHappened: cleanText(value.whatHappened),
@@ -174,11 +188,17 @@ function normalizeInsight(value: ReadingInsightReviewInsightInput): ReadingInsig
   const sessionDate = cleanText(value.sessionDate);
   if (sessionDate) normalized.sessionDate = sessionDate;
 
-  if (typeof value.sessionMinutes === "number" && Number.isFinite(value.sessionMinutes)) {
+  if (
+    typeof value.sessionMinutes === "number" &&
+    Number.isFinite(value.sessionMinutes)
+  ) {
     normalized.sessionMinutes = value.sessionMinutes;
   }
 
-  if (typeof value.sessionPages === "number" && Number.isFinite(value.sessionPages)) {
+  if (
+    typeof value.sessionPages === "number" &&
+    Number.isFinite(value.sessionPages)
+  ) {
     normalized.sessionPages = value.sessionPages;
   }
 
@@ -194,7 +214,9 @@ function insightText(insight: ReadingInsightReviewInsightInput): string {
     insight.favoriteMoment,
     insight.favoriteQuote,
     insight.aiSummary,
-  ].join(" ").trim();
+  ]
+    .join(" ")
+    .trim();
 }
 
 function parseReviewJSON(raw: string): AIReviewPayload {

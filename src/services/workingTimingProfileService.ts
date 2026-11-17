@@ -4,17 +4,34 @@ const WORKING_TIMING_GROQ_MODEL =
   process.env.WORKING_TIMING_GROQ_MODEL || "openai/gpt-oss-120b";
 
 export const TIMING_PLANETS = [
-  "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
-  "Uranus", "Neptune",
+  "Sun",
+  "Moon",
+  "Mercury",
+  "Venus",
+  "Mars",
+  "Jupiter",
+  "Saturn",
+  "Uranus",
+  "Neptune",
 ] as const;
 
 export const TIMING_MOON_PHASES = [
-  "New Moon", "Waxing Crescent", "First Quarter", "Waxing Gibbous",
-  "Full Moon", "Waning Gibbous", "Last Quarter", "Waning Crescent",
+  "New Moon",
+  "Waxing Crescent",
+  "First Quarter",
+  "Waxing Gibbous",
+  "Full Moon",
+  "Waning Gibbous",
+  "Last Quarter",
+  "Waning Crescent",
 ] as const;
 
 export const TIMING_ASPECTS = [
-  "Conjunction", "Sextile", "Square", "Trine", "Opposition",
+  "Conjunction",
+  "Sextile",
+  "Square",
+  "Trine",
+  "Opposition",
 ] as const;
 
 export type TimingPlanet = (typeof TIMING_PLANETS)[number];
@@ -112,9 +129,11 @@ function allowedValues<T extends readonly string[]>(
 
 function numberValues(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
-  return Array.from(new Set(
-    value.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 9),
-  )).slice(0, 5);
+  return Array.from(
+    new Set(
+      value.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 9),
+    ),
+  ).slice(0, 5);
 }
 
 function planetPairs(value: unknown): TimingPlanetPair[] {
@@ -126,9 +145,14 @@ function planetPairs(value: unknown): TimingPlanetPair[] {
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
     const first = typeof record.first === "string" ? record.first.trim() : "";
-    const second = typeof record.second === "string" ? record.second.trim() : "";
-    if (!allowed.has(first) || !allowed.has(second) || first === second) continue;
-    result.push({ first: first as TimingPlanet, second: second as TimingPlanet });
+    const second =
+      typeof record.second === "string" ? record.second.trim() : "";
+    if (!allowed.has(first) || !allowed.has(second) || first === second)
+      continue;
+    result.push({
+      first: first as TimingPlanet,
+      second: second as TimingPlanet,
+    });
     if (result.length >= 6) break;
   }
 
@@ -136,7 +160,11 @@ function planetPairs(value: unknown): TimingPlanetPair[] {
 }
 
 function parseProfile(raw: string): WorkingTimingProfile {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
   const match = cleaned.match(/\{[\s\S]*\}/);
   if (!match) {
     throw new Error(`Timing profile response did not contain JSON: ${raw}`);
@@ -144,16 +172,24 @@ function parseProfile(raw: string): WorkingTimingProfile {
 
   const parsed = JSON.parse(match[0]) as Record<string, unknown>;
   const interpretedIntention =
-    typeof parsed.interpretedIntention === "string" ? parsed.interpretedIntention.trim() : "";
+    typeof parsed.interpretedIntention === "string"
+      ? parsed.interpretedIntention.trim()
+      : "";
   const primaryIntention =
-    typeof parsed.primaryIntention === "string" ? parsed.primaryIntention.trim() : "";
+    typeof parsed.primaryIntention === "string"
+      ? parsed.primaryIntention.trim()
+      : "";
 
   const profile: WorkingTimingProfile = {
     interpretedIntention,
     primaryIntention,
     secondaryIntentions: asStringArray(parsed.secondaryIntentions).slice(0, 3),
     planetaryRulers: allowedValues(parsed.planetaryRulers, TIMING_PLANETS, 4),
-    favorableMoonPhases: allowedValues(parsed.favorableMoonPhases, TIMING_MOON_PHASES, 4),
+    favorableMoonPhases: allowedValues(
+      parsed.favorableMoonPhases,
+      TIMING_MOON_PHASES,
+      4,
+    ),
     favorableNumerologyNumbers: numberValues(parsed.favorableNumerologyNumbers),
     favorableAspects: allowedValues(parsed.favorableAspects, TIMING_ASPECTS, 4),
     supportivePlanetPairs: planetPairs(parsed.supportivePlanetPairs),
@@ -170,7 +206,9 @@ function parseProfile(raw: string): WorkingTimingProfile {
     profile.favorableNumerologyNumbers.length === 0 &&
     profile.favorableAspects.length === 0
   ) {
-    throw new Error("Timing profile response contains no usable correspondences");
+    throw new Error(
+      "Timing profile response contains no usable correspondences",
+    );
   }
 
   return profile;

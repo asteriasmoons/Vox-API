@@ -30,10 +30,13 @@ commentReactionSchema.index(
 );
 
 commentReactionSchema.pre("validate", function (next) {
-  const hasComment = typeof this.commentID === "string" && this.commentID.length > 0;
+  const hasComment =
+    typeof this.commentID === "string" && this.commentID.length > 0;
   const hasReply = typeof this.replyID === "string" && this.replyID.length > 0;
   if (hasComment === hasReply) {
-    return next(new Error("Reaction must target exactly one of comment or reply."));
+    return next(
+      new Error("Reaction must target exactly one of comment or reply."),
+    );
   }
   next();
 });

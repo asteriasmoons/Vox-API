@@ -62,8 +62,16 @@ function forceTwoParagraphs(value: string): string {
   if (!sentences || sentences.length < 4) return description;
 
   const midpoint = Math.ceil(sentences.length / 2);
-  const first = sentences.slice(0, midpoint).join(" ").replace(/\s+/g, " ").trim();
-  const second = sentences.slice(midpoint).join(" ").replace(/\s+/g, " ").trim();
+  const first = sentences
+    .slice(0, midpoint)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const second = sentences
+    .slice(midpoint)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   return second ? `${first}\n\n${second}` : description;
 }
@@ -106,7 +114,10 @@ async function generateDescription(
   const author = cleanText(input.author);
   if (!title) return "";
 
-  const cached = recommendationCacheService.getGeneratedDescription(title, author);
+  const cached = recommendationCacheService.getGeneratedDescription(
+    title,
+    author,
+  );
   if (cached) return cached;
 
   const apiKey = process.env.GROQ_API_KEY || "";
@@ -116,7 +127,10 @@ async function generateDescription(
 
   for (let attempt = 0; attempt <= DESCRIPTION_RETRIES; attempt += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), DESCRIPTION_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      DESCRIPTION_TIMEOUT_MS,
+    );
 
     try {
       const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
@@ -145,9 +159,9 @@ async function generateDescription(
         signal: controller.signal,
       });
 
-      const json = (await response.json().catch(() => null)) as
-        | GroqDescriptionResponse
-        | null;
+      const json = (await response
+        .json()
+        .catch(() => null)) as GroqDescriptionResponse | null;
 
       if (!response.ok) {
         throw new Error(
@@ -164,7 +178,11 @@ async function generateDescription(
       );
 
       if (hasUsableBookDescription(description)) {
-        recommendationCacheService.setGeneratedDescription(title, author, description);
+        recommendationCacheService.setGeneratedDescription(
+          title,
+          author,
+          description,
+        );
         return description;
       }
 
@@ -178,7 +196,11 @@ async function generateDescription(
     }
   }
 
-  console.error("Generated book description failed:", { title, author }, lastError);
+  console.error(
+    "Generated book description failed:",
+    { title, author },
+    lastError,
+  );
   return "";
 }
 
@@ -200,9 +222,8 @@ async function mapWithBoundedConcurrency<T, R>(
     }
   }
 
-  const workers = Array.from(
-    { length: Math.min(limit, items.length) },
-    () => runWorker(),
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () =>
+    runWorker(),
   );
 
   await Promise.all(workers);

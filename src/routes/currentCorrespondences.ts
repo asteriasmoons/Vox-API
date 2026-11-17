@@ -1,7 +1,5 @@
 import { Router } from "express";
-import {
-  generateCurrentCorrespondences,
-} from "../services/currentCorrespondencesService";
+import { generateCurrentCorrespondences } from "../services/currentCorrespondencesService";
 import type { CurrentCorrespondencesInput } from "../services/currentCorrespondencesService";
 
 const router = Router();

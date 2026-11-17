@@ -15,7 +15,9 @@ export const REGULAR_REQUEST_TYPES = [
 ] as const;
 export type RegularRequestType = (typeof REGULAR_REQUEST_TYPES)[number];
 
-export function isRegularRequestType(value: string): value is RegularRequestType {
+export function isRegularRequestType(
+  value: string,
+): value is RegularRequestType {
   return (REGULAR_REQUEST_TYPES as readonly string[]).includes(value);
 }
 
@@ -29,7 +31,10 @@ export const REGULAR_CANDIDATE_GROUPS = [
 ] as const;
 export type RegularCandidateGroup = (typeof REGULAR_CANDIDATE_GROUPS)[number];
 
-export const REGULAR_CANDIDATE_GROUP_LABEL: Record<RegularCandidateGroup, string> = {
+export const REGULAR_CANDIDATE_GROUP_LABEL: Record<
+  RegularCandidateGroup,
+  string
+> = {
   closest: "Closest match",
   reader_safe: "Reader favorite",
   hidden_gem: "Hidden gem",
@@ -39,7 +44,10 @@ export const REGULAR_CANDIDATE_GROUP_LABEL: Record<RegularCandidateGroup, string
 };
 
 // Relevance bonus applied by originating candidate group.
-export const REGULAR_CANDIDATE_GROUP_BONUS: Record<RegularCandidateGroup, number> = {
+export const REGULAR_CANDIDATE_GROUP_BONUS: Record<
+  RegularCandidateGroup,
+  number
+> = {
   closest: 40,
   reader_safe: 30,
   hidden_gem: 22,
@@ -48,7 +56,10 @@ export const REGULAR_CANDIDATE_GROUP_BONUS: Record<RegularCandidateGroup, number
   adjacent: 12,
 };
 
-export const REGULAR_CANDIDATE_GROUP_BRIEF: Record<RegularCandidateGroup, string> = {
+export const REGULAR_CANDIDATE_GROUP_BRIEF: Record<
+  RegularCandidateGroup,
+  string
+> = {
   closest:
     "Books that are the closest possible match in genre, subgenre, tone, audience, themes, pacing and tropes.",
   reader_safe:

@@ -214,7 +214,7 @@ export class SeeryServiceError extends Error {
     public readonly statusCode: number,
     public readonly code: string,
     message: string,
-    public readonly details?: unknown
+    public readonly details?: unknown,
   ) {
     super(message);
     this.name = "SeeryServiceError";
@@ -234,11 +234,12 @@ export class SeeryService {
 
   // ── Search ───────────────────────────────────────────────────
 
-  async searchSeries(query: string): Promise<SeeryPagedResponse<SeerySeriesSummary>> {
-    const payload = await this.request<TVMazeSearchResult[]>(
-      "/search/shows",
-      { q: query }
-    );
+  async searchSeries(
+    query: string,
+  ): Promise<SeeryPagedResponse<SeerySeriesSummary>> {
+    const payload = await this.request<TVMazeSearchResult[]>("/search/shows", {
+      q: query,
+    });
 
     const results = payload.map((item) => this.mapShow(item.show));
 
@@ -254,14 +255,14 @@ export class SeeryService {
 
   async getSchedule(
     date?: string,
-    country = "US"
+    country = "US",
   ): Promise<SeeryScheduleItem[]> {
     const params: Record<string, string> = { country };
     if (date) params.date = date;
 
     const payload = await this.request<TVMazeScheduleEntry[]>(
       "/schedule",
-      params
+      params,
     );
 
     return payload.map((entry) => this.mapScheduleEntry(entry));
@@ -273,7 +274,7 @@ export class SeeryService {
 
     const payload = await this.request<TVMazeWebScheduleEntry[]>(
       "/schedule/web",
-      params
+      params,
     );
 
     return payload.map((entry) => this.mapWebScheduleEntry(entry));
@@ -289,13 +290,13 @@ export class SeeryService {
       this.request<TVMazeSeason[]>(`/shows/${showId}/seasons`),
       this.request<TVMazeCrewEntry[]>(`/shows/${showId}/crew`),
       this.request<TVMazeImage[]>(`/shows/${showId}/images`).catch(
-        () => [] as TVMazeImage[]
+        () => [] as TVMazeImage[],
       ),
     ]);
 
     const totalEpisodes = seasonData.reduce(
       (sum, s) => sum + (s.episodeOrder ?? 0),
-      0
+      0,
     );
 
     // Extract external IDs for cross-provider mapping
@@ -327,7 +328,7 @@ export class SeeryService {
       webChannel: this.mapWebChannel(payload.webChannel),
       externals,
       numberOfSeasons: seasonData.filter(
-        (s) => s.number !== null && s.number > 0
+        (s) => s.number !== null && s.number > 0,
       ).length,
       numberOfEpisodes: totalEpisodes,
       seasons: seasonData
@@ -358,10 +359,10 @@ export class SeeryService {
 
   async getSeasonEpisodes(
     showId: number,
-    seasonNumber: number
+    seasonNumber: number,
   ): Promise<unknown> {
     const seasons = await this.request<TVMazeSeason[]>(
-      `/shows/${showId}/seasons`
+      `/shows/${showId}/seasons`,
     );
 
     const season = seasons.find((s) => s.number === seasonNumber);
@@ -369,12 +370,12 @@ export class SeeryService {
       throw new SeeryServiceError(
         404,
         "SEERY_SEASON_NOT_FOUND",
-        `Season ${seasonNumber} not found for show ${showId}.`
+        `Season ${seasonNumber} not found for show ${showId}.`,
       );
     }
 
     const episodes = await this.request<TVMazeEpisode[]>(
-      `/seasons/${season.id}/episodes`
+      `/seasons/${season.id}/episodes`,
     );
 
     return {
@@ -394,7 +395,7 @@ export class SeeryService {
 
   async getShowCast(showId: number): Promise<SeeryCastMember[]> {
     const payload = await this.request<TVMazeCastEntry[]>(
-      `/shows/${showId}/cast`
+      `/shows/${showId}/cast`,
     );
     return payload.map((entry) => this.mapCast(entry));
   }
@@ -403,7 +404,7 @@ export class SeeryService {
 
   async getShowImages(showId: number): Promise<SeeryShowImage[]> {
     const payload = await this.request<TVMazeImage[]>(
-      `/shows/${showId}/images`
+      `/shows/${showId}/images`,
     );
     return payload.map((img) => this.mapImage(img));
   }
@@ -433,7 +434,7 @@ export class SeeryService {
   // ── Get external IDs for a show ──────────────────────────────
 
   async getExternals(
-    showId: number
+    showId: number,
   ): Promise<{ imdb: string | null; thetvdb: number | null }> {
     const show = await this.request<TVMazeShow>(`/shows/${showId}`);
     return {
@@ -446,7 +447,7 @@ export class SeeryService {
 
   private async request<T>(
     path: string,
-    query: Record<string, string | number | boolean | undefined> = {}
+    query: Record<string, string | number | boolean | undefined> = {},
   ): Promise<T> {
     const url = new URL(`${this.baseURL}${path}`);
 
@@ -479,7 +480,7 @@ export class SeeryService {
         502,
         "SEERY_UPSTREAM_UNAVAILABLE",
         "Seery could not connect to TVmaze.",
-        error instanceof Error ? error.message : error
+        error instanceof Error ? error.message : error,
       );
     }
 
@@ -487,7 +488,7 @@ export class SeeryService {
       throw new SeeryServiceError(
         404,
         "SEERY_NOT_FOUND",
-        "The requested resource was not found on TVmaze."
+        "The requested resource was not found on TVmaze.",
       );
     }
 
@@ -495,7 +496,7 @@ export class SeeryService {
       throw new SeeryServiceError(
         429,
         "SEERY_RATE_LIMITED",
-        "TVmaze rate limit exceeded. Please try again shortly."
+        "TVmaze rate limit exceeded. Please try again shortly.",
       );
     }
 
@@ -506,7 +507,7 @@ export class SeeryService {
         response.status,
         "SEERY_TVMAZE_ERROR",
         `TVmaze request failed with status ${response.status}.`,
-        body
+        body,
       );
     }
 
@@ -523,7 +524,7 @@ export class SeeryService {
       throw new SeeryServiceError(
         502,
         "SEERY_INVALID_UPSTREAM_RESPONSE",
-        "TVmaze returned an invalid response."
+        "TVmaze returned an invalid response.",
       );
     }
   }
@@ -552,7 +553,7 @@ export class SeeryService {
   }
 
   private mapNetwork(
-    network: TVMazeNetwork | null | undefined
+    network: TVMazeNetwork | null | undefined,
   ): SeeryNetwork | null {
     if (!network) return null;
     return {
@@ -564,7 +565,7 @@ export class SeeryService {
   }
 
   private mapWebChannel(
-    channel: TVMazeWebChannel | null | undefined
+    channel: TVMazeWebChannel | null | undefined,
   ): SeeryWebChannel | null {
     if (!channel) return null;
     return {
@@ -665,7 +666,7 @@ export class SeeryService {
   }
 
   private mapWebScheduleEntry(
-    entry: TVMazeWebScheduleEntry
+    entry: TVMazeWebScheduleEntry,
   ): SeeryScheduleItem {
     return {
       episodeId: entry.id,
@@ -718,11 +719,11 @@ export class SeeryTMDBService {
 
   async trending(
     timeWindow: "day" | "week" = "day",
-    page = 1
+    page = 1,
   ): Promise<SeeryPagedResponse<SeeryTMDBSeriesSummary>> {
     const data = await this.request<TMDBPagedResponse>(
       `/trending/tv/${timeWindow}`,
-      { page }
+      { page },
     );
 
     return {
@@ -736,7 +737,7 @@ export class SeeryTMDBService {
   // ── Airing Today ─────────────────────────────────────────────
 
   async airingToday(
-    page = 1
+    page = 1,
   ): Promise<SeeryPagedResponse<SeeryTMDBSeriesSummary>> {
     const data = await this.request<TMDBPagedResponse>("/tv/airing_today", {
       page,
@@ -788,10 +789,9 @@ export class SeeryTMDBService {
   // ── Genres ───────────────────────────────────────────────────
 
   async genres(language = "en"): Promise<SeeryGenre[]> {
-    const data = await this.request<{ genres: TMDBGenre[] }>(
-      "/genre/tv/list",
-      { language }
-    );
+    const data = await this.request<{ genres: TMDBGenre[] }>("/genre/tv/list", {
+      language,
+    });
     return data.genres.map((g) => ({ id: g.id, name: g.name }));
   }
 
@@ -799,11 +799,11 @@ export class SeeryTMDBService {
 
   async recommendations(
     tmdbId: number,
-    page = 1
+    page = 1,
   ): Promise<SeeryPagedResponse<SeeryRecommendation>> {
     const data = await this.request<TMDBPagedResponse>(
       `/tv/${tmdbId}/recommendations`,
-      { page }
+      { page },
     );
 
     return {
@@ -831,7 +831,7 @@ export class SeeryTMDBService {
 
   async watchProviders(
     tmdbId: number,
-    region = "US"
+    region = "US",
   ): Promise<SeeryWatchProviderResult> {
     const data = await this.request<{
       results: Record<string, TMDBProviderRegion>;
@@ -850,14 +850,12 @@ export class SeeryTMDBService {
     }
 
     const mapProviders = (
-      list: TMDBProvider[] | undefined
+      list: TMDBProvider[] | undefined,
     ): SeeryWatchProvider[] =>
       (list ?? []).map((p) => ({
         providerId: p.provider_id,
         providerName: p.provider_name,
-        logoURL: p.logo_path
-          ? `${this.imageBase}w92${p.logo_path}`
-          : null,
+        logoURL: p.logo_path ? `${this.imageBase}w92${p.logo_path}` : null,
         displayPriority: p.display_priority ?? 999,
       }));
 
@@ -875,7 +873,7 @@ export class SeeryTMDBService {
 
   async videos(tmdbId: number): Promise<SeeryVideo[]> {
     const data = await this.request<{ results: TMDBVideo[] }>(
-      `/tv/${tmdbId}/videos`
+      `/tv/${tmdbId}/videos`,
     );
 
     return data.results.map((v) => ({
@@ -893,7 +891,7 @@ export class SeeryTMDBService {
 
   async reviews(
     tmdbId: number,
-    page = 1
+    page = 1,
   ): Promise<SeeryPagedResponse<SeeryReview>> {
     const data = await this.request<{
       page: number;
@@ -927,7 +925,7 @@ export class SeeryTMDBService {
 
   async searchTV(
     query: string,
-    page = 1
+    page = 1,
   ): Promise<SeeryPagedResponse<SeerySeriesSummary>> {
     const data = await this.request<TMDBPagedResponse>("/search/tv", {
       query,
@@ -939,7 +937,7 @@ export class SeeryTMDBService {
       totalPages: data.total_pages,
       totalResults: data.total_results,
       results: data.results.map((r: TMDBTVResult) =>
-        this.mapTMDBToSeerySummary(r)
+        this.mapTMDBToSeerySummary(r),
       ),
     };
   }
@@ -947,35 +945,25 @@ export class SeeryTMDBService {
   // ── Full Series Details (matches TVmaze shape) ──────────────
 
   async getSeriesDetails(tmdbId: number): Promise<unknown> {
-    const data = await this.request<TMDBTVDetails>(
-      `/tv/${tmdbId}`,
-      { append_to_response: "aggregate_credits,external_ids,images" }
-    );
+    const data = await this.request<TMDBTVDetails>(`/tv/${tmdbId}`, {
+      append_to_response: "aggregate_credits,external_ids,images",
+    });
 
-    const seasons = (data.seasons ?? []).filter(
-      (s) => s.season_number > 0
-    );
+    const seasons = (data.seasons ?? []).filter((s) => s.season_number > 0);
 
     const totalEpisodes = seasons.reduce(
       (sum, s) => sum + (s.episode_count ?? 0),
-      0
+      0,
     );
 
-    const cast: SeeryCastMember[] = (
-      data.aggregate_credits?.cast ?? []
-    )
+    const cast: SeeryCastMember[] = (data.aggregate_credits?.cast ?? [])
       .slice(0, 30)
       .map((c) => ({
         person: {
           id: c.id,
           name: c.name,
           birthday: null,
-          gender:
-            c.gender === 1
-              ? "Female"
-              : c.gender === 2
-                ? "Male"
-                : null,
+          gender: c.gender === 1 ? "Female" : c.gender === 2 ? "Male" : null,
           country: null,
           imageURL: c.profile_path
             ? `${this.imageBase}w185${c.profile_path}`
@@ -991,9 +979,7 @@ export class SeeryTMDBService {
       }));
 
     const crewSeen = new Set<string>();
-    const crew: SeeryCrewMember[] = (
-      data.aggregate_credits?.crew ?? []
-    )
+    const crew: SeeryCrewMember[] = (data.aggregate_credits?.crew ?? [])
       .filter((c) => {
         const job = c.jobs?.[0]?.job ?? c.department ?? "Unknown";
         const key = `${c.id}-${job}`;
@@ -1024,9 +1010,7 @@ export class SeeryTMDBService {
         original: img.file_path
           ? `${this.imageBase}original${img.file_path}`
           : null,
-        medium: img.file_path
-          ? `${this.imageBase}w500${img.file_path}`
-          : null,
+        medium: img.file_path ? `${this.imageBase}w500${img.file_path}` : null,
       },
     }));
 
@@ -1043,7 +1027,7 @@ export class SeeryTMDBService {
       data.episode_run_time && data.episode_run_time.length > 0
         ? Math.round(
             data.episode_run_time.reduce((a, b) => a + b, 0) /
-              data.episode_run_time.length
+              data.episode_run_time.length,
           )
         : null;
 
@@ -1096,7 +1080,7 @@ export class SeeryTMDBService {
           imageURL: s.poster_path
             ? `${this.imageBase}w500${s.poster_path}`
             : null,
-        })
+        }),
       ),
       cast,
       crew,
@@ -1121,30 +1105,26 @@ export class SeeryTMDBService {
 
   async getSeasonEpisodes(
     tmdbId: number,
-    seasonNumber: number
+    seasonNumber: number,
   ): Promise<unknown> {
     const data = await this.request<TMDBSeasonDetails>(
-      `/tv/${tmdbId}/season/${seasonNumber}`
+      `/tv/${tmdbId}/season/${seasonNumber}`,
     );
 
-    const episodes: SeeryEpisodeDetails[] = (data.episodes ?? []).map(
-      (ep) => ({
-        id: ep.id,
-        name: ep.name,
-        overview: ep.overview ?? "",
-        airDate: ep.air_date ?? null,
-        airTime: null,
-        airStamp: ep.air_date ? `${ep.air_date}T00:00:00+00:00` : null,
-        episodeNumber: ep.episode_number,
-        seasonNumber: ep.season_number,
-        runtime: ep.runtime ?? null,
-        type: null,
-        rating: ep.vote_average ?? null,
-        stillURL: ep.still_path
-          ? `${this.imageBase}w500${ep.still_path}`
-          : null,
-      })
-    );
+    const episodes: SeeryEpisodeDetails[] = (data.episodes ?? []).map((ep) => ({
+      id: ep.id,
+      name: ep.name,
+      overview: ep.overview ?? "",
+      airDate: ep.air_date ?? null,
+      airTime: null,
+      airStamp: ep.air_date ? `${ep.air_date}T00:00:00+00:00` : null,
+      episodeNumber: ep.episode_number,
+      seasonNumber: ep.season_number,
+      runtime: ep.runtime ?? null,
+      type: null,
+      rating: ep.vote_average ?? null,
+      stillURL: ep.still_path ? `${this.imageBase}w500${ep.still_path}` : null,
+    }));
 
     return {
       id: data.id,
@@ -1163,22 +1143,18 @@ export class SeeryTMDBService {
 
   // ── Find by External ID (for ID mapping) ────────────────────
 
-  async findByImdbId(
-    imdbId: string
-  ): Promise<{ tvResults: TMDBTVResult[] }> {
+  async findByImdbId(imdbId: string): Promise<{ tvResults: TMDBTVResult[] }> {
     const data = await this.request<{ tv_results: TMDBTVResult[] }>(
       `/find/${imdbId}`,
-      { external_source: "imdb_id" }
+      { external_source: "imdb_id" },
     );
     return { tvResults: data.tv_results ?? [] };
   }
 
-  async findByTvdbId(
-    tvdbId: number
-  ): Promise<{ tvResults: TMDBTVResult[] }> {
+  async findByTvdbId(tvdbId: number): Promise<{ tvResults: TMDBTVResult[] }> {
     const data = await this.request<{ tv_results: TMDBTVResult[] }>(
       `/find/${tvdbId}`,
-      { external_source: "tvdb_id" }
+      { external_source: "tvdb_id" },
     );
     return { tvResults: data.tv_results ?? [] };
   }
@@ -1186,7 +1162,7 @@ export class SeeryTMDBService {
   // ── TMDB External IDs for a show ────────────────────────────
 
   async externalIds(
-    tmdbId: number
+    tmdbId: number,
   ): Promise<{ imdb_id: string | null; tvdb_id: number | null }> {
     const data = await this.request<{
       imdb_id?: string | null;
@@ -1202,13 +1178,13 @@ export class SeeryTMDBService {
 
   private async request<T>(
     path: string,
-    query: Record<string, string | number | boolean | undefined> = {}
+    query: Record<string, string | number | boolean | undefined> = {},
   ): Promise<T> {
     if (!this.bearerToken) {
       throw new SeeryServiceError(
         503,
         "SEERY_TMDB_NOT_CONFIGURED",
-        "TMDB bearer token is not configured."
+        "TMDB bearer token is not configured.",
       );
     }
 
@@ -1236,7 +1212,7 @@ export class SeeryTMDBService {
         502,
         "SEERY_TMDB_UNAVAILABLE",
         "Seery could not connect to TMDB.",
-        error instanceof Error ? error.message : error
+        error instanceof Error ? error.message : error,
       );
     }
 
@@ -1244,7 +1220,7 @@ export class SeeryTMDBService {
       throw new SeeryServiceError(
         404,
         "SEERY_TMDB_NOT_FOUND",
-        "The requested resource was not found on TMDB."
+        "The requested resource was not found on TMDB.",
       );
     }
 
@@ -1252,7 +1228,7 @@ export class SeeryTMDBService {
       throw new SeeryServiceError(
         429,
         "SEERY_TMDB_RATE_LIMITED",
-        "TMDB rate limit exceeded. Please try again shortly."
+        "TMDB rate limit exceeded. Please try again shortly.",
       );
     }
 
@@ -1266,7 +1242,7 @@ export class SeeryTMDBService {
           response.status,
           "SEERY_TMDB_ERROR",
           body.status_message ?? `TMDB request failed (${response.status}).`,
-          body
+          body,
         );
       }
       return body as T;
@@ -1275,7 +1251,7 @@ export class SeeryTMDBService {
       throw new SeeryServiceError(
         502,
         "SEERY_TMDB_INVALID_RESPONSE",
-        "TMDB returned an invalid response."
+        "TMDB returned an invalid response.",
       );
     }
   }
@@ -1291,9 +1267,7 @@ export class SeeryTMDBService {
       id: r.id,
       name: r.name ?? r.original_name ?? "",
       overview: r.overview ?? "",
-      posterURL: r.poster_path
-        ? `${this.imageBase}w500${r.poster_path}`
-        : null,
+      posterURL: r.poster_path ? `${this.imageBase}w500${r.poster_path}` : null,
       backdropURL: r.backdrop_path
         ? `${this.imageBase}w780${r.backdrop_path}`
         : null,
@@ -1316,9 +1290,7 @@ export class SeeryTMDBService {
       id: r.id,
       name: r.name ?? r.original_name ?? "",
       overview: r.overview ?? "",
-      posterURL: r.poster_path
-        ? `${this.imageBase}w500${r.poster_path}`
-        : null,
+      posterURL: r.poster_path ? `${this.imageBase}w500${r.poster_path}` : null,
       backdropURL: r.backdrop_path
         ? `${this.imageBase}w780${r.backdrop_path}`
         : null,
@@ -1338,7 +1310,7 @@ export class SeeryTMDBService {
 export class SeeryIDMapper {
   constructor(
     private tvmaze: SeeryService,
-    private tmdb: SeeryTMDBService
+    private tmdb: SeeryTMDBService,
   ) {}
 
   /**
@@ -1792,6 +1764,16 @@ interface TMDBEpisodeDetails {
   still_path?: string | null;
   vote_average?: number;
   production_code?: string;
-  crew?: { id: number; name: string; job: string; profile_path?: string | null }[];
-  guest_stars?: { id: number; name: string; character: string; profile_path?: string | null }[];
+  crew?: {
+    id: number;
+    name: string;
+    job: string;
+    profile_path?: string | null;
+  }[];
+  guest_stars?: {
+    id: number;
+    name: string;
+    character: string;
+    profile_path?: string | null;
+  }[];
 }

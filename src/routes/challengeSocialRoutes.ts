@@ -22,7 +22,10 @@ import {
 } from "../services/challengeSocialService";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 /**
  * GET /api/lumey/challenges/feed
@@ -139,67 +142,79 @@ router.delete("/feed/posts/:postID", async (req: Request, res: Response) => {
  * POST /api/lumey/challenges/feed/upload-photo
  * Uploads a feed photo to Cloudinary and returns the CDN URL.
  */
-router.post("/feed/upload-photo", upload.single("photo"), async (req: Request, res: Response) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No photo file provided." });
+router.post(
+  "/feed/upload-photo",
+  upload.single("photo"),
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No photo file provided." });
+      }
+
+      const result = await uploadFeedPhoto(req.file.buffer);
+
+      return res.status(201).json(result);
+    } catch (error: any) {
+      console.error("[challenges] upload feed photo:", error);
+
+      return res.status(400).json({
+        message: error?.message ?? "Unable to upload feed photo.",
+      });
     }
-
-    const result = await uploadFeedPhoto(req.file.buffer);
-
-    return res.status(201).json(result);
-  } catch (error: any) {
-    console.error("[challenges] upload feed photo:", error);
-
-    return res.status(400).json({
-      message: error?.message ?? "Unable to upload feed photo.",
-    });
-  }
-});
+  },
+);
 
 /**
  * POST /api/lumey/challenges/submissions/upload-photo
  * Uploads a submission proof photo to Cloudinary and returns the CDN URL.
  */
-router.post("/submissions/upload-photo", upload.single("photo"), async (req: Request, res: Response) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No photo file provided." });
+router.post(
+  "/submissions/upload-photo",
+  upload.single("photo"),
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No photo file provided." });
+      }
+
+      const result = await uploadSubmissionPhoto(req.file.buffer);
+
+      return res.status(201).json(result);
+    } catch (error: any) {
+      console.error("[challenges] upload submission photo:", error);
+
+      return res.status(400).json({
+        message: error?.message ?? "Unable to upload submission photo.",
+      });
     }
-
-    const result = await uploadSubmissionPhoto(req.file.buffer);
-
-    return res.status(201).json(result);
-  } catch (error: any) {
-    console.error("[challenges] upload submission photo:", error);
-
-    return res.status(400).json({
-      message: error?.message ?? "Unable to upload submission photo.",
-    });
-  }
-});
+  },
+);
 
 /**
  * POST /api/lumey/challenges/profiles/upload-avatar
  * Uploads a profile avatar to Cloudinary and returns the CDN URL.
  */
-router.post("/profiles/upload-avatar", upload.single("avatar"), async (req: Request, res: Response) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No avatar file provided." });
+router.post(
+  "/profiles/upload-avatar",
+  upload.single("avatar"),
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No avatar file provided." });
+      }
+
+      const result = await uploadProfileAvatar(req.file.buffer);
+
+      return res.status(201).json(result);
+    } catch (error: any) {
+      console.error("[challenges] upload profile avatar:", error);
+
+      return res.status(400).json({
+        message: error?.message ?? "Unable to upload profile avatar.",
+      });
     }
-
-    const result = await uploadProfileAvatar(req.file.buffer);
-
-    return res.status(201).json(result);
-  } catch (error: any) {
-    console.error("[challenges] upload profile avatar:", error);
-
-    return res.status(400).json({
-      message: error?.message ?? "Unable to upload profile avatar.",
-    });
-  }
-});
+  },
+);
 
 /**
  * POST /api/lumey/challenges/feed/items/:feedItemID/like
@@ -296,30 +311,33 @@ router.delete("/comments/:commentID", async (req: Request, res: Response) => {
 /**
  * POST /api/lumey/challenges/comments/:commentID/like
  */
-router.post("/comments/:commentID/like", async (req: Request, res: Response) => {
-  try {
-    const commentID = String(req.params.commentID || "").trim();
+router.post(
+  "/comments/:commentID/like",
+  async (req: Request, res: Response) => {
+    try {
+      const commentID = String(req.params.commentID || "").trim();
 
-    if (!commentID) {
+      if (!commentID) {
+        return res.status(400).json({
+          message: "commentID is required.",
+        });
+      }
+
+      const result = await toggleCommentLike({
+        commentID,
+        userID: req.body.userID,
+      });
+
+      return res.status(200).json(result);
+    } catch (error: any) {
+      console.error("[challenges] like comment:", error);
+
       return res.status(400).json({
-        message: "commentID is required.",
+        message: error?.message ?? "Unable to update comment like.",
       });
     }
-
-    const result = await toggleCommentLike({
-      commentID,
-      userID: req.body.userID,
-    });
-
-    return res.status(200).json(result);
-  } catch (error: any) {
-    console.error("[challenges] like comment:", error);
-
-    return res.status(400).json({
-      message: error?.message ?? "Unable to update comment like.",
-    });
-  }
-});
+  },
+);
 
 /**
  * GET /api/lumey/challenges/profiles/:userID

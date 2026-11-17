@@ -117,7 +117,9 @@ async function fetchJson<T>(url: URL): Promise<T> {
   return json as T;
 }
 
-export async function searchOpenLibrary(query: string): Promise<BookSearchResult[]> {
+export async function searchOpenLibrary(
+  query: string,
+): Promise<BookSearchResult[]> {
   const url = new URL(OPEN_LIBRARY_SEARCH_URL);
 
   url.searchParams.set("q", query);
@@ -158,7 +160,9 @@ export async function searchOpenLibrary(query: string): Promise<BookSearchResult
     });
 }
 
-export async function searchGoogleBooks(query: string): Promise<BookSearchResult[]> {
+export async function searchGoogleBooks(
+  query: string,
+): Promise<BookSearchResult[]> {
   const url = new URL(GOOGLE_BOOKS_SEARCH_URL);
   const apiKey = process.env.GOOGLE_BOOKS_API_KEY || "";
 
@@ -192,7 +196,8 @@ export async function searchGoogleBooks(query: string): Promise<BookSearchResult
     if (coverUrl) result.coverUrl = coverUrl;
     if (volume.pageCount !== undefined) result.pages = volume.pageCount;
     if (releaseYear !== undefined) result.releaseYear = releaseYear;
-    if (volume.averageRating !== undefined) result.rating = volume.averageRating;
+    if (volume.averageRating !== undefined)
+      result.rating = volume.averageRating;
     if (volume.publisher) result.publisher = volume.publisher;
     if (isbn) result.isbn = isbn;
 

@@ -80,8 +80,12 @@ async function providerToken(): Promise<string> {
   const parts = jwt.split(".");
   const headerB64 = parts[0] ?? "";
   const payloadB64 = parts[1] ?? "";
-  const decodedHeader = JSON.parse(Buffer.from(headerB64, "base64url").toString());
-  const decodedPayload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
+  const decodedHeader = JSON.parse(
+    Buffer.from(headerB64, "base64url").toString(),
+  );
+  const decodedPayload = JSON.parse(
+    Buffer.from(payloadB64, "base64url").toString(),
+  );
   console.log("[apns] JWT header:", decodedHeader);
   console.log("[apns] JWT payload:", decodedPayload);
   console.log("[apns] env: bundleId=" + process.env.APNS_BUNDLE_ID);
@@ -150,50 +154,52 @@ export async function sendAPNs(
     }),
   );
 
-  return await new Promise<{ status: number; reason?: string | undefined }>((resolve) => {
-    let status = 0;
-    let reason: string | undefined;
+  return await new Promise<{ status: number; reason?: string | undefined }>(
+    (resolve) => {
+      let status = 0;
+      let reason: string | undefined;
 
-    const req = client.request({
-      ":method": "POST",
-      ":path": `/3/device/${deviceToken}`,
-      "apns-topic": bundleId,
-      "apns-push-type": "alert",
-      authorization: `Bearer ${jwt}`,
-      "content-type": "application/json",
-      "content-length": String(body.length),
-    });
+      const req = client.request({
+        ":method": "POST",
+        ":path": `/3/device/${deviceToken}`,
+        "apns-topic": bundleId,
+        "apns-push-type": "alert",
+        authorization: `Bearer ${jwt}`,
+        "content-type": "application/json",
+        "content-length": String(body.length),
+      });
 
-    req.setEncoding("utf8");
+      req.setEncoding("utf8");
 
-    req.on("response", (headers) => {
-      status = Number(headers[":status"]) || 0;
-    });
+      req.on("response", (headers) => {
+        status = Number(headers[":status"]) || 0;
+      });
 
-    let responseData = "";
-    req.on("data", (chunk) => {
-      responseData += chunk;
-    });
+      let responseData = "";
+      req.on("data", (chunk) => {
+        responseData += chunk;
+      });
 
-    req.on("end", () => {
-      if (status >= 400 && responseData) {
-        try {
-          const parsed = JSON.parse(responseData);
-          reason = parsed?.reason;
-        } catch {
-          reason = responseData.slice(0, 200);
+      req.on("end", () => {
+        if (status >= 400 && responseData) {
+          try {
+            const parsed = JSON.parse(responseData);
+            reason = parsed?.reason;
+          } catch {
+            reason = responseData.slice(0, 200);
+          }
         }
-      }
-      req.close();
-      resolve({ status, reason });
-    });
+        req.close();
+        resolve({ status, reason });
+      });
 
-    req.on("error", (err) => {
-      resolve({ status: 0, reason: String(err) });
-    });
+      req.on("error", (err) => {
+        resolve({ status: 0, reason: String(err) });
+      });
 
-    req.end(body);
-  });
+      req.end(body);
+    },
+  );
 }
 
 /** Human-readable alert copy per notification kind. */
