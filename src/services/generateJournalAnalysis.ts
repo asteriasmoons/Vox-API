@@ -6,7 +6,7 @@ const FREE_TIER_HEADROOM_TOKENS = 700;
 const MAX_OUTPUT_TOKENS = 1_600;
 const MIN_OUTPUT_TOKENS = 700;
 const MAX_ENTRY_TEXT_CHARS = 18_000;
-
+     
 export interface JournalAnalysisResult {
   themes: string[];
   mood: string;
