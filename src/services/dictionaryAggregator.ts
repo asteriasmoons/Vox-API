@@ -27,6 +27,30 @@ function normalizeProse(value: string): string {
   return cleanWhitespace(value).replace(/\s+([.,;:!?])/g, "$1");
 }
 
+// Datamuse definitions can contain a leading POS code (e.g. "n (music)")
+// and duplicate definitions already supplied by another dictionary source.
+function normalizeDefinition(value: string): string {
+  return normalizeProse(value)
+    .replace(/^(?:n|v|adj|adv)\s+(?:\([^)]*\)\s*)?/i, "")
+    .trim();
+}
+
+function dedupeDefinitions(values: string[]): string[] {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const value of values) {
+    const definition = normalizeDefinition(value);
+    // Ignore supplementary bracketed citations when comparing duplicates.
+    const key = definition.replace(/\s*\[[^\]]*\]\s*$/g, "")
+      .replace(/[^\p{L}\p{N}]+/gu, " ").trim().toLowerCase();
+    if (!key || seen.has(key) || !usefulProse(definition, 3)) continue;
+    seen.add(key);
+    cleaned.push(definition);
+    if (cleaned.length >= MAX_DEFINITIONS) break;
+  }
+  return cleaned;
+}
+
 function usefulProse(value: string, minimumWords: number): boolean {
   const cleaned = normalizeProse(value);
   const words = cleaned.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? [];
@@ -114,8 +138,7 @@ export async function aggregateWordDetails(
     if (!origin && usefulOrigin(result.origin)) origin = normalizeProse(result.origin);
   }
 
-  definitions = dedupeStrings(definitions.map(normalizeProse), MAX_DEFINITIONS)
-    .filter((value) => usefulProse(value, 3));
+  definitions = dedupeDefinitions(definitions);
   dictionaryExamples = dedupeStrings(dictionaryExamples.map(normalizeProse), 6)
     .filter((value) => completeExample(value, cleanedWord));
   synonyms = dedupeStrings(synonyms, MAX_SYNONYMS);
